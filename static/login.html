@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Business AI</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+</head>
+<body>
+  <nav class="ba-navbar">
+    <a href="/">Business AI</a>
+  </nav>
+
+  <div class="ba-narrow">
+    <div class="ba-card">
+      <h1 style="font-size: 1.5rem; margin-top: 0;">Sign in to your assistant</h1>
+      <div class="ba-tabs">
+        <div class="ba-tab active" onclick="switchTab('signin')" id="tab-signin">Sign In</div>
+        <div class="ba-tab" onclick="switchTab('signup')" id="tab-signup">Create Account</div>
+      </div>
+
+      <div id="alert" class="ba-alert ba-alert-error" style="display: none;"></div>
+
+      <div id="panel-signin" class="ba-tab-panel active">
+        <form onsubmit="handleSignIn(event)">
+          <div class="ba-field">
+            <label class="ba-label" for="signin-email">Email</label>
+            <input class="ba-input" type="email" id="signin-email" required autocomplete="username">
+          </div>
+          <div class="ba-field">
+            <label class="ba-label" for="signin-password">Password</label>
+            <input class="ba-input" type="password" id="signin-password" required autocomplete="current-password">
+          </div>
+          <button type="submit" class="ba-btn" style="width: 100%;" id="signin-btn">Sign In</button>
+        </form>
+      </div>
+
+      <div id="panel-signup" class="ba-tab-panel">
+        <form onsubmit="handleSignUp(event)">
+          <div class="ba-field">
+            <label class="ba-label" for="signup-business">Business Name</label>
+            <input class="ba-input" type="text" id="signup-business" required>
+          </div>
+          <div class="ba-field">
+            <label class="ba-label" for="signup-name">Your Name</label>
+            <input class="ba-input" type="text" id="signup-name" required>
+          </div>
+          <div class="ba-field">
+            <label class="ba-label" for="signup-email">Email</label>
+            <input class="ba-input" type="email" id="signup-email" required autocomplete="username">
+          </div>
+          <div class="ba-field">
+            <label class="ba-label" for="signup-password">Password (min 6 characters)</label>
+            <input class="ba-input" type="password" id="signup-password" minlength="6" required autocomplete="new-password">
+          </div>
+          <button type="submit" class="ba-btn" style="width: 100%;" id="signup-btn">Create Account</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script>
+    if (BizAuth.isAuthenticated()) {
+      const params = new URLSearchParams(window.location.search);
+      window.location.href = BizAuth.sanitizeReturnUrl(params.get('return_url'));
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.ba-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.ba-tab-panel').forEach(p => p.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      document.getElementById('panel-' + tab).classList.add('active');
+      hideAlert();
+    }
+
+    function showAlert(msg) {
+      const el = document.getElementById('alert');
+      el.innerText = msg;
+      el.style.display = 'block';
+    }
+    function hideAlert() {
+      document.getElementById('alert').style.display = 'none';
+    }
+
+    async function handleSignIn(e) {
+      e.preventDefault();
+      hideAlert();
+      const btn = document.getElementById('signin-btn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: document.getElementById('signin-email').value.trim(),
+            password: document.getElementById('signin-password').value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Sign in failed.');
+        BizAuth.setSession(data.access_token, data.tenant_id, data.role);
+        const params = new URLSearchParams(window.location.search);
+        const fallback = data.role === 'platform_admin' ? '/dashboard' : '/dashboard';
+        window.location.href = BizAuth.sanitizeReturnUrl(params.get('return_url'), fallback);
+      } catch (err) {
+        showAlert(err.message);
+        btn.disabled = false;
+      }
+    }
+
+    async function handleSignUp(e) {
+      e.preventDefault();
+      hideAlert();
+      const btn = document.getElementById('signup-btn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            business_name: document.getElementById('signup-business').value.trim(),
+            name: document.getElementById('signup-name').value.trim(),
+            email: document.getElementById('signup-email').value.trim(),
+            password: document.getElementById('signup-password').value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Sign up failed.');
+        BizAuth.setSession(data.access_token, data.tenant_id, data.role);
+        window.location.href = '/dashboard';
+      } catch (err) {
+        showAlert(err.message);
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

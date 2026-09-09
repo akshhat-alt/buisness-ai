@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat — Business AI</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+</head>
+<body>
+  <nav class="ba-navbar">
+    <a href="/">Business AI</a>
+    <span id="business-name" class="ba-muted"></span>
+  </nav>
+
+  <div class="ba-container">
+    <div class="ba-card">
+      <div id="chat-thread" class="ba-chat-thread" role="log" aria-live="polite" aria-label="Conversation"></div>
+
+      <div id="lead-capture-box" class="ba-card ba-alert-warn" style="display: none;">
+        <p style="margin-top: 0;"><strong>Want us to follow up with you?</strong> Leave your phone or email and we'll reach out.</p>
+        <div class="ba-field"><input class="ba-input" id="lead-name" placeholder="Your name (optional)"></div>
+        <div class="ba-field"><input class="ba-input" id="lead-phone" placeholder="Phone number"></div>
+        <div class="ba-field"><input class="ba-input" id="lead-email" placeholder="Or email address"></div>
+        <button class="ba-btn" onclick="submitLead()">Share My Contact Info</button>
+        <button class="ba-btn ba-btn-secondary" onclick="dismissLeadBox()">No thanks</button>
+      </div>
+
+      <form class="ba-chat-input-row" onsubmit="handleSubmit(event)">
+        <input class="ba-input" id="chat-input" placeholder="Ask a question..." autocomplete="off">
+        <button type="submit" class="ba-btn" id="send-btn">Ask</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const tenantId = params.get('tenant_id');
+    let sessionId = 'sess_' + Math.random().toString(36).slice(2, 10);
+    let lastAnswer = null;
+
+    if (!tenantId) {
+      document.getElementById('chat-thread').innerHTML = '<div class="ba-msg-assistant">Missing tenant_id in the URL.</div>';
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+    }
+
+    async function loadTenant() {
+      try {
+        const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('business-name').innerText = data.business_name || '';
+          const thread = document.getElementById('chat-thread');
+          thread.innerHTML = `<div class="ba-msg-assistant">${escapeHtml(data.welcome_message || 'Hi! How can I help you today?')}</div>`;
+        }
+      } catch (e) { /* not fatal — the chat still works without a tenant name shown */ }
+    }
+    loadTenant();
+
+    async function handleSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('chat-input');
+      const query = input.value.trim();
+      if (!query || !tenantId) return;
+      const thread = document.getElementById('chat-thread');
+      const btn = document.getElementById('send-btn');
+
+      thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-user">${escapeHtml(query)}</div>`);
+      input.value = '';
+      btn.disabled = true;
+      btn.innerText = '...';
+
+      try {
+        const res = await fetch(`/api/ask?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST',
+          headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ query, session_id: sessionId }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          const detail = data.detail;
+          const msg = typeof detail === 'object' ? (detail.error || 'Something went wrong.') : (detail || 'Something went wrong.');
+          thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">${escapeHtml(msg)}</div>`);
+          return;
+        }
+
+        sessionId = data.session_id;
+        lastAnswer = data;
+        const text = data.status === 'answered' ? data.answer_text : data.abstention_reason;
+        thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">${escapeHtml(text)}</div>`);
+
+        if (data.whatsapp_url) {
+          thread.insertAdjacentHTML('beforeend',
+            `<div class="ba-msg-assistant"><a href="${data.whatsapp_url}" target="_blank" rel="noopener" class="ba-btn">Continue on WhatsApp &rarr;</a></div>`);
+        }
+        if (data.shows_buying_intent) {
+          document.getElementById('lead-capture-box').style.display = 'block';
+        }
+      } catch (err) {
+        thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">Connection error: ${escapeHtml(err.message)}</div>`);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Ask';
+        thread.scrollTop = thread.scrollHeight;
+      }
+    }
+
+    function dismissLeadBox() {
+      document.getElementById('lead-capture-box').style.display = 'none';
+    }
+
+    async function submitLead() {
+      const phone = document.getElementById('lead-phone').value.trim();
+      const email = document.getElementById('lead-email').value.trim();
+      if (!phone && !email) { alert('Please share a phone number or email so we can reach you.'); return; }
+      try {
+        const res = await fetch(`/api/leads?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            name: document.getElementById('lead-name').value.trim() || null,
+            phone: phone || null,
+            email: email || null,
+            message: lastAnswer ? lastAnswer.answer_text : null,
+          }),
+        });
+        if (res.ok) {
+          dismissLeadBox();
+          document.getElementById('chat-thread').insertAdjacentHTML('beforeend',
+            '<div class="ba-msg-assistant">Thanks! We\'ll be in touch soon.</div>');
+        }
+      } catch (e) { /* silent — non-critical UX path */ }
+    }
+  </script>
+</body>
+</html>

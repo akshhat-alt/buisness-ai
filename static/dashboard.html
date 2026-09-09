@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Business AI</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+</head>
+<body>
+  <nav class="ba-navbar">
+    <a href="/">Business AI</a>
+    <a href="#" data-signout>Sign Out</a>
+  </nav>
+
+  <div class="ba-container">
+    <div id="admin-panel" class="ba-card" style="display: none;">
+      <h2 style="font-size: 1.125rem; margin-top: 0;">Platform Admin — All Businesses</h2>
+      <p class="ba-muted">New signups land here in "provisioning" until activated.</p>
+      <div id="admin-tenants-list"></div>
+    </div>
+
+    <div class="ba-card">
+      <h1 style="font-size: 1.5rem; margin-top: 0;">Your Assistant</h1>
+      <p id="status-line" class="ba-muted"></p>
+      <a id="chat-link" href="#" target="_blank" class="ba-btn">Open Chat &rarr;</a>
+    </div>
+
+    <div class="ba-metric">
+      <div class="ba-metric-box"><div class="ba-muted">Questions Asked</div><div class="ba-metric-val" id="m-total">—</div></div>
+      <div class="ba-metric-box"><div class="ba-muted">Answered</div><div class="ba-metric-val" id="m-answered">—</div></div>
+      <div class="ba-metric-box"><div class="ba-muted">Leads Captured</div><div class="ba-metric-val" id="m-leads">—</div></div>
+      <div class="ba-metric-box"><div class="ba-muted">Buying Interest Shown</div><div class="ba-metric-val" id="m-intent">—</div></div>
+    </div>
+
+    <div class="ba-card">
+      <h2 style="font-size: 1.125rem;">Knowledge Gaps — questions your assistant couldn't answer</h2>
+      <ul id="gaps-list" class="ba-muted"></ul>
+    </div>
+
+    <div class="ba-card">
+      <h2 style="font-size: 1.125rem;">Add Knowledge</h2>
+      <div class="ba-field">
+        <label class="ba-label">Add your website</label>
+        <div style="display:flex; gap:8px;">
+          <input class="ba-input" id="website-url" placeholder="https://yourbusiness.com">
+          <button class="ba-btn" onclick="ingestWebsite()">Add</button>
+        </div>
+      </div>
+      <div class="ba-field">
+        <label class="ba-label">Or upload a PDF / text file (FAQ, menu, brochure)</label>
+        <input type="file" id="upload-file" accept=".pdf,.txt,.md">
+        <button class="ba-btn" onclick="uploadFile()">Upload</button>
+      </div>
+      <div id="knowledge-status" class="ba-muted"></div>
+      <h3 style="font-size: 0.9375rem;">Sources added</h3>
+      <table class="ba-table" id="sources-table"><tbody></tbody></table>
+    </div>
+
+    <div class="ba-card">
+      <h2 style="font-size: 1.125rem;">Leads</h2>
+      <table class="ba-table" id="leads-table">
+        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>When</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="ba-card">
+      <h2 style="font-size: 1.125rem;">Assistant Settings</h2>
+      <div class="ba-field"><label class="ba-label">Assistant Name</label><input class="ba-input" id="cfg-assistant-name"></div>
+      <div class="ba-field"><label class="ba-label">Welcome Message</label><input class="ba-input" id="cfg-welcome"></div>
+      <div class="ba-field"><label class="ba-label">WhatsApp Number (with country code, no +, e.g. 919876543210)</label><input class="ba-input" id="cfg-whatsapp"></div>
+      <button class="ba-btn" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script>
+    if (!BizAuth.requireAuth('/login')) { /* redirecting */ }
+    const tenantId = BizAuth.getTenantId();
+    const role = BizAuth.getRole();
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+    }
+
+    async function loadDashboard() {
+      if (role === 'platform_admin') {
+        document.getElementById('admin-panel').style.display = 'block';
+        loadAdminPanel();
+        if (!tenantId) return; // platform_admin with no own business — admin panel is enough
+      }
+
+      document.getElementById('chat-link').href = `/chat?tenant_id=${encodeURIComponent(tenantId)}`;
+
+      const tRes = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (tRes.ok) {
+        const t = await tRes.json();
+        document.getElementById('status-line').innerText = `Status: ${t.status}`;
+        document.getElementById('cfg-assistant-name').value = t.assistant_name || '';
+        document.getElementById('cfg-welcome').value = t.welcome_message || '';
+        document.getElementById('cfg-whatsapp').value = t.whatsapp_number || '';
+      }
+
+      const aRes = await fetch(`/api/analytics?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (aRes.ok) {
+        const a = await aRes.json();
+        document.getElementById('m-total').innerText = a.total_questions;
+        document.getElementById('m-answered').innerText = a.answered_count;
+        document.getElementById('m-intent').innerText = a.buying_intent_count;
+        document.getElementById('gaps-list').innerHTML = a.recent_knowledge_gaps.length
+          ? a.recent_knowledge_gaps.map(g => `<li>${escapeHtml(g)}</li>`).join('')
+          : '<li>No gaps yet — nice.</li>';
+      }
+
+      const lRes = await fetch(`/api/leads?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (lRes.ok) {
+        const l = await lRes.json();
+        document.getElementById('m-leads').innerText = l.leads.length;
+        document.querySelector('#leads-table tbody').innerHTML = l.leads.map(lead => `
+          <tr><td>${escapeHtml(lead.name || '—')}</td><td>${escapeHtml(lead.phone || '—')}</td>
+          <td>${escapeHtml(lead.email || '—')}</td><td>${escapeHtml((lead.message || '').slice(0, 60))}</td>
+          <td>${escapeHtml(lead.created_at)}</td></tr>`).join('');
+      }
+
+      const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (sRes.ok) {
+        const s = await sRes.json();
+        document.querySelector('#sources-table tbody').innerHTML = s.sources.map(src => `
+          <tr><td>${escapeHtml(src.label)}</td><td>${escapeHtml(src.source_type)}</td><td>${src.chunks_indexed} chunks</td></tr>`).join('');
+      }
+    }
+    loadDashboard();
+
+    async function ingestWebsite() {
+      const url = document.getElementById('website-url').value.trim();
+      if (!url) return;
+      const statusEl = document.getElementById('knowledge-status');
+      statusEl.innerText = 'Fetching and indexing...';
+      try {
+        const res = await fetch(`/api/knowledge/website?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ url }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed.');
+        statusEl.innerText = `Added! ${data.chunks_indexed} chunks indexed.`;
+        loadDashboard();
+      } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
+    }
+
+    async function uploadFile() {
+      const fileInput = document.getElementById('upload-file');
+      if (!fileInput.files.length) return;
+      const statusEl = document.getElementById('knowledge-status');
+      statusEl.innerText = 'Uploading and indexing...';
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      try {
+        const res = await fetch(`/api/knowledge/upload?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders(), body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed.');
+        statusEl.innerText = `Added! ${data.chunks_indexed} chunks indexed.`;
+        loadDashboard();
+      } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
+    }
+
+    async function saveSettings() {
+      await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          assistant_name: document.getElementById('cfg-assistant-name').value.trim(),
+          welcome_message: document.getElementById('cfg-welcome').value.trim(),
+          whatsapp_number: document.getElementById('cfg-whatsapp').value.trim(),
+        }),
+      });
+      alert('Saved.');
+    }
+
+    async function loadAdminPanel() {
+      const res = await fetch('/api/v1/admin/tenants', { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      document.getElementById('admin-tenants-list').innerHTML = data.tenants.map(t => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--ba-border);">
+          <div><strong>${escapeHtml(t.business_name)}</strong> — ${escapeHtml(t.tenant_id)} — <span style="text-transform:uppercase; font-weight:600;">${escapeHtml(t.status)}</span></div>
+          <div>
+            ${t.status === 'provisioning' ? `<button class="ba-btn" onclick="adminActivate('${t.tenant_id}')">Activate</button>` : ''}
+            ${t.status === 'active' ? `<button class="ba-btn ba-btn-secondary" onclick="adminSuspend('${t.tenant_id}')">Suspend</button>` : ''}
+          </div>
+        </div>`).join('');
+    }
+
+    async function adminActivate(id) {
+      const res = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(id)}/activate`, { method: 'POST', headers: BizAuth.getAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) { alert('Cannot activate: ' + (data.detail || 'unknown error')); return; }
+      loadAdminPanel();
+    }
+    async function adminSuspend(id) {
+      await fetch(`/api/v1/admin/tenants/${encodeURIComponent(id)}/suspend`, { method: 'POST', headers: BizAuth.getAuthHeaders() });
+      loadAdminPanel();
+    }
+  </script>
+</body>
+</html>
