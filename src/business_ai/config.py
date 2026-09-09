@@ -61,6 +61,10 @@ class Settings:
     # Server
     port: int
 
+    # Kill switch: set BUSINESS_AI_ENABLED=false to pause all AI operations
+    # instantly (e.g. a cost spike or incident) without a redeploy.
+    enabled: bool
+
 
 def load_settings() -> Settings:
     raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
@@ -88,6 +92,7 @@ def load_settings() -> Settings:
         max_query_length=_int_env("MAX_QUERY_LENGTH", 1000),
         default_whatsapp_number=(os.getenv("DEFAULT_WHATSAPP_NUMBER") or "").strip() or None,
         port=_int_env("PORT", 8000),
+        enabled=_bool_env("BUSINESS_AI_ENABLED", True),
     )
 
 
