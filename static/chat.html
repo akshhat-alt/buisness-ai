@@ -4,16 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat — Business AI</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    body { background: var(--ba-surface-sunken); }
+    .chat-shell { max-width: 560px; margin: 0 auto; padding: 20px 16px 24px; min-height: 100vh; display: flex; flex-direction: column; }
+    .chat-header { display: flex; align-items: center; gap: 10px; padding: 4px 4px 16px; }
+    .chat-header-mark {
+      width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+      background: linear-gradient(155deg, var(--ba-accent), var(--ba-primary-strong));
+      display: flex; align-items: center; justify-content: center;
+    }
+    .chat-header-mark svg { width: 16px; height: 16px; }
+    .chat-header-name { font-weight: 700; font-size: 0.9375rem; }
+    .chat-header-sub { font-size: 0.75rem; color: var(--ba-muted); display: flex; align-items: center; gap: 5px; }
+    .chat-header-sub .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ba-accent); box-shadow: 0 0 0 3px var(--ba-primary-soft); }
+    .chat-card { background: var(--ba-surface); border: 1px solid var(--ba-border); border-radius: var(--ba-radius-lg); box-shadow: var(--ba-shadow-md); padding: 8px 18px 16px; flex: 1; display: flex; flex-direction: column; }
+    .chat-footer-note { text-align: center; font-size: 0.75rem; color: var(--ba-faint); margin-top: 14px; }
+    .cite-chip { display: inline-block; margin-top: 6px; font-size: 0.6875rem; font-weight: 700; color: var(--ba-primary); background: var(--ba-primary-soft); padding: 2px 9px; border-radius: 999px; }
+  </style>
 </head>
 <body>
-  <nav class="ba-navbar">
-    <a href="/">Business AI</a>
-    <span id="business-name" class="ba-muted"></span>
-  </nav>
+  <div class="chat-shell">
+    <div class="chat-header">
+      <div class="chat-header-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#06110D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4 3v-3H6a2 2 0 0 1-2-2Z"/></svg></div>
+      <div>
+        <div class="chat-header-name" id="business-name">Business AI</div>
+        <div class="chat-header-sub"><span class="live-dot"></span> Usually replies instantly</div>
+      </div>
+    </div>
 
-  <div class="ba-container">
-    <div class="ba-card">
+    <div class="chat-card">
       <div id="chat-thread" class="ba-chat-thread" role="log" aria-live="polite" aria-label="Conversation"></div>
 
       <div id="lead-capture-box" class="ba-card ba-alert-warn" style="display: none;">
@@ -22,7 +43,7 @@
         <div class="ba-field"><input class="ba-input" id="lead-phone" placeholder="Phone number"></div>
         <div class="ba-field"><input class="ba-input" id="lead-email" placeholder="Or email address"></div>
         <button class="ba-btn" onclick="submitLead()">Share My Contact Info</button>
-        <button class="ba-btn ba-btn-secondary" onclick="dismissLeadBox()">No thanks</button>
+        <button class="ba-btn ba-btn-ghost" onclick="dismissLeadBox()">No thanks</button>
       </div>
 
       <form class="ba-chat-input-row" onsubmit="handleSubmit(event)">
@@ -30,6 +51,7 @@
         <button type="submit" class="ba-btn" id="send-btn">Ask</button>
       </form>
     </div>
+    <div class="chat-footer-note">Powered by Business AI — answers are grounded in this business's own content.</div>
   </div>
 
   <script src="/static/js/auth.js"></script>
@@ -53,13 +75,24 @@
         const res = await fetch(`/api/tenant/public?tenant_id=${encodeURIComponent(tenantId)}`);
         if (res.ok) {
           const data = await res.json();
-          document.getElementById('business-name').innerText = data.business_name || '';
+          document.getElementById('business-name').innerText = data.business_name || 'Business AI';
           const thread = document.getElementById('chat-thread');
           thread.innerHTML = `<div class="ba-msg-assistant">${escapeHtml(data.welcome_message || 'Hi! How can I help you today?')}</div>`;
         }
       } catch (e) { /* not fatal — the chat still works without a tenant name shown */ }
     }
     loadTenant();
+
+    function showTyping() {
+      const thread = document.getElementById('chat-thread');
+      const el = document.createElement('div');
+      el.className = 'ba-msg-assistant';
+      el.id = 'typing-indicator';
+      el.innerHTML = '<div class="ba-typing"><span></span><span></span><span></span></div>';
+      thread.appendChild(el);
+      thread.scrollTop = thread.scrollHeight;
+      return el;
+    }
 
     async function handleSubmit(e) {
       e.preventDefault();
@@ -72,7 +105,8 @@
       thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-user">${escapeHtml(query)}</div>`);
       input.value = '';
       btn.disabled = true;
-      btn.innerText = '...';
+      thread.scrollTop = thread.scrollHeight;
+      const typingEl = showTyping();
 
       try {
         const res = await fetch(`/api/ask?tenant_id=${encodeURIComponent(tenantId)}`, {
@@ -81,6 +115,7 @@
           body: JSON.stringify({ query, session_id: sessionId }),
         });
         const data = await res.json();
+        typingEl.remove();
 
         if (!res.ok) {
           const detail = data.detail;
@@ -92,20 +127,22 @@
         sessionId = data.session_id;
         lastAnswer = data;
         const text = data.status === 'answered' ? data.answer_text : data.abstention_reason;
-        thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">${escapeHtml(text)}</div>`);
+        const citeChip = (data.status === 'answered' && data.citations_used && data.citations_used.length)
+          ? `<div class="cite-chip">Sourced from ${escapeHtml(data.citations_used[0].label)}</div>` : '';
+        thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">${escapeHtml(text)}${citeChip}</div>`);
 
         if (data.whatsapp_url) {
           thread.insertAdjacentHTML('beforeend',
-            `<div class="ba-msg-assistant"><a href="${data.whatsapp_url}" target="_blank" rel="noopener" class="ba-btn">Continue on WhatsApp &rarr;</a></div>`);
+            `<div class="ba-msg-assistant"><a href="${data.whatsapp_url}" target="_blank" rel="noopener" class="ba-btn ba-btn-sm">Continue on WhatsApp &rarr;</a></div>`);
         }
         if (data.shows_buying_intent) {
           document.getElementById('lead-capture-box').style.display = 'block';
         }
       } catch (err) {
+        typingEl.remove();
         thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">Connection error: ${escapeHtml(err.message)}</div>`);
       } finally {
         btn.disabled = false;
-        btn.innerText = 'Ask';
         thread.scrollTop = thread.scrollHeight;
       }
     }
