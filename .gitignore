@@ -1,0 +1,40 @@
+# Python & Bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.so
+*.egg-info/
+build/
+dist/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+uv.lock
+
+# Environment Variables & Secrets (NEVER COMMIT REAL KEYS)
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Data (per-tenant runtime data, never committed)
+data/
+*.db
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
