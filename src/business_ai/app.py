@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -36,6 +37,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from business_ai.analytics import AnalyticsStore
+from business_ai.digest import has_digest_content, render_owner_digest
+from business_ai.email_sender import EmailSendError, EmailSender
 from business_ai.auth import Principal, UserStore, create_access_token, resolve_principal, AuthenticationError
 from business_ai.config import Settings, load_settings, validate_environment
 from business_ai.generation import (
@@ -95,6 +98,11 @@ class Services:
             model_name=self.settings.llm_model, api_key=_openai_key(), max_output_tokens=self.settings.max_output_tokens
         )
 
+    def email_sender(self) -> EmailSender:
+        return EmailSender(
+            api_key=self.settings.resend_api_key or "", from_address=self.settings.digest_from_email or ""
+        )
+
 
 def _openai_key() -> str:
     import os
@@ -138,6 +146,10 @@ class LeadRequest(BaseModel):
 class WebsiteIngestRequest(BaseModel):
     url: str
     label: str | None = None
+
+
+class GapPublishRequest(BaseModel):
+    answer_text: str = Field(min_length=1, max_length=2000)
 
 
 class TenantConfigUpdate(BaseModel):
@@ -397,6 +409,17 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return svc.analytics_store.summary_for_tenant(tenant_id).model_dump()
 
+    @app.get("/api/analytics/gaps")
+    def list_gaps(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_ANALYTICS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"gaps": [g.model_dump() for g in svc.analytics_store.list_open_gaps(tenant_id)]}
+
     # -------------------------------------------------------------- knowledge
     @app.post("/api/knowledge/website")
     def ingest_website(request: WebsiteIngestRequest, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
@@ -482,6 +505,61 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"sources": [s.model_dump() for s in svc.source_store.list_for_tenant(tenant_id)]}
 
+    def _load_gap_or_404(tenant_id: str, turn_id: str):
+        gap = svc.analytics_store.get_gap(tenant_id, turn_id)
+        if gap is None:
+            raise HTTPException(status_code=404, detail=f"No open knowledge gap '{turn_id}' for this business.")
+        return gap
+
+    @app.post("/api/knowledge/gaps/{turn_id}/draft")
+    def draft_gap_answer(turn_id: str, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.INGEST_KNOWLEDGE, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        gap = _load_gap_or_404(tenant_id, turn_id)
+        try:
+            draft = svc.generator().draft_faq_answer(
+                business_name=tenant.business_name, assistant_name=tenant.assistant_name, question=gap.query
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Could not generate a draft: {exc}") from exc
+        return {"turn_id": turn_id, "question": gap.query, "draft_answer": draft}
+
+    @app.post("/api/knowledge/gaps/{turn_id}/publish")
+    def publish_gap_answer(
+        turn_id: str, request: GapPublishRequest, tenant_id: str, authorization: str | None = Header(default=None)
+    ) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.INGEST_KNOWLEDGE, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        gap = _load_gap_or_404(tenant_id, turn_id)
+        text = f"Q: {gap.query}\nA: {request.answer_text}"
+        source_id = f"gap_{turn_id}"
+        try:
+            result = ingest_text(
+                text=text, tenant_id=tenant_id, source_id=source_id, source_label=f"FAQ: {gap.query[:60]}",
+                source_url=None, embeddings=svc.embeddings(), store=svc.vector_store,
+            )
+        except IngestionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        svc.source_store.record(
+            tenant_id=tenant_id, source_id=source_id, label=f"FAQ: {gap.query[:60]}",
+            source_type="faq", chunks_indexed=result.chunks_indexed,
+        )
+        svc.analytics_store.mark_gap_resolved(tenant_id, query=gap.query)
+        return {"source_id": source_id, "chunks_indexed": result.chunks_indexed}
+
     # -------------------------------------------------------------- tenant self-config
     @app.get("/api/tenant/public")
     def get_tenant_public(tenant_id: str) -> dict:
@@ -561,6 +639,54 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         updated = svc.tenant_registry.update_status(target_tenant_id, TenantStatus.SUSPENDED)
         return updated.model_dump()
+
+    @app.post("/api/v1/admin/digest/run")
+    def admin_run_digest(authorization: str | None = Header(default=None)) -> dict:
+        """Sends the owner digest to every ACTIVE tenant with activity in
+        the window. Meant to be triggered by an external scheduler
+        (Railway cron / GitHub Actions scheduled workflow hitting this
+        endpoint) — no in-process scheduler here; that would be a new
+        background-thread lifecycle to manage for something that only
+        needs to fire once a day."""
+        principal = _require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        if not svc.settings.resend_api_key or not svc.settings.digest_from_email:
+            return {
+                "sent": [], "skipped": [], "failed": [],
+                "note": "Digest email is not configured (RESEND_API_KEY / DIGEST_FROM_EMAIL).",
+            }
+
+        sender = svc.email_sender()
+        since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - svc.settings.digest_window_hours * 3600))
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+
+        sent: list[str] = []
+        skipped: list[dict] = []
+        failed: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "not active"})
+                continue
+
+            new_leads = svc.lead_store.list_for_tenant(tenant.tenant_id, since_iso=since_iso)
+            analytics = svc.analytics_store.summary_for_tenant(tenant.tenant_id, since_iso=since_iso)
+            if not has_digest_content(new_leads, analytics):
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no activity in window"})
+                continue
+
+            subject, html = render_owner_digest(
+                tenant, new_leads=new_leads, analytics=analytics,
+                window_hours=svc.settings.digest_window_hours, dashboard_url=dashboard_url,
+            )
+            try:
+                sender.send(to=tenant.owner_email, subject=subject, html_body=html)
+                sent.append(tenant.tenant_id)
+            except EmailSendError as exc:
+                failed.append({"tenant_id": tenant.tenant_id, "error": str(exc)})
+
+        return {"sent": sent, "skipped": skipped, "failed": failed}
 
     # -------------------------------------------------------------- static pages
     for route, filename in (
