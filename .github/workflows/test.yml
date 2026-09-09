@@ -1,0 +1,27 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        env:
+          OPENAI_API_KEY: sk-test-ci-placeholder
+          JWT_SECRET_KEY: test-secret-for-ci-only-not-a-real-secret-32b
+          ADMIN_SECRET: test-admin-secret-for-ci-only-not-real
+        run: pytest -q
