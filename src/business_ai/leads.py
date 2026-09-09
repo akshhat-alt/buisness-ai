@@ -108,12 +108,21 @@ class LeadStore:
             conn.commit()
         return lead
 
-    def list_for_tenant(self, tenant_id: str, *, limit: int = 200) -> list[Lead]:
+    def list_for_tenant(self, tenant_id: str, *, limit: int = 200, since_iso: str | None = None) -> list[Lead]:
+        # created_at is "%Y-%m-%dT%H:%M:%SZ" — lexicographically sortable,
+        # so a plain string comparison is a correct time-window filter
+        # without needing a separate epoch column.
         with self._lock, self._db() as conn:
-            rows = conn.execute(
-                "SELECT * FROM leads WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?",
-                (tenant_id, limit),
-            ).fetchall()
+            if since_iso:
+                rows = conn.execute(
+                    "SELECT * FROM leads WHERE tenant_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT ?",
+                    (tenant_id, since_iso, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM leads WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?",
+                    (tenant_id, limit),
+                ).fetchall()
             return [Lead(**dict(r)) for r in rows]
 
     def count_for_tenant(self, tenant_id: str) -> int:

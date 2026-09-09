@@ -40,6 +40,13 @@ class AnalyticsSummary(BaseModel):
     recent_knowledge_gaps: list[str]  # recent questions the assistant couldn't answer
 
 
+class KnowledgeGap(BaseModel):
+    turn_id: str
+    tenant_id: str
+    query: str
+    created_at: str
+
+
 class AnalyticsStore:
     """Thread-safe SQLite store for conversation turn logging."""
 
@@ -76,6 +83,17 @@ class AnalyticsStore:
                 )
                 """
             )
+            # Additive column added after the table's initial shape.
+            # CREATE TABLE IF NOT EXISTS silently no-ops on a database that
+            # already has this table without the new column — caught in
+            # dev when an existing local data/analytics.db from before this
+            # change crashed every gap-listing call with "no such column:
+            # resolved". Guarded ALTER TABLE self-heals any existing
+            # database instead of requiring a manual reset.
+            try:
+                conn.execute("ALTER TABLE turns ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_tenant ON turns(tenant_id)")
             conn.commit()
 
@@ -114,25 +132,30 @@ class AnalyticsStore:
             conn.commit()
         return turn
 
-    def summary_for_tenant(self, tenant_id: str, *, gap_limit: int = 10) -> AnalyticsSummary:
+    def summary_for_tenant(self, tenant_id: str, *, gap_limit: int = 10, since_iso: str | None = None) -> AnalyticsSummary:
+        # created_at is "%Y-%m-%dT%H:%M:%SZ" — lexicographically sortable,
+        # so a plain string comparison is a correct time-window filter.
+        clause = "tenant_id = ?" + (" AND created_at >= ?" if since_iso else "")
+        params: tuple = (tenant_id, since_iso) if since_iso else (tenant_id,)
+
         with self._lock, self._db() as conn:
-            total = conn.execute("SELECT COUNT(*) c FROM turns WHERE tenant_id = ?", (tenant_id,)).fetchone()["c"]
+            total = conn.execute(f"SELECT COUNT(*) c FROM turns WHERE {clause}", params).fetchone()["c"]
             answered = conn.execute(
-                "SELECT COUNT(*) c FROM turns WHERE tenant_id = ? AND answer_status = 'answered'", (tenant_id,)
+                f"SELECT COUNT(*) c FROM turns WHERE {clause} AND answer_status = 'answered'", params
             ).fetchone()["c"]
             abstained = conn.execute(
-                "SELECT COUNT(*) c FROM turns WHERE tenant_id = ? AND answer_status = 'insufficient_evidence'", (tenant_id,)
+                f"SELECT COUNT(*) c FROM turns WHERE {clause} AND answer_status = 'insufficient_evidence'", params
             ).fetchone()["c"]
             buying_intent = conn.execute(
-                "SELECT COUNT(*) c FROM turns WHERE tenant_id = ? AND shows_buying_intent = 1", (tenant_id,)
+                f"SELECT COUNT(*) c FROM turns WHERE {clause} AND shows_buying_intent = 1", params
             ).fetchone()["c"]
             handoff = conn.execute(
-                "SELECT COUNT(*) c FROM turns WHERE tenant_id = ? AND suggested_handoff = 1", (tenant_id,)
+                f"SELECT COUNT(*) c FROM turns WHERE {clause} AND suggested_handoff = 1", params
             ).fetchone()["c"]
             gap_rows = conn.execute(
-                "SELECT query FROM turns WHERE tenant_id = ? AND answer_status = 'insufficient_evidence' "
+                f"SELECT query FROM turns WHERE {clause} AND answer_status = 'insufficient_evidence' AND resolved = 0 "
                 "ORDER BY created_at DESC LIMIT ?",
-                (tenant_id, gap_limit),
+                params + (gap_limit,),
             ).fetchall()
 
         return AnalyticsSummary(
@@ -143,3 +166,43 @@ class AnalyticsStore:
             handoff_suggested_count=handoff,
             recent_knowledge_gaps=[r["query"] for r in gap_rows],
         )
+
+    def list_open_gaps(self, tenant_id: str, *, limit: int = 20) -> list[KnowledgeGap]:
+        """Unresolved knowledge gaps (most recent occurrence per question),
+        for the dashboard's gap-closer UI — richer than the plain string
+        list in AnalyticsSummary because publishing an answer needs a
+        turn_id to mark resolved."""
+        with self._lock, self._db() as conn:
+            rows = conn.execute(
+                """
+                SELECT turn_id, tenant_id, query, MAX(created_at) as created_at
+                FROM turns
+                WHERE tenant_id = ? AND answer_status = 'insufficient_evidence' AND resolved = 0
+                GROUP BY query
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (tenant_id, limit),
+            ).fetchall()
+            return [KnowledgeGap(**dict(r)) for r in rows]
+
+    def get_gap(self, tenant_id: str, turn_id: str) -> KnowledgeGap | None:
+        with self._lock, self._db() as conn:
+            row = conn.execute(
+                "SELECT turn_id, tenant_id, query, created_at FROM turns WHERE tenant_id = ? AND turn_id = ?",
+                (tenant_id, turn_id),
+            ).fetchone()
+            return KnowledgeGap(**dict(row)) if row else None
+
+    def mark_gap_resolved(self, tenant_id: str, *, query: str) -> None:
+        """Marks every occurrence of this exact question (for this tenant)
+        as resolved, so it stops reappearing after the owner publishes an
+        answer for it — the gap-closer UI groups by question text, not a
+        single turn_id, since the same question may have been asked (and
+        logged as a separate turn) more than once before it was answered."""
+        with self._lock, self._db() as conn:
+            conn.execute(
+                "UPDATE turns SET resolved = 1 WHERE tenant_id = ? AND query = ? AND answer_status = 'insufficient_evidence'",
+                (tenant_id, query),
+            )
+            conn.commit()
