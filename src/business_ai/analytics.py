@@ -28,6 +28,7 @@ class ConversationTurn(BaseModel):
     answer_status: str  # "answered" | "insufficient_evidence" | "error"
     shows_buying_intent: bool = False
     suggested_handoff: bool = False
+    shows_dissatisfaction: bool = False
     created_at: str
 
 
@@ -37,6 +38,7 @@ class AnalyticsSummary(BaseModel):
     abstention_count: int
     buying_intent_count: int
     handoff_suggested_count: int
+    dissatisfaction_count: int
     recent_knowledge_gaps: list[str]  # recent questions the assistant couldn't answer
 
 
@@ -94,6 +96,10 @@ class AnalyticsStore:
                 conn.execute("ALTER TABLE turns ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            try:
+                conn.execute("ALTER TABLE turns ADD COLUMN shows_dissatisfaction INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_tenant ON turns(tenant_id)")
             conn.commit()
 
@@ -106,6 +112,7 @@ class AnalyticsStore:
         answer_status: str,
         shows_buying_intent: bool = False,
         suggested_handoff: bool = False,
+        shows_dissatisfaction: bool = False,
     ) -> ConversationTurn:
         turn = ConversationTurn(
             turn_id=f"turn_{secrets.token_hex(8)}",
@@ -115,18 +122,20 @@ class AnalyticsStore:
             answer_status=answer_status,
             shows_buying_intent=shows_buying_intent,
             suggested_handoff=suggested_handoff,
+            shows_dissatisfaction=shows_dissatisfaction,
             created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         )
         with self._lock, self._db() as conn:
             conn.execute(
                 """
                 INSERT INTO turns (turn_id, tenant_id, session_id, query, answer_status,
-                    shows_buying_intent, suggested_handoff, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    shows_buying_intent, suggested_handoff, shows_dissatisfaction, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     turn.turn_id, turn.tenant_id, turn.session_id, turn.query, turn.answer_status,
-                    int(turn.shows_buying_intent), int(turn.suggested_handoff), turn.created_at,
+                    int(turn.shows_buying_intent), int(turn.suggested_handoff), int(turn.shows_dissatisfaction),
+                    turn.created_at,
                 ),
             )
             conn.commit()
@@ -152,6 +161,9 @@ class AnalyticsStore:
             handoff = conn.execute(
                 f"SELECT COUNT(*) c FROM turns WHERE {clause} AND suggested_handoff = 1", params
             ).fetchone()["c"]
+            dissatisfaction = conn.execute(
+                f"SELECT COUNT(*) c FROM turns WHERE {clause} AND shows_dissatisfaction = 1", params
+            ).fetchone()["c"]
             gap_rows = conn.execute(
                 f"SELECT query FROM turns WHERE {clause} AND answer_status = 'insufficient_evidence' AND resolved = 0 "
                 "ORDER BY created_at DESC LIMIT ?",
@@ -164,6 +176,7 @@ class AnalyticsStore:
             abstention_count=abstained,
             buying_intent_count=buying_intent,
             handoff_suggested_count=handoff,
+            dissatisfaction_count=dissatisfaction,
             recent_knowledge_gaps=[r["query"] for r in gap_rows],
         )
 
