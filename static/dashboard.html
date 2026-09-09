@@ -4,90 +4,211 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — Business AI</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .dash-shell { display: grid; grid-template-columns: 220px 1fr; align-items: start; }
+    .dash-sidebar {
+      position: sticky; top: 65px; align-self: start;
+      height: calc(100vh - 65px); overflow-y: auto;
+      padding: 24px 12px; border-right: 1px solid var(--ba-border);
+    }
+    .dash-nav-link {
+      display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--ba-radius-sm);
+      color: var(--ba-ink-soft); text-decoration: none; font-size: 0.875rem; font-weight: 600; margin-bottom: 2px;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .dash-nav-link:hover { background: var(--ba-surface-sunken); color: var(--ba-ink); }
+    .dash-nav-link svg { width: 17px; height: 17px; flex-shrink: 0; opacity: 0.85; }
+    .dash-main { padding: 28px 32px 80px; min-width: 0; }
+    .dash-section { scroll-margin-top: 80px; margin-bottom: 40px; }
+    .dash-section-head { margin-bottom: 16px; }
+    .dash-section-head h2 { font-size: 1.125rem; margin-bottom: 4px; }
+
+    .attn-banner { border-radius: var(--ba-radius-lg); padding: 24px 26px; margin-bottom: 28px; border: 1px solid var(--ba-border); background: var(--ba-surface); box-shadow: var(--ba-shadow-md); }
+    .attn-banner.has-items { background: linear-gradient(180deg, var(--ba-surface), var(--ba-surface-2)); }
+    .attn-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+    .attn-count { font-family: var(--ba-font-serif); font-size: 2rem; font-weight: 600; }
+    .attn-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 16px; }
+    .attn-item {
+      display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: var(--ba-radius); text-decoration: none; color: inherit;
+      border: 1px solid var(--ba-border); background: var(--ba-surface); transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .attn-item:hover { transform: translateY(-2px); box-shadow: var(--ba-shadow-sm); }
+    .attn-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+    .attn-dot.amber { background: #C99A2E; box-shadow: 0 0 0 3px var(--ba-warn-bg); }
+    .attn-dot.green { background: var(--ba-accent); box-shadow: 0 0 0 3px var(--ba-primary-soft); }
+    .attn-dot.red { background: #C24A38; box-shadow: 0 0 0 3px var(--ba-error-bg); }
+    .attn-item-title { font-weight: 700; font-size: 0.875rem; margin-bottom: 2px; }
+    .attn-item-desc { font-size: 0.8125rem; color: var(--ba-muted); }
+    .attn-empty { display: flex; align-items: center; gap: 12px; color: var(--ba-ink-soft); }
+    .attn-empty svg { width: 30px; height: 30px; color: var(--ba-accent); flex-shrink: 0; }
+
+    .gap-card { background: var(--ba-surface-2); border: 1px solid var(--ba-border); border-radius: var(--ba-radius); padding: 18px; margin-bottom: 12px; }
+    .gap-step-badge { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ba-muted); }
+
+    .staff-panel { background: #12201B; border-radius: var(--ba-radius-lg); padding: 4px; box-shadow: var(--ba-shadow-md); }
+    .staff-panel-inner { background: #0F1613; border-radius: calc(var(--ba-radius-lg) - 4px); padding: 18px 20px 12px; }
+    .staff-panel .ba-chat-thread { min-height: 200px; max-height: 280px; }
+    .staff-panel .ba-msg-assistant { background: #182119; border-color: rgba(244,242,234,0.1); color: #E7E5DC; }
+    .staff-panel .ba-msg-user { background: var(--ba-accent); }
+    .staff-panel .ba-chat-input-row { border-top-color: rgba(244,242,234,0.1); }
+    .staff-panel .ba-input { background: #182119; border-color: rgba(244,242,234,0.14); color: #F4F2EA; }
+    .staff-panel .ba-input::placeholder { color: #6E766F; }
+    .staff-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700; color: #4FC498; margin-bottom: 12px; }
+    .staff-badge svg { width: 14px; height: 14px; }
+
+    .admin-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 4px; border-bottom: 1px solid var(--ba-border); }
+    .admin-row:last-child { border-bottom: none; }
+
+    .mobile-tabbar { display: none; }
+
+    @media (max-width: 900px) {
+      .dash-shell { grid-template-columns: 1fr; }
+      .dash-sidebar { display: none; }
+      .dash-main { padding: 20px 16px 90px; }
+      .mobile-tabbar {
+        display: flex; gap: 6px; overflow-x: auto; padding: 10px 12px; position: sticky; top: 61px; z-index: 15;
+        background: var(--ba-surface); border-bottom: 1px solid var(--ba-border);
+        -webkit-overflow-scrolling: touch;
+      }
+      .mobile-tabbar a {
+        flex-shrink: 0; padding: 7px 14px; border-radius: 999px; font-size: 0.8125rem; font-weight: 600;
+        color: var(--ba-ink-soft); text-decoration: none; background: var(--ba-surface-sunken); border: 1px solid var(--ba-border);
+      }
+    }
+  </style>
 </head>
 <body>
   <nav class="ba-navbar">
-    <a href="/">Business AI</a>
-    <a href="#" data-signout>Sign Out</a>
+    <a href="/" class="ba-brand">
+      <span class="ba-brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#06110D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4 3v-3H6a2 2 0 0 1-2-2Z"/></svg></span>
+      Business AI
+    </a>
+    <a href="#" data-signout class="ba-navlink">Sign Out</a>
   </nav>
 
-  <div class="ba-container">
-    <div id="admin-panel" class="ba-card" style="display: none;">
-      <h2 style="font-size: 1.125rem; margin-top: 0;">Platform Admin — All Businesses</h2>
-      <p class="ba-muted">New signups land here in "provisioning" until activated.</p>
-      <div id="admin-tenants-list"></div>
-    </div>
+  <nav class="mobile-tabbar" aria-label="Dashboard sections">
+    <a href="#overview">Overview</a>
+    <a href="#knowledge">Knowledge</a>
+    <a href="#leads">Leads</a>
+    <a href="#staff">Staff Assistant</a>
+    <a href="#settings">Settings</a>
+  </nav>
 
-    <div id="owner-panel">
-      <div class="ba-card">
-        <h1 style="font-size: 1.5rem; margin-top: 0;">Your Assistant</h1>
-        <p id="status-line" class="ba-muted"></p>
-        <a id="chat-link" href="#" target="_blank" class="ba-btn">Open Chat &rarr;</a>
+  <div class="dash-shell">
+    <aside class="dash-sidebar">
+      <a class="dash-nav-link" href="#overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> Overview</a>
+      <a class="dash-nav-link" href="#knowledge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Knowledge</a>
+      <a class="dash-nav-link" href="#leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg> Leads</a>
+      <a class="dash-nav-link" href="#staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Staff Assistant</a>
+      <a class="dash-nav-link" href="#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg> Settings</a>
+    </aside>
+
+    <main class="dash-main">
+      <div id="admin-panel" class="ba-card" style="display: none;">
+        <h2 style="margin-top: 0;">Platform Admin — All Businesses</h2>
+        <p class="ba-muted">New signups land here in "provisioning" until activated.</p>
+        <div id="admin-tenants-list"></div>
       </div>
 
-      <div class="ba-metric">
-        <div class="ba-metric-box"><div class="ba-muted">Questions Asked</div><div class="ba-metric-val" id="m-total">—</div></div>
-        <div class="ba-metric-box"><div class="ba-muted">Answered</div><div class="ba-metric-val" id="m-answered">—</div></div>
-        <div class="ba-metric-box"><div class="ba-muted">Leads Captured</div><div class="ba-metric-val" id="m-leads">—</div></div>
-        <div class="ba-metric-box"><div class="ba-muted">Buying Interest Shown</div><div class="ba-metric-val" id="m-intent">—</div></div>
-      </div>
+      <div id="owner-panel">
 
-      <div class="ba-card">
-        <h2 style="font-size: 1.125rem;">Knowledge Gaps — questions your assistant couldn't answer</h2>
-        <p class="ba-muted" style="margin-top:-8px;">Draft an answer with AI, edit it, and publish — it's added to your knowledge base immediately.</p>
-        <div id="gaps-list"></div>
-      </div>
-
-      <div class="ba-card">
-        <h2 style="font-size: 1.125rem;">Staff Assistant</h2>
-        <p class="ba-muted" style="margin-top:-8px;">Ask your own assistant anything from your knowledge base — for you or your team, not customers.</p>
-        <div id="staff-chat-thread" class="ba-chat-thread" style="max-height:240px;"></div>
-        <form class="ba-chat-input-row" onsubmit="handleStaffAsk(event)">
-          <input class="ba-input" id="staff-chat-input" placeholder="e.g. what's our cancellation policy?" autocomplete="off">
-          <button type="submit" class="ba-btn" id="staff-send-btn">Ask</button>
-        </form>
-      </div>
-
-      <div class="ba-card">
-        <h2 style="font-size: 1.125rem;">Add Knowledge</h2>
-        <div class="ba-field">
-          <label class="ba-label">Add your website</label>
-          <div style="display:flex; gap:8px;">
-            <input class="ba-input" id="website-url" placeholder="https://yourbusiness.com">
-            <button class="ba-btn" onclick="ingestWebsite()">Add</button>
+        <section class="dash-section" id="overview">
+          <div id="attn-banner" class="attn-banner">
+            <div class="ba-skeleton" style="height:28px; width:220px; margin-bottom:8px;"></div>
+            <div class="ba-skeleton" style="height:16px; width:320px;"></div>
           </div>
-        </div>
-        <div class="ba-field">
-          <label class="ba-label">Or upload a PDF / text file (FAQ, menu, brochure)</label>
-          <input type="file" id="upload-file" accept=".pdf,.txt,.md">
-          <button class="ba-btn" onclick="uploadFile()">Upload</button>
-        </div>
-        <div id="knowledge-status" class="ba-muted"></div>
-        <h3 style="font-size: 0.9375rem;">Sources added</h3>
-        <table class="ba-table" id="sources-table"><tbody></tbody></table>
-      </div>
 
-      <div class="ba-card">
-        <h2 style="font-size: 1.125rem;">Leads</h2>
-        <p class="ba-muted" style="margin-top:-8px;">Once you've completed a service for a lead, request a review — sent to their email with your review link.</p>
-        <table class="ba-table" id="leads-table">
-          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>When</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+          <div class="ba-card-title-row" style="margin-bottom:8px;">
+            <div>
+              <h1 style="margin-bottom:2px;">Your Assistant</h1>
+              <p id="status-line" class="ba-muted" style="margin:0;"></p>
+            </div>
+            <a id="chat-link" href="#" target="_blank" class="ba-btn">Open Chat &rarr;</a>
+          </div>
 
-      <div class="ba-card">
-        <h2 style="font-size: 1.125rem;">Assistant Settings</h2>
-        <div class="ba-field"><label class="ba-label">Assistant Name</label><input class="ba-input" id="cfg-assistant-name"></div>
-        <div class="ba-field"><label class="ba-label">Welcome Message</label><input class="ba-input" id="cfg-welcome"></div>
-        <div class="ba-field"><label class="ba-label">WhatsApp Number (with country code, no +, e.g. 919876543210)</label><input class="ba-input" id="cfg-whatsapp"></div>
-        <div class="ba-field"><label class="ba-label">Review Link (e.g. your Google Business review URL)</label><input class="ba-input" id="cfg-review-link"></div>
-        <button class="ba-btn" onclick="saveSettings()">Save</button>
+          <div class="ba-metric">
+            <div class="ba-metric-box"><div class="ba-metric-label">Questions Asked</div><div class="ba-metric-val" id="m-total">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Answered</div><div class="ba-metric-val" id="m-answered">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Leads Captured</div><div class="ba-metric-val" id="m-leads">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Buying Interest</div><div class="ba-metric-val" id="m-intent">—</div></div>
+          </div>
+        </section>
+
+        <section class="dash-section" id="knowledge">
+          <div class="dash-section-head">
+            <h2>Knowledge Gaps</h2>
+            <p class="ba-muted" style="margin:0;">Questions your assistant couldn't answer — draft with AI, edit, and publish in one click.</p>
+          </div>
+          <div id="gaps-list"></div>
+
+          <div class="ba-card" style="margin-top: 20px;">
+            <h3 style="margin-top:0;">Add Knowledge</h3>
+            <div class="ba-field">
+              <label class="ba-label">Add your website</label>
+              <div style="display:flex; gap:8px;">
+                <input class="ba-input" id="website-url" placeholder="https://yourbusiness.com">
+                <button class="ba-btn" onclick="ingestWebsite()">Add</button>
+              </div>
+            </div>
+            <div class="ba-field" style="margin-bottom:6px;">
+              <label class="ba-label">Or upload a PDF / text file (FAQ, menu, brochure)</label>
+              <input type="file" id="upload-file" accept=".pdf,.txt,.md">
+              <button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:8px;" onclick="uploadFile()">Upload</button>
+            </div>
+            <div id="knowledge-status" class="ba-muted"></div>
+            <h3 style="font-size: 0.875rem; margin-top:18px;">Sources added</h3>
+            <table class="ba-table" id="sources-table"><tbody></tbody></table>
+          </div>
+        </section>
+
+        <section class="dash-section" id="leads">
+          <div class="dash-section-head">
+            <h2>Leads</h2>
+            <p class="ba-muted" style="margin:0;">Once you've completed a service for a lead, request a review — sent to their email with your review link.</p>
+          </div>
+          <div class="ba-card" style="padding:0; overflow:hidden;">
+            <table class="ba-table" id="leads-table" style="margin:0;">
+              <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>When</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="dash-section" id="staff">
+          <div class="dash-section-head">
+            <h2>Staff Assistant</h2>
+            <p class="ba-muted" style="margin:0;">Ask your own assistant anything from your knowledge base — for you or your team, not customers.</p>
+          </div>
+          <div class="staff-panel">
+            <div class="staff-panel-inner">
+              <div class="staff-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Internal workspace — not visible to customers</div>
+              <div id="staff-chat-thread" class="ba-chat-thread"></div>
+              <form class="ba-chat-input-row" onsubmit="handleStaffAsk(event)">
+                <input class="ba-input" id="staff-chat-input" placeholder="e.g. what's our cancellation policy?" autocomplete="off">
+                <button type="submit" class="ba-btn" id="staff-send-btn">Ask</button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section class="dash-section" id="settings">
+          <div class="dash-section-head"><h2>Assistant Settings</h2></div>
+          <div class="ba-card">
+            <div class="ba-field"><label class="ba-label">Assistant Name</label><input class="ba-input" id="cfg-assistant-name"></div>
+            <div class="ba-field"><label class="ba-label">Welcome Message</label><input class="ba-input" id="cfg-welcome"></div>
+            <div class="ba-field"><label class="ba-label">WhatsApp Number (with country code, no +, e.g. 919876543210)</label><input class="ba-input" id="cfg-whatsapp"></div>
+            <div class="ba-field"><label class="ba-label">Review Link (e.g. your Google Business review URL)</label><input class="ba-input" id="cfg-review-link"></div>
+            <button class="ba-btn" onclick="saveSettings(event)">Save</button>
+          </div>
+        </section>
+
       </div>
-    </div>
+    </main>
   </div>
 
+  <script src="/static/js/motion.js"></script>
   <script src="/static/js/auth.js"></script>
   <script>
     if (!BizAuth.requireAuth('/login')) { /* redirecting */ }
@@ -104,12 +225,58 @@
       return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
     }
 
+    function renderAttention({ gaps, leads, analytics }) {
+      const banner = document.getElementById('attn-banner');
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const recentLeads = (leads || []).filter(l => new Date(l.created_at).getTime() >= weekAgo);
+      const items = [];
+
+      if (gaps.length > 0) {
+        items.push({ sev: 'amber', title: `${gaps.length} knowledge gap${gaps.length > 1 ? 's' : ''} to close`, desc: 'Draft an AI answer and publish it in one click.', anchor: '#knowledge' });
+      }
+      if (recentLeads.length > 0) {
+        items.push({ sev: 'green', title: `${recentLeads.length} new lead${recentLeads.length > 1 ? 's' : ''} this week`, desc: 'Review contact details and follow up.', anchor: '#leads' });
+      }
+      if (analytics.dissatisfaction_count > 0) {
+        items.push({ sev: 'red', title: `${analytics.dissatisfaction_count} complaint${analytics.dissatisfaction_count > 1 ? 's' : ''} flagged`, desc: "You were alerted by email the moment this happened.", anchor: null });
+      }
+      if (analytics.buying_intent_count > 0) {
+        items.push({ sev: 'green', title: `${analytics.buying_intent_count} customer${analytics.buying_intent_count > 1 ? 's' : ''} showed buying interest`, desc: 'Check your leads for anyone who left contact info.', anchor: '#leads' });
+      }
+
+      if (items.length === 0) {
+        banner.className = 'attn-banner';
+        banner.innerHTML = `
+          <div class="attn-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            <div><strong>You're all caught up.</strong><div class="ba-muted">No open gaps, no flagged complaints, nothing waiting on you.</div></div>
+          </div>`;
+        return;
+      }
+
+      banner.className = 'attn-banner has-items';
+      banner.innerHTML = `
+        <div class="attn-head"><span class="attn-count">${items.length}</span><span>thing${items.length > 1 ? 's' : ''} need${items.length === 1 ? 's' : ''} your attention</span></div>
+        <div class="attn-list">${items.map(it => `
+          <a class="attn-item" href="${it.anchor || '#overview'}">
+            <span class="attn-dot ${it.sev}"></span>
+            <span><span class="attn-item-title">${escapeHtml(it.title)}</span><span class="attn-item-desc">${escapeHtml(it.desc)}</span></span>
+          </a>`).join('')}</div>`;
+    }
+
     async function loadDashboard() {
       if (role === 'platform_admin') {
         document.getElementById('admin-panel').style.display = 'block';
         loadAdminPanel();
         if (!tenantId) {
           document.getElementById('owner-panel').style.display = 'none';
+          // The sidebar/mobile nav links target sections that live inside
+          // owner-panel — with no owned business there's nothing for them
+          // to jump to, so hide them rather than leave dead links.
+          const sidebar = document.querySelector('.dash-sidebar');
+          const tabbar = document.querySelector('.mobile-tabbar');
+          if (sidebar) sidebar.style.display = 'none';
+          if (tabbar) tabbar.style.display = 'none';
           return; // platform_admin with no own business — admin panel is enough
         }
       }
@@ -126,26 +293,32 @@
         document.getElementById('cfg-review-link').value = t.review_link || '';
       }
 
+      let analytics = { total_questions: 0, answered_count: 0, buying_intent_count: 0, dissatisfaction_count: 0 };
       const aRes = await fetch(`/api/analytics?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (aRes.ok) {
-        const a = await aRes.json();
-        document.getElementById('m-total').innerText = a.total_questions;
-        document.getElementById('m-answered').innerText = a.answered_count;
-        document.getElementById('m-intent').innerText = a.buying_intent_count;
+        analytics = await aRes.json();
+        document.getElementById('m-total').innerText = analytics.total_questions;
+        document.getElementById('m-answered').innerText = analytics.answered_count;
+        document.getElementById('m-intent').innerText = analytics.buying_intent_count;
       }
 
-      loadGaps();
+      const gaps = await loadGaps();
 
+      let leads = [];
       const lRes = await fetch(`/api/leads?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (lRes.ok) {
         const l = await lRes.json();
-        document.getElementById('m-leads').innerText = l.leads.length;
-        document.querySelector('#leads-table tbody').innerHTML = l.leads.map(lead => `
+        leads = l.leads;
+        document.getElementById('m-leads').innerText = leads.length;
+        document.querySelector('#leads-table tbody').innerHTML = leads.length ? leads.map(lead => `
           <tr id="lead-${escapeHtml(lead.lead_id)}"><td>${escapeHtml(lead.name || '—')}</td><td>${escapeHtml(lead.phone || '—')}</td>
           <td>${escapeHtml(lead.email || '—')}</td><td>${escapeHtml((lead.message || '').slice(0, 60))}</td>
           <td>${escapeHtml(lead.created_at)}</td>
-          <td>${lead.email ? `<button class="ba-btn ba-btn-secondary" onclick="requestReview('${escapeHtml(lead.lead_id)}')">Request Review</button>` : ''}</td></tr>`).join('');
+          <td>${lead.email ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="requestReview('${escapeHtml(lead.lead_id)}')">Request Review</button>` : ''}</td></tr>`).join('')
+          : `<tr><td colspan="6" class="ba-muted" style="text-align:center; padding:28px;">No leads yet — they'll show up here the moment a customer leaves their contact info.</td></tr>`;
       }
+
+      renderAttention({ gaps, leads, analytics });
 
       const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (sRes.ok) {
@@ -193,24 +366,27 @@
 
     async function loadGaps() {
       const res = await fetch(`/api/analytics/gaps?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
-      if (!res.ok) return;
+      if (!res.ok) return [];
       const data = await res.json();
       const container = document.getElementById('gaps-list');
       if (!data.gaps.length) {
-        container.innerHTML = '<p class="ba-muted">No open gaps — nice.</p>';
-        return;
+        container.innerHTML = '<div class="ba-card" style="text-align:center; color:var(--ba-muted);">No open gaps — nice.</div>';
+        return [];
       }
-      container.innerHTML = data.gaps.map(g => `
-        <div class="ba-card" style="background:#faf9f7;" id="gap-${escapeHtml(g.turn_id)}">
-          <p style="margin:0 0 8px 0;"><strong>${escapeHtml(g.query)}</strong></p>
+      container.innerHTML = data.gaps.map((g, i) => `
+        <div class="gap-card" id="gap-${escapeHtml(g.turn_id)}">
+          <div class="gap-step-badge">Gap ${i + 1} of ${data.gaps.length}</div>
+          <p style="margin:6px 0 12px; font-weight:600;">${escapeHtml(g.query)}</p>
           <div class="gap-actions">
-            <button class="ba-btn ba-btn-secondary" onclick="draftGap('${escapeHtml(g.turn_id)}')">Draft Answer with AI</button>
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="draftGap('${escapeHtml(g.turn_id)}')">✦ Draft Answer with AI</button>
           </div>
-          <div class="gap-draft-area" style="display:none; margin-top:10px;">
+          <div class="gap-draft-area" style="display:none; margin-top:12px;">
+            <label class="ba-label">Review and edit before publishing</label>
             <textarea class="ba-input" rows="3" data-answer-for="${escapeHtml(g.turn_id)}"></textarea>
-            <button class="ba-btn" style="margin-top:8px;" onclick="publishGap('${escapeHtml(g.turn_id)}')">Publish to Knowledge Base</button>
+            <button class="ba-btn ba-btn-sm" style="margin-top:10px;" onclick="publishGap('${escapeHtml(g.turn_id)}')">Publish to Knowledge Base</button>
           </div>
         </div>`).join('');
+      return data.gaps;
     }
 
     async function draftGap(turnId) {
@@ -231,7 +407,7 @@
         alert(e.message);
       } finally {
         btn.disabled = false;
-        btn.innerText = 'Draft Answer with AI';
+        btn.innerText = '✦ Draft Answer with AI';
       }
     }
 
@@ -247,7 +423,6 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to publish.');
-        loadGaps();
         loadDashboard();
       } catch (e) {
         alert(e.message);
@@ -266,6 +441,7 @@
       input.value = '';
       btn.disabled = true;
       btn.innerText = '...';
+      thread.scrollTop = thread.scrollHeight;
 
       try {
         const res = await fetch(`/api/ask?tenant_id=${encodeURIComponent(tenantId)}`, {
@@ -290,7 +466,9 @@
       }
     }
 
-    async function saveSettings() {
+    async function saveSettings(e) {
+      const btn = e.target;
+      const original = btn.innerText;
       await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
         method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
@@ -300,7 +478,8 @@
           review_link: document.getElementById('cfg-review-link').value.trim(),
         }),
       });
-      alert('Saved.');
+      btn.innerText = 'Saved ✓';
+      setTimeout(() => { btn.innerText = original; }, 1600);
     }
 
     async function requestReview(leadId) {
@@ -324,12 +503,14 @@
       const res = await fetch('/api/v1/admin/tenants', { headers: BizAuth.getAuthHeaders() });
       if (!res.ok) return;
       const data = await res.json();
+      const badgeClass = { active: 'ba-badge-primary', provisioning: 'ba-badge-warn', suspended: 'ba-badge-error', disabled: 'ba-badge-neutral' };
       document.getElementById('admin-tenants-list').innerHTML = data.tenants.map(t => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--ba-border);">
-          <div><strong>${escapeHtml(t.business_name)}</strong> — ${escapeHtml(t.tenant_id)} — <span style="text-transform:uppercase; font-weight:600;">${escapeHtml(t.status)}</span></div>
+        <div class="admin-row">
+          <div><strong>${escapeHtml(t.business_name)}</strong> <span class="ba-muted">— ${escapeHtml(t.tenant_id)}</span>
+            <span class="ba-badge ${badgeClass[t.status] || 'ba-badge-neutral'}" style="margin-left:8px;">${escapeHtml(t.status)}</span></div>
           <div>
-            ${t.status === 'provisioning' ? `<button class="ba-btn" onclick="adminActivate('${t.tenant_id}')">Activate</button>` : ''}
-            ${t.status === 'active' ? `<button class="ba-btn ba-btn-secondary" onclick="adminSuspend('${t.tenant_id}')">Suspend</button>` : ''}
+            ${t.status === 'provisioning' ? `<button class="ba-btn ba-btn-sm" onclick="adminActivate('${t.tenant_id}')">Activate</button>` : ''}
+            ${t.status === 'active' ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="adminSuspend('${t.tenant_id}')">Suspend</button>` : ''}
           </div>
         </div>`).join('');
     }
