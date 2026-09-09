@@ -99,10 +99,17 @@ def chunk_text(
     buffer: list[str] = []
     chunk_index = 0
 
-    def emit(active_buffer: list[str]) -> None:
+    def emit(active_buffer: list[str], *, force: bool = False) -> None:
         nonlocal chunk_index
         joined = "".join(active_buffer).strip()
-        if not joined or estimate_token_count(joined) < min_tokens:
+        if not joined:
+            return
+        # min_tokens exists to avoid a fragment-y trailing scrap when there's
+        # substantial content elsewhere to merge into. It must NOT discard a
+        # whole source's only content — a short-but-complete business page
+        # (a one-line "About Us", brief hours) is common and must still be
+        # indexed, not silently dropped.
+        if not force and estimate_token_count(joined) < min_tokens:
             return
         chunks.append(TextChunk(text=joined, chunk_index=chunk_index))
         chunk_index += 1
@@ -129,13 +136,18 @@ def chunk_text(
 
     if buffer:
         joined = "".join(buffer).strip()
-        if chunks and estimate_token_count(joined) < min_tokens:
+        if not chunks:
+            # This is the ONLY content in the whole source — emit it
+            # regardless of min_tokens rather than silently producing zero
+            # knowledge segments for a short-but-complete source.
+            emit(buffer, force=True)
+        elif estimate_token_count(joined) < min_tokens:
             previous = chunks[-1]
             merged = f"{previous.text}\n\n{joined}".strip()
             if estimate_token_count(merged) <= max_tokens:
                 chunks[-1] = TextChunk(text=merged, chunk_index=previous.chunk_index)
             else:
-                emit(buffer)
+                emit(buffer, force=True)
         else:
             emit(buffer)
 
