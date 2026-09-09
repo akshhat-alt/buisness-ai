@@ -31,14 +31,33 @@ no shared secrets, no shared deploy.
   business (after they've added at least one knowledge source) or
   suspend one.
 
+## What V1.1 adds
+
+- **Owner daily digest email**: a scheduled job (triggered by an external
+  cron hitting `POST /api/v1/admin/digest/run`) emails each active
+  business's owner a summary of new leads, questions asked/answered, and
+  open knowledge gaps in the last 24h. Skipped (not sent) for a business
+  with zero activity, so a quiet day doesn't train the owner to ignore it.
+  Requires `RESEND_API_KEY`/`DIGEST_FROM_EMAIL` — optional, skipped
+  gracefully if unset.
+- **Internal staff assistant**: a chat panel on the owner dashboard, same
+  `/api/ask` endpoint, for the owner/staff to ask their own knowledge base
+  questions — no customer-facing exposure, no new backend surface.
+- **Knowledge-gap closer**: each logged gap gets a "Draft Answer with AI"
+  button (a safe, placeholder-filled template — never a guessed fact, see
+  `generation.draft_faq_answer`) that the owner edits and publishes
+  directly into the knowledge base with one click.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
-billing. No email delivery. No multi-instance/distributed mode — single
-SQLite + local Chroma, correct for one Railway instance. These are
-scoped omissions, not oversights: the goal is the smallest product a real
-local business would actually pay for, not "everything a business could
-ever want."
+billing. No customer-facing email (only the owner-facing digest above —
+no password-reset flow, no email support inbox). No multi-instance/
+distributed mode — single SQLite + local Chroma, correct for one Railway
+instance. No WhatsApp Business API (only click-to-chat handoff links).
+These are scoped omissions, not oversights: the goal is the smallest
+product a real local business would actually pay for, not "everything a
+business could ever want."
 
 ## Architecture
 
@@ -61,17 +80,25 @@ To activate a newly signed-up business as platform admin: sign in at
 `/login` with any email-shaped value (e.g. `admin@yourcompany.com`) and
 the `ADMIN_SECRET` from your `.env` as the password.
 
+To send the owner digest daily in production, schedule an external cron
+(Railway's Cron Jobs, or a scheduled GitHub Actions workflow) to call
+`POST /api/v1/admin/digest/run` once a day with a platform-admin bearer
+token — there's no in-process scheduler in this app.
+
 ## Tests
 
 ```bash
 pytest
 ```
 
-42 tests covering the full HTTP lifecycle (signup → ingest → activate →
+49 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
-`authorize()` chokepoint, chunking edge cases, usage-limiter behavior,
-and the SSRF guard. All offline — no OpenAI cost — using a deterministic
-fake generator and a word-overlap fake embedding provider that still
+knowledge-gap closer (draft → publish → gap resolves → assistant answers
+from the new FAQ entry) and owner digest (sends only to active tenants
+with activity, skips gracefully when unconfigured), the `authorize()`
+chokepoint, chunking edge cases, usage-limiter behavior, and the SSRF
+guard. All offline — no OpenAI cost — using a deterministic fake
+generator and a word-overlap fake embedding provider that still
 exercises the real evidence-gate confidence threshold.
 
 ## Known limitations (v1, honestly stated)
@@ -80,8 +107,9 @@ exercises the real evidence-gate confidence threshold.
   customer can technically get a fresh quota by starting a new chat
   session. This mirrors the accepted risk profile of the pattern it's
   adapted from — it's an abuse deterrent, not a hard billing cap.
-- **No password-reset flow.** No email service is wired up yet; a reset
-  token with nowhere to send it would be a dead end.
+- **No password-reset flow.** V1.1 wires up transactional email for the
+  owner digest, but a reset-token flow is a distinct feature (token
+  generation/expiry, a reset-password page) not yet built.
 - **Single Railway instance.** SQLite + local Chroma. Correct for the
   current scale; would need real infra work (managed Postgres, a hosted
   vector DB, horizontal scaling) before this could serve many
