@@ -108,6 +108,13 @@ class LeadStore:
             conn.commit()
         return lead
 
+    def get(self, tenant_id: str, lead_id: str) -> Lead | None:
+        with self._lock, self._db() as conn:
+            row = conn.execute(
+                "SELECT * FROM leads WHERE tenant_id = ? AND lead_id = ?", (tenant_id, lead_id)
+            ).fetchone()
+            return Lead(**dict(row)) if row else None
+
     def list_for_tenant(self, tenant_id: str, *, limit: int = 200, since_iso: str | None = None) -> list[Lead]:
         # created_at is "%Y-%m-%dT%H:%M:%SZ" — lexicographically sortable,
         # so a plain string comparison is a correct time-window filter

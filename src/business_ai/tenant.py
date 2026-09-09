@@ -38,6 +38,7 @@ class TenantConfig(BaseModel):
     assistant_name: str = "Assistant"
     welcome_message: str = "Hi! How can I help you today?"
     whatsapp_number: str | None = None  # E.164 without "+", e.g. "919329999716"
+    review_link: str | None = None  # e.g. a Google Business review URL, for review-request emails
     status: TenantStatus = TenantStatus.PROVISIONING
     question_quota: int | None = None  # None = platform default (see config.active_tenant_quota)
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
