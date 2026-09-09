@@ -206,6 +206,58 @@ class OpenAIGenerationProvider:
                     time.sleep(2**attempt)
         raise RuntimeError("LLM generation failed after 3 attempts") from last_error
 
+    def draft_faq_answer(self, *, business_name: str, assistant_name: str, question: str) -> str:
+        """Draft a starting-point FAQ answer for a logged knowledge gap, for
+        a human owner to review, fill in, and approve before it's published
+        to the knowledge base.
+
+        Deliberately NOT the grounded generate() path: there is no evidence
+        pack yet — that's the whole point, this question is a gap. A plain
+        completion that invented confident-sounding facts here would poison
+        the knowledge base with hallucinated content, exactly the failure
+        mode the rest of this module exists to prevent. So the prompt
+        explicitly forbids inventing concrete facts and asks for bracketed
+        placeholders instead — a draft the owner fills in, never an
+        unreviewed answer that gets auto-published.
+        """
+        system_prompt = (
+            f"You are drafting an FAQ template for {business_name}'s owner to fill in — "
+            "you are NOT answering the customer, and you know NOTHING about this specific "
+            "business's actual facts beyond its name. The AI assistant could not answer "
+            "this question because the business hasn't documented the answer yet.\n\n"
+            "HARD RULE: every fact the answer depends on — including a plain yes or no — "
+            "MUST be a bracketed placeholder, never a stated fact. This applies even when "
+            "a yes/no answer feels obvious or likely. You do not know the real answer. "
+            "Guessing 'yes' is exactly as wrong as guessing a specific price.\n\n"
+            "WRONG (states a fact you don't know): \"Yes, we offer haircuts for men.\"\n"
+            "RIGHT (placeholder for the owner to fill in): \"[Yes/No] — we [do/don't] offer "
+            "haircuts for men.\"\n\n"
+            f"Write 1-2 sentences in {assistant_name}'s voice, structured so the owner can "
+            "fill in each bracket and publish as-is. Respond with the draft text only — no "
+            "preamble, no markdown."
+        )
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model_name,
+                    temperature=0.3,
+                    max_tokens=200,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Customer's question: {question}"},
+                    ],
+                )
+                content = response.choices[0].message.content
+                if not content or not content.strip():
+                    raise RuntimeError("OpenAI returned an empty draft.")
+                return content.strip().strip('"').strip()
+            except Exception as exc:  # noqa: BLE001 - retry transient API errors
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(2**attempt)
+        raise RuntimeError("FAQ draft generation failed after 3 attempts") from last_error
+
 
 # ==============================================================================
 # Post-LLM validation — enforce grounding & citation integrity
