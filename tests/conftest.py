@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
@@ -28,6 +29,20 @@ class FakeGenerator:
             answer_text=self.answer_text,
             cited_segment_ids=[seg_id] if self.status == "answered" else [],
         )
+
+    def draft_faq_answer(self, *, business_name: str, assistant_name: str, question: str) -> str:
+        return f"[Draft answer for {business_name} — fill in the details for: {question}]"
+
+
+class FakeEmailSender:
+    """Captures every send() call instead of hitting a real network
+    endpoint — mirrors FakeGenerator/HashEmbeddingProvider's role."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    def send(self, *, to: str, subject: str, html_body: str, text_body: str | None = None) -> None:
+        self.sent.append({"to": to, "subject": subject, "html_body": html_body, "text_body": text_body})
 
 
 @pytest.fixture()
@@ -84,3 +99,37 @@ def activate_tenant(client, admin_headers):
         assert r.status_code == 200, r.text
 
     return _activate
+
+
+@pytest.fixture()
+def services_with_email(tmp_path: Path, settings) -> Services:
+    """Same as `services`, but with digest-email config present and a
+    FakeEmailSender capturing sends — for tests of the digest-run route.
+    A separate fixture chain (not a mutation of `services`) because the
+    email-not-configured path also needs its own test coverage using the
+    plain `services` fixture."""
+    settings_with_email = dataclasses.replace(
+        settings,
+        resend_api_key="re_test_key",
+        digest_from_email="digest@business-ai.example",
+        public_base_url="https://app.example.com",
+    )
+    svc = Services(settings_with_email, data_root=tmp_path)
+    svc.embeddings = lambda: HashEmbeddingProvider()
+    svc.generator = lambda: FakeGenerator()
+    fake_sender = FakeEmailSender()
+    svc.email_sender = lambda: fake_sender
+    svc.fake_email_sender = fake_sender  # test-only handle to inspect .sent
+    return svc
+
+
+@pytest.fixture()
+def app_with_email(services_with_email):
+    return create_app(services_with_email)
+
+
+@pytest.fixture()
+def client_with_email(app_with_email):
+    from fastapi.testclient import TestClient
+
+    return TestClient(app_with_email)
