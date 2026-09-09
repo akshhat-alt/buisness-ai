@@ -19,57 +19,59 @@
       <div id="admin-tenants-list"></div>
     </div>
 
-    <div class="ba-card">
-      <h1 style="font-size: 1.5rem; margin-top: 0;">Your Assistant</h1>
-      <p id="status-line" class="ba-muted"></p>
-      <a id="chat-link" href="#" target="_blank" class="ba-btn">Open Chat &rarr;</a>
-    </div>
+    <div id="owner-panel">
+      <div class="ba-card">
+        <h1 style="font-size: 1.5rem; margin-top: 0;">Your Assistant</h1>
+        <p id="status-line" class="ba-muted"></p>
+        <a id="chat-link" href="#" target="_blank" class="ba-btn">Open Chat &rarr;</a>
+      </div>
 
-    <div class="ba-metric">
-      <div class="ba-metric-box"><div class="ba-muted">Questions Asked</div><div class="ba-metric-val" id="m-total">—</div></div>
-      <div class="ba-metric-box"><div class="ba-muted">Answered</div><div class="ba-metric-val" id="m-answered">—</div></div>
-      <div class="ba-metric-box"><div class="ba-muted">Leads Captured</div><div class="ba-metric-val" id="m-leads">—</div></div>
-      <div class="ba-metric-box"><div class="ba-muted">Buying Interest Shown</div><div class="ba-metric-val" id="m-intent">—</div></div>
-    </div>
+      <div class="ba-metric">
+        <div class="ba-metric-box"><div class="ba-muted">Questions Asked</div><div class="ba-metric-val" id="m-total">—</div></div>
+        <div class="ba-metric-box"><div class="ba-muted">Answered</div><div class="ba-metric-val" id="m-answered">—</div></div>
+        <div class="ba-metric-box"><div class="ba-muted">Leads Captured</div><div class="ba-metric-val" id="m-leads">—</div></div>
+        <div class="ba-metric-box"><div class="ba-muted">Buying Interest Shown</div><div class="ba-metric-val" id="m-intent">—</div></div>
+      </div>
 
-    <div class="ba-card">
-      <h2 style="font-size: 1.125rem;">Knowledge Gaps — questions your assistant couldn't answer</h2>
-      <ul id="gaps-list" class="ba-muted"></ul>
-    </div>
+      <div class="ba-card">
+        <h2 style="font-size: 1.125rem;">Knowledge Gaps — questions your assistant couldn't answer</h2>
+        <ul id="gaps-list" class="ba-muted"></ul>
+      </div>
 
-    <div class="ba-card">
-      <h2 style="font-size: 1.125rem;">Add Knowledge</h2>
-      <div class="ba-field">
-        <label class="ba-label">Add your website</label>
-        <div style="display:flex; gap:8px;">
-          <input class="ba-input" id="website-url" placeholder="https://yourbusiness.com">
-          <button class="ba-btn" onclick="ingestWebsite()">Add</button>
+      <div class="ba-card">
+        <h2 style="font-size: 1.125rem;">Add Knowledge</h2>
+        <div class="ba-field">
+          <label class="ba-label">Add your website</label>
+          <div style="display:flex; gap:8px;">
+            <input class="ba-input" id="website-url" placeholder="https://yourbusiness.com">
+            <button class="ba-btn" onclick="ingestWebsite()">Add</button>
+          </div>
         </div>
+        <div class="ba-field">
+          <label class="ba-label">Or upload a PDF / text file (FAQ, menu, brochure)</label>
+          <input type="file" id="upload-file" accept=".pdf,.txt,.md">
+          <button class="ba-btn" onclick="uploadFile()">Upload</button>
+        </div>
+        <div id="knowledge-status" class="ba-muted"></div>
+        <h3 style="font-size: 0.9375rem;">Sources added</h3>
+        <table class="ba-table" id="sources-table"><tbody></tbody></table>
       </div>
-      <div class="ba-field">
-        <label class="ba-label">Or upload a PDF / text file (FAQ, menu, brochure)</label>
-        <input type="file" id="upload-file" accept=".pdf,.txt,.md">
-        <button class="ba-btn" onclick="uploadFile()">Upload</button>
+
+      <div class="ba-card">
+        <h2 style="font-size: 1.125rem;">Leads</h2>
+        <table class="ba-table" id="leads-table">
+          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>When</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <div id="knowledge-status" class="ba-muted"></div>
-      <h3 style="font-size: 0.9375rem;">Sources added</h3>
-      <table class="ba-table" id="sources-table"><tbody></tbody></table>
-    </div>
 
-    <div class="ba-card">
-      <h2 style="font-size: 1.125rem;">Leads</h2>
-      <table class="ba-table" id="leads-table">
-        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>When</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="ba-card">
-      <h2 style="font-size: 1.125rem;">Assistant Settings</h2>
-      <div class="ba-field"><label class="ba-label">Assistant Name</label><input class="ba-input" id="cfg-assistant-name"></div>
-      <div class="ba-field"><label class="ba-label">Welcome Message</label><input class="ba-input" id="cfg-welcome"></div>
-      <div class="ba-field"><label class="ba-label">WhatsApp Number (with country code, no +, e.g. 919876543210)</label><input class="ba-input" id="cfg-whatsapp"></div>
-      <button class="ba-btn" onclick="saveSettings()">Save</button>
+      <div class="ba-card">
+        <h2 style="font-size: 1.125rem;">Assistant Settings</h2>
+        <div class="ba-field"><label class="ba-label">Assistant Name</label><input class="ba-input" id="cfg-assistant-name"></div>
+        <div class="ba-field"><label class="ba-label">Welcome Message</label><input class="ba-input" id="cfg-welcome"></div>
+        <div class="ba-field"><label class="ba-label">WhatsApp Number (with country code, no +, e.g. 919876543210)</label><input class="ba-input" id="cfg-whatsapp"></div>
+        <button class="ba-btn" onclick="saveSettings()">Save</button>
+      </div>
     </div>
   </div>
 
@@ -88,7 +90,10 @@
       if (role === 'platform_admin') {
         document.getElementById('admin-panel').style.display = 'block';
         loadAdminPanel();
-        if (!tenantId) return; // platform_admin with no own business — admin panel is enough
+        if (!tenantId) {
+          document.getElementById('owner-panel').style.display = 'none';
+          return; // platform_admin with no own business — admin panel is enough
+        }
       }
 
       document.getElementById('chat-link').href = `/chat?tenant_id=${encodeURIComponent(tenantId)}`;
