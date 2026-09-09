@@ -12,11 +12,18 @@ and this keeps the dependency footprint smaller.
 from __future__ import annotations
 
 import secrets
+import sqlite3
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from pathlib import Path
+from typing import Generator
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from pydantic import BaseModel
 from pypdf import PdfReader
 
 from business_ai.knowledge import chunk_text
@@ -174,3 +181,76 @@ def ingest_text(
     ]
     store.upsert(ids=ids, embeddings=vectors, metadatas=metadatas, documents=chunk_texts)
     return IngestResult(source_id=source_id, chunks_indexed=len(chunks))
+
+
+# ==============================================================================
+# Source tracking — so a business owner can see what they've added
+# ==============================================================================
+
+
+class SourceRecord(BaseModel):
+    source_id: str
+    tenant_id: str
+    label: str
+    source_type: str  # "website" | "pdf" | "text"
+    chunks_indexed: int
+    created_at: str
+
+
+class SourceStore:
+    """Thread-safe SQLite store recording what's been ingested per tenant."""
+
+    def __init__(self, db_path: Path | str = "data/sources.db") -> None:
+        self.db_path = Path(db_path).resolve()
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+        self._init_db()
+
+    @contextmanager
+    def _db(self) -> Generator[sqlite3.Connection, None, None]:
+        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _init_db(self) -> None:
+        with self._lock, self._db() as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=10000;")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sources (
+                    source_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    chunks_indexed INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sources_tenant ON sources(tenant_id)")
+            conn.commit()
+
+    def record(self, *, tenant_id: str, source_id: str, label: str, source_type: str, chunks_indexed: int) -> SourceRecord:
+        rec = SourceRecord(
+            source_id=source_id, tenant_id=tenant_id, label=label, source_type=source_type,
+            chunks_indexed=chunks_indexed, created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        )
+        with self._lock, self._db() as conn:
+            conn.execute(
+                "INSERT INTO sources (source_id, tenant_id, label, source_type, chunks_indexed, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (rec.source_id, rec.tenant_id, rec.label, rec.source_type, rec.chunks_indexed, rec.created_at),
+            )
+            conn.commit()
+        return rec
+
+    def list_for_tenant(self, tenant_id: str) -> list[SourceRecord]:
+        with self._lock, self._db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM sources WHERE tenant_id = ? ORDER BY created_at DESC", (tenant_id,)
+            ).fetchall()
+            return [SourceRecord(**dict(r)) for r in rows]
