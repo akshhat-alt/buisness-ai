@@ -17,9 +17,17 @@ class FakeGenerator:
     evidence_passage id appears in the prompt, so tests never spend real
     API credits but still exercise the real validation/citation path."""
 
-    def __init__(self, *, status: str = "answered", answer_text: str = "This is a grounded answer.") -> None:
+    def __init__(
+        self, *, status: str = "answered", answer_text: str = "This is a grounded answer.",
+        dissatisfied_queries: frozenset[str] = frozenset(), action_brief_items: list[str] = (),
+    ) -> None:
         self.status = status
         self.answer_text = answer_text
+        # Queries (exact match) that classify_dissatisfaction() should
+        # report as True — lets tests exercise that path deterministically
+        # without a real API call.
+        self.dissatisfied_queries = dissatisfied_queries
+        self.action_brief_items = list(action_brief_items)
 
     def generate(self, *, system_prompt: str, user_prompt: str) -> LLMResponseDraft:
         match = re.search(r'evidence_passage id="([^"]+)"', user_prompt)
@@ -32,6 +40,12 @@ class FakeGenerator:
 
     def draft_faq_answer(self, *, business_name: str, assistant_name: str, question: str) -> str:
         return f"[Draft answer for {business_name} — fill in the details for: {question}]"
+
+    def classify_dissatisfaction(self, *, query: str) -> bool:
+        return query in self.dissatisfied_queries
+
+    def generate_action_brief(self, **kwargs) -> list[str]:
+        return self.action_brief_items
 
 
 class FakeEmailSender:

@@ -221,3 +221,28 @@ def test_digest_run_sends_only_to_active_tenants_with_activity(client_with_email
     assert len(sent_emails) == 1
     assert sent_emails[0]["to"] == "a@example.com"
     assert "1 new lead" in sent_emails[0]["subject"]
+
+
+def test_digest_run_includes_the_action_brief_when_generated(client_with_email, services_with_email):
+    from tests.conftest import FakeGenerator
+
+    settings = services_with_email.settings
+    admin_headers = _admin_headers(client_with_email, settings)
+
+    headers, tenant_id = _signup(client_with_email)
+    client_with_email.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
+    _activate(client_with_email, admin_headers, tenant_id)
+    client_with_email.post(f"/api/leads?tenant_id={tenant_id}", json={"session_id": "s1", "phone": "9876543210"})
+
+    services_with_email.generator = lambda: FakeGenerator(
+        action_brief_items=["3 customers asked about weekend hours — consider opening Saturdays."]
+    )
+
+    r = client_with_email.post("/api/v1/admin/digest/run", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["sent"] == [tenant_id]
+
+    sent = services_with_email.fake_email_sender.sent
+    assert len(sent) == 1
+    assert "What to do about it" in sent[0]["html_body"]
+    assert "weekend hours" in sent[0]["html_body"]
