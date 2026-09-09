@@ -14,6 +14,7 @@ session, applied correctly from day one here:
 
 from __future__ import annotations
 
+import logging
 import re
 import secrets
 import time
@@ -36,6 +37,7 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from business_ai.alerts import render_dissatisfaction_alert, render_review_request
 from business_ai.analytics import AnalyticsStore
 from business_ai.digest import has_digest_content, render_owner_digest
 from business_ai.email_sender import EmailSendError, EmailSender
@@ -64,6 +66,8 @@ from business_ai.tenant import (
     authorize,
 )
 from business_ai.usage_limiter import AccessDecision, UsageLimiter
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Anchored to this project's own directory, never to the launching
@@ -156,6 +160,7 @@ class TenantConfigUpdate(BaseModel):
     assistant_name: str | None = None
     welcome_message: str | None = None
     whatsapp_number: str | None = None
+    review_link: str | None = None
 
 
 def _slugify_tenant_id(business_name: str) -> str:
@@ -236,6 +241,24 @@ def create_app(services: Services | None = None) -> FastAPI:
         if principal is None:
             raise HTTPException(status_code=401, detail="Authentication required.")
         return principal
+
+    def _send_dissatisfaction_alert(*, tenant: TenantConfig, query: str, answer_text: str, session_id: str) -> None:
+        """Best-effort: a slow/failed alert email must never break the
+        customer's actual chat response, so failures are swallowed here,
+        not raised — this mirrors the digest-run route's per-tenant
+        failure collection, just for a single synchronous event instead
+        of a batch job."""
+        if not svc.settings.resend_api_key or not svc.settings.digest_from_email:
+            return
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+        subject, html = render_dissatisfaction_alert(
+            business_name=tenant.business_name, query=query, answer_text=answer_text or None,
+            session_id=session_id, dashboard_url=dashboard_url,
+        )
+        try:
+            svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            logger.warning("Failed to send dissatisfaction alert for tenant %s: %s", tenant.tenant_id, exc)
 
     # -------------------------------------------------------------- health
     @app.get("/healthz")
@@ -326,7 +349,12 @@ def create_app(services: Services | None = None) -> FastAPI:
 
             gate = evaluate_evidence_gate(pack)
             if gate.should_abstain:
-                answer = build_abstention_answer(pack, gate)
+                # A real complaint almost never matches FAQ content, so it
+                # trips this gate before generate() ever runs — the only
+                # place that path's own dissatisfaction extraction would
+                # fire. Classify it here instead, on the raw message.
+                is_dissatisfied = svc.generator().classify_dissatisfaction(query=request.query)
+                answer = build_abstention_answer(pack, gate, shows_dissatisfaction=is_dissatisfied)
             else:
                 system_prompt = build_system_prompt(tenant.business_name, tenant.assistant_name)
                 user_prompt = build_user_prompt(pack)
@@ -344,7 +372,11 @@ def create_app(services: Services | None = None) -> FastAPI:
         svc.analytics_store.log_turn(
             tenant_id=tenant_id, session_id=session_id, query=request.query, answer_status=answer.status.value,
             shows_buying_intent=answer.shows_buying_intent, suggested_handoff=answer.suggested_handoff,
+            shows_dissatisfaction=answer.shows_dissatisfaction,
         )
+
+        if answer.shows_dissatisfaction:
+            _send_dissatisfaction_alert(tenant=tenant, query=request.query, answer_text=answer.answer_text, session_id=session_id)
 
         quota_status = svc.usage_limiter.get_session_status(tenant_id, session_id, quota_override=tenant.question_quota)
         whatsapp_url = None
@@ -360,6 +392,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             "citations_used": [c.model_dump() for c in answer.citations_used],
             "shows_buying_intent": answer.shows_buying_intent,
             "suggested_handoff": answer.suggested_handoff,
+            "shows_dissatisfaction": answer.shows_dissatisfaction,
             "whatsapp_url": whatsapp_url,
             "questions_remaining": quota_status["questions_remaining"],
             "questions_limit": quota_status["questions_limit"],
@@ -396,6 +429,38 @@ def create_app(services: Services | None = None) -> FastAPI:
         except TenantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"leads": [l.model_dump() for l in svc.lead_store.list_for_tenant(tenant_id)]}
+
+    @app.post("/api/leads/{lead_id}/request-review")
+    def request_review(lead_id: str, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            # Reuses VIEW_LEADS: same owner/staff who can see leads are the
+            # ones who'd know a service was actually completed and it's
+            # appropriate to ask for a review.
+            tenant = authorize(principal, TenantAction.VIEW_LEADS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        lead = svc.lead_store.get(tenant_id, lead_id)
+        if lead is None:
+            raise HTTPException(status_code=404, detail=f"No lead '{lead_id}' for this business.")
+        if not lead.email:
+            raise HTTPException(status_code=400, detail="This lead has no email address to send a review request to.")
+        if not tenant.review_link:
+            raise HTTPException(status_code=400, detail="Add a review link in your assistant settings first.")
+        if not svc.settings.resend_api_key or not svc.settings.digest_from_email:
+            raise HTTPException(status_code=400, detail="Email sending is not configured for this deployment.")
+
+        subject, html = render_review_request(
+            business_name=tenant.business_name, assistant_name=tenant.assistant_name, review_link=tenant.review_link,
+        )
+        try:
+            svc.email_sender().send(to=lead.email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not send the review request: {exc}") from exc
+        return {"sent_to": lead.email}
 
     # -------------------------------------------------------------- analytics
     @app.get("/api/analytics")
@@ -676,9 +741,21 @@ def create_app(services: Services | None = None) -> FastAPI:
                 skipped.append({"tenant_id": tenant.tenant_id, "reason": "no activity in window"})
                 continue
 
+            try:
+                action_items = svc.generator().generate_action_brief(
+                    business_name=tenant.business_name, total_questions=analytics.total_questions,
+                    answered_count=analytics.answered_count, abstention_count=analytics.abstention_count,
+                    buying_intent_count=analytics.buying_intent_count, dissatisfaction_count=analytics.dissatisfaction_count,
+                    new_leads_count=len(new_leads), recent_knowledge_gaps=analytics.recent_knowledge_gaps,
+                )
+            except Exception as exc:  # noqa: BLE001 - a failed advisory brief must not block the digest itself
+                logger.warning("Action brief generation failed for tenant %s: %s", tenant.tenant_id, exc)
+                action_items = []
+
             subject, html = render_owner_digest(
                 tenant, new_leads=new_leads, analytics=analytics,
                 window_hours=svc.settings.digest_window_hours, dashboard_url=dashboard_url,
+                action_items=action_items,
             )
             try:
                 sender.send(to=tenant.owner_email, subject=subject, html_body=html)
