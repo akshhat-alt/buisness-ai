@@ -70,8 +70,9 @@
 
       <div class="ba-card">
         <h2 style="font-size: 1.125rem;">Leads</h2>
+        <p class="ba-muted" style="margin-top:-8px;">Once you've completed a service for a lead, request a review — sent to their email with your review link.</p>
         <table class="ba-table" id="leads-table">
-          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>When</th></tr></thead>
+          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>When</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -81,6 +82,7 @@
         <div class="ba-field"><label class="ba-label">Assistant Name</label><input class="ba-input" id="cfg-assistant-name"></div>
         <div class="ba-field"><label class="ba-label">Welcome Message</label><input class="ba-input" id="cfg-welcome"></div>
         <div class="ba-field"><label class="ba-label">WhatsApp Number (with country code, no +, e.g. 919876543210)</label><input class="ba-input" id="cfg-whatsapp"></div>
+        <div class="ba-field"><label class="ba-label">Review Link (e.g. your Google Business review URL)</label><input class="ba-input" id="cfg-review-link"></div>
         <button class="ba-btn" onclick="saveSettings()">Save</button>
       </div>
     </div>
@@ -121,6 +123,7 @@
         document.getElementById('cfg-assistant-name').value = t.assistant_name || '';
         document.getElementById('cfg-welcome').value = t.welcome_message || '';
         document.getElementById('cfg-whatsapp').value = t.whatsapp_number || '';
+        document.getElementById('cfg-review-link').value = t.review_link || '';
       }
 
       const aRes = await fetch(`/api/analytics?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -138,9 +141,10 @@
         const l = await lRes.json();
         document.getElementById('m-leads').innerText = l.leads.length;
         document.querySelector('#leads-table tbody').innerHTML = l.leads.map(lead => `
-          <tr><td>${escapeHtml(lead.name || '—')}</td><td>${escapeHtml(lead.phone || '—')}</td>
+          <tr id="lead-${escapeHtml(lead.lead_id)}"><td>${escapeHtml(lead.name || '—')}</td><td>${escapeHtml(lead.phone || '—')}</td>
           <td>${escapeHtml(lead.email || '—')}</td><td>${escapeHtml((lead.message || '').slice(0, 60))}</td>
-          <td>${escapeHtml(lead.created_at)}</td></tr>`).join('');
+          <td>${escapeHtml(lead.created_at)}</td>
+          <td>${lead.email ? `<button class="ba-btn ba-btn-secondary" onclick="requestReview('${escapeHtml(lead.lead_id)}')">Request Review</button>` : ''}</td></tr>`).join('');
       }
 
       const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -293,9 +297,27 @@
           assistant_name: document.getElementById('cfg-assistant-name').value.trim(),
           welcome_message: document.getElementById('cfg-welcome').value.trim(),
           whatsapp_number: document.getElementById('cfg-whatsapp').value.trim(),
+          review_link: document.getElementById('cfg-review-link').value.trim(),
         }),
       });
       alert('Saved.');
+    }
+
+    async function requestReview(leadId) {
+      const row = document.getElementById(`lead-${leadId}`);
+      const btn = row.querySelector('button');
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/request-review?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to send review request.');
+        btn.innerText = 'Sent ✓';
+      } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+      }
     }
 
     async function loadAdminPanel() {
