@@ -58,6 +58,13 @@ class Settings:
     # WhatsApp handoff
     default_whatsapp_number: str | None
 
+    # Owner daily digest email (optional — digest send is skipped, not
+    # fatal, if these aren't set; this is an add-on, not core auth)
+    resend_api_key: str | None
+    digest_from_email: str | None
+    digest_window_hours: int
+    public_base_url: str | None
+
     # Server
     port: int
 
@@ -91,6 +98,10 @@ def load_settings() -> Settings:
         max_concurrent_requests=_int_env("MAX_CONCURRENT_REQUESTS_PER_SESSION", 1),
         max_query_length=_int_env("MAX_QUERY_LENGTH", 1000),
         default_whatsapp_number=(os.getenv("DEFAULT_WHATSAPP_NUMBER") or "").strip() or None,
+        resend_api_key=(os.getenv("RESEND_API_KEY") or "").strip() or None,
+        digest_from_email=(os.getenv("DIGEST_FROM_EMAIL") or "").strip() or None,
+        digest_window_hours=_int_env("DIGEST_WINDOW_HOURS", 24),
+        public_base_url=(os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None,
         port=_int_env("PORT", 8000),
         enabled=_bool_env("BUSINESS_AI_ENABLED", True),
     )
