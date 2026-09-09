@@ -35,7 +35,18 @@
 
       <div class="ba-card">
         <h2 style="font-size: 1.125rem;">Knowledge Gaps — questions your assistant couldn't answer</h2>
-        <ul id="gaps-list" class="ba-muted"></ul>
+        <p class="ba-muted" style="margin-top:-8px;">Draft an answer with AI, edit it, and publish — it's added to your knowledge base immediately.</p>
+        <div id="gaps-list"></div>
+      </div>
+
+      <div class="ba-card">
+        <h2 style="font-size: 1.125rem;">Staff Assistant</h2>
+        <p class="ba-muted" style="margin-top:-8px;">Ask your own assistant anything from your knowledge base — for you or your team, not customers.</p>
+        <div id="staff-chat-thread" class="ba-chat-thread" style="max-height:240px;"></div>
+        <form class="ba-chat-input-row" onsubmit="handleStaffAsk(event)">
+          <input class="ba-input" id="staff-chat-input" placeholder="e.g. what's our cancellation policy?" autocomplete="off">
+          <button type="submit" class="ba-btn" id="staff-send-btn">Ask</button>
+        </form>
       </div>
 
       <div class="ba-card">
@@ -80,6 +91,11 @@
     if (!BizAuth.requireAuth('/login')) { /* redirecting */ }
     const tenantId = BizAuth.getTenantId();
     const role = BizAuth.getRole();
+    // A fresh id per page load, same as the customer chat widget — never
+    // a fixed "one session forever" id, which would permanently share
+    // (and eventually exhaust) a single quota bucket across every staff
+    // member for the life of the business.
+    const staffSessionId = 'staff_' + Math.random().toString(36).slice(2, 10);
 
     function escapeHtml(str) {
       if (!str) return '';
@@ -113,10 +129,9 @@
         document.getElementById('m-total').innerText = a.total_questions;
         document.getElementById('m-answered').innerText = a.answered_count;
         document.getElementById('m-intent').innerText = a.buying_intent_count;
-        document.getElementById('gaps-list').innerHTML = a.recent_knowledge_gaps.length
-          ? a.recent_knowledge_gaps.map(g => `<li>${escapeHtml(g)}</li>`).join('')
-          : '<li>No gaps yet — nice.</li>';
       }
+
+      loadGaps();
 
       const lRes = await fetch(`/api/leads?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (lRes.ok) {
@@ -170,6 +185,105 @@
         statusEl.innerText = `Added! ${data.chunks_indexed} chunks indexed.`;
         loadDashboard();
       } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
+    }
+
+    async function loadGaps() {
+      const res = await fetch(`/api/analytics/gaps?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const container = document.getElementById('gaps-list');
+      if (!data.gaps.length) {
+        container.innerHTML = '<p class="ba-muted">No open gaps — nice.</p>';
+        return;
+      }
+      container.innerHTML = data.gaps.map(g => `
+        <div class="ba-card" style="background:#faf9f7;" id="gap-${escapeHtml(g.turn_id)}">
+          <p style="margin:0 0 8px 0;"><strong>${escapeHtml(g.query)}</strong></p>
+          <div class="gap-actions">
+            <button class="ba-btn ba-btn-secondary" onclick="draftGap('${escapeHtml(g.turn_id)}')">Draft Answer with AI</button>
+          </div>
+          <div class="gap-draft-area" style="display:none; margin-top:10px;">
+            <textarea class="ba-input" rows="3" data-answer-for="${escapeHtml(g.turn_id)}"></textarea>
+            <button class="ba-btn" style="margin-top:8px;" onclick="publishGap('${escapeHtml(g.turn_id)}')">Publish to Knowledge Base</button>
+          </div>
+        </div>`).join('');
+    }
+
+    async function draftGap(turnId) {
+      const card = document.getElementById(`gap-${turnId}`);
+      const btn = card.querySelector('.gap-actions button');
+      btn.disabled = true;
+      btn.innerText = 'Drafting...';
+      try {
+        const res = await fetch(`/api/knowledge/gaps/${encodeURIComponent(turnId)}/draft?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to draft an answer.');
+        const area = card.querySelector('.gap-draft-area');
+        area.style.display = 'block';
+        area.querySelector('textarea').value = data.draft_answer;
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Draft Answer with AI';
+      }
+    }
+
+    async function publishGap(turnId) {
+      const card = document.getElementById(`gap-${turnId}`);
+      const textarea = card.querySelector(`textarea[data-answer-for="${turnId}"]`);
+      const answerText = textarea.value.trim();
+      if (!answerText) { alert('Write or generate an answer first.'); return; }
+      try {
+        const res = await fetch(`/api/knowledge/gaps/${encodeURIComponent(turnId)}/publish?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ answer_text: answerText }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to publish.');
+        loadGaps();
+        loadDashboard();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function handleStaffAsk(e) {
+      e.preventDefault();
+      const input = document.getElementById('staff-chat-input');
+      const query = input.value.trim();
+      if (!query) return;
+      const thread = document.getElementById('staff-chat-thread');
+      const btn = document.getElementById('staff-send-btn');
+
+      thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-user">${escapeHtml(query)}</div>`);
+      input.value = '';
+      btn.disabled = true;
+      btn.innerText = '...';
+
+      try {
+        const res = await fetch(`/api/ask?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ query, session_id: staffSessionId }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          const detail = data.detail;
+          const msg = typeof detail === 'object' ? (detail.error || 'Something went wrong.') : (detail || 'Something went wrong.');
+          thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">${escapeHtml(msg)}</div>`);
+          return;
+        }
+        const text = data.status === 'answered' ? data.answer_text : data.abstention_reason;
+        thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">${escapeHtml(text)}</div>`);
+      } catch (err) {
+        thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">Connection error: ${escapeHtml(err.message)}</div>`);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Ask';
+        thread.scrollTop = thread.scrollHeight;
+      }
     }
 
     async function saveSettings() {
