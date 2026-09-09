@@ -483,6 +483,24 @@ def create_app(services: Services | None = None) -> FastAPI:
         return {"sources": [s.model_dump() for s in svc.source_store.list_for_tenant(tenant_id)]}
 
     # -------------------------------------------------------------- tenant self-config
+    @app.get("/api/tenant/public")
+    def get_tenant_public(tenant_id: str) -> dict:
+        """Unauthenticated, for the embeddable customer chat widget: only
+        the fields safe to show an anonymous website visitor, never
+        owner_email or question_quota."""
+        try:
+            tenant = authorize(None, TenantAction.VIEW_PUBLIC_INFO, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "business_name": tenant.business_name,
+            "assistant_name": tenant.assistant_name,
+            "welcome_message": tenant.welcome_message,
+            "whatsapp_number": tenant.whatsapp_number,
+        }
+
     @app.get("/api/tenant")
     def get_tenant(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
         principal = _resolve(authorization)

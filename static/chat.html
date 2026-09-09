@@ -50,7 +50,7 @@
 
     async function loadTenant() {
       try {
-        const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+        const res = await fetch(`/api/tenant/public?tenant_id=${encodeURIComponent(tenantId)}`);
         if (res.ok) {
           const data = await res.json();
           document.getElementById('business-name').innerText = data.business_name || '';

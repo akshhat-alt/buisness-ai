@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "business-ai",
+      "runtimeExecutable": ".venv/bin/uvicorn",
+      "runtimeArgs": ["business_ai.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src"],
+      "port": 8000
+    }
+  ]
+}

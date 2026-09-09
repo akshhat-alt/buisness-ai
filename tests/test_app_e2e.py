@@ -22,8 +22,11 @@ def test_full_business_lifecycle(client, owner_session, admin_headers, activate_
     r = client.get(f"/api/analytics?tenant_id={tenant_id}", headers=headers)
     assert r.status_code == 200, r.text
 
-    # But a customer cannot query the assistant before activation.
+    # But no one — owner or anonymous customer — can query the assistant
+    # before activation.
     r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "hello"}, headers=headers)
+    assert r.status_code == 403, r.text
+    r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "hello"})
     assert r.status_code == 403, r.text
 
     activate_tenant(tenant_id)
@@ -36,14 +39,23 @@ def test_full_business_lifecycle(client, owner_session, admin_headers, activate_
     assert answer["questions_limit"] == 500
     assert answer["questions_remaining"] == 499
 
-    # Anonymous customers cannot ask without a session token.
-    r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "hi"})
-    assert r.status_code == 403
+    # A real customer using the embedded chat widget has no Business AI
+    # account at all — this must work fully anonymously once the business
+    # is ACTIVE (this is the actual product: a business's own website
+    # visitors, not logged-in platform users).
+    r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "what is this domain for"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "answered"
+
+    r = client.get(f"/api/tenant/public?tenant_id={tenant_id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["business_name"] == "Priya Salon"
+    assert "owner_email" not in r.json()
 
     r = client.get(f"/api/analytics?tenant_id={tenant_id}", headers=headers)
     analytics = r.json()
-    assert analytics["total_questions"] == 1
-    assert analytics["answered_count"] == 1
+    assert analytics["total_questions"] == 2
+    assert analytics["answered_count"] == 2
 
     r = client.post(f"/api/leads?tenant_id={tenant_id}", json={"session_id": "sess_x", "phone": "9876543210", "name": "Test Customer"})
     assert r.status_code == 200, r.text

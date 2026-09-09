@@ -57,6 +57,7 @@ class UnauthorizedError(ValueError):
 
 class TenantAction(str, Enum):
     QUERY_ASSISTANT = "query_assistant"
+    VIEW_PUBLIC_INFO = "view_public_info"
     INGEST_KNOWLEDGE = "ingest_knowledge"
     VIEW_LEADS = "view_leads"
     VIEW_ANALYTICS = "view_analytics"
@@ -69,6 +70,7 @@ class TenantAction(str, Enum):
 OWNER_ACTIONS = frozenset(
     {
         TenantAction.QUERY_ASSISTANT,
+        TenantAction.VIEW_PUBLIC_INFO,
         TenantAction.INGEST_KNOWLEDGE,
         TenantAction.VIEW_LEADS,
         TenantAction.VIEW_ANALYTICS,
@@ -79,20 +81,32 @@ OWNER_ACTIONS = frozenset(
 STAFF_ACTIONS = frozenset(
     {
         TenantAction.QUERY_ASSISTANT,
+        TenantAction.VIEW_PUBLIC_INFO,
         TenantAction.VIEW_LEADS,
         TenantAction.VIEW_ANALYTICS,
     }
 )
 
+# Actions a real, anonymous website visitor (a customer, not a platform
+# user) may call with no Bearer token at all. Deliberately a short list:
+# only what the embeddable chat widget itself needs (ask a question, read
+# the business's public display name/welcome message). Everything else —
+# leads, analytics, knowledge management — requires a logged-in owner or
+# staff account. A real end-to-end browser test caught this: the chat
+# widget is meant for a business's own customers, who will never have a
+# Business AI login, and the original authorize() rejected every
+# unauthenticated caller unconditionally, breaking the actual product.
+PUBLIC_ACTIONS = frozenset({TenantAction.QUERY_ASSISTANT, TenantAction.VIEW_PUBLIC_INFO})
+
 # Actions a non-ACTIVE tenant may never perform, regardless of role, except
 # platform_admin managing its own lifecycle (activate/suspend/inspect).
-# Deliberately just QUERY_ASSISTANT: that's the one action an actual
-# customer triggers. VIEW_LEADS/VIEW_ANALYTICS/knowledge-source listing are
-# the OWNER's own dashboard views — they must keep working during
-# PROVISIONING, since that's exactly when an owner is setting up and
-# checking progress (caught by a real end-to-end test: gating these too
-# broke "see what I've uploaded so far" before activation).
-CUSTOMER_FACING_ACTIONS = frozenset({TenantAction.QUERY_ASSISTANT})
+# Deliberately just the two customer-facing actions above. VIEW_LEADS/
+# VIEW_ANALYTICS/knowledge-source listing are the OWNER's own dashboard
+# views — they must keep working during PROVISIONING, since that's
+# exactly when an owner is setting up and checking progress (caught by a
+# real end-to-end test: gating these too broke "see what I've uploaded so
+# far" before activation).
+CUSTOMER_FACING_ACTIONS = PUBLIC_ACTIONS
 
 
 class TenantRegistry:
@@ -212,13 +226,12 @@ def authorize(
     tenant_id other than their own, no matter what target_tenant_id is
     requested. Returns the tenant's config on success (callers need it
     anyway) or raises UnauthorizedError / TenantNotFoundError.
+
+    The one exception to "no principal, no access" is PUBLIC_ACTIONS: a
+    real customer using the chat widget has no Business AI account at
+    all, by design, so those specific actions must work with principal
+    being None — gated instead by the tenant's lifecycle status below.
     """
-    if principal is None or not principal.is_authenticated:
-        raise UnauthorizedError("Authentication required.")
-
-    if principal.role != "platform_admin" and principal.tenant_id != target_tenant_id:
-        raise UnauthorizedError("You are not authorized to act on this business's data.")
-
     config = registry.get_config(target_tenant_id)
 
     # Lifecycle gating: customer-facing actions require the tenant to be
@@ -227,6 +240,14 @@ def authorize(
     # non-active tenant's assistant.
     if action in CUSTOMER_FACING_ACTIONS and config.status != TenantStatus.ACTIVE:
         raise UnauthorizedError(f"Business is {config.status.value}, not active. This action is disabled.")
+
+    if principal is None or not principal.is_authenticated:
+        if action in PUBLIC_ACTIONS:
+            return config
+        raise UnauthorizedError("Authentication required.")
+
+    if principal.role != "platform_admin" and principal.tenant_id != target_tenant_id:
+        raise UnauthorizedError("You are not authorized to act on this business's data.")
 
     if principal.role == "platform_admin":
         return config

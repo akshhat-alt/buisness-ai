@@ -29,9 +29,27 @@ def registry(tmp_path: Path) -> TenantRegistry:
     return reg
 
 
-def test_unauthenticated_principal_is_rejected(registry):
+def test_unauthenticated_principal_is_rejected_for_non_public_actions(registry):
     with pytest.raises(UnauthorizedError):
-        authorize(None, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-a", registry=registry)
+        authorize(None, TenantAction.VIEW_LEADS, target_tenant_id="salon-a", registry=registry)
+
+
+def test_anonymous_customer_can_query_an_active_tenant(registry):
+    """A real customer using the embedded chat widget has no Business AI
+    account at all — this must work with no principal, as long as the
+    business is ACTIVE."""
+    config = authorize(None, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-a", registry=registry)
+    assert config.tenant_id == "salon-a"
+
+
+def test_anonymous_customer_cannot_query_a_non_active_tenant(registry):
+    with pytest.raises(UnauthorizedError):
+        authorize(None, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-b", registry=registry)
+
+
+def test_anonymous_visitor_can_read_public_tenant_info(registry):
+    config = authorize(None, TenantAction.VIEW_PUBLIC_INFO, target_tenant_id="salon-a", registry=registry)
+    assert config.tenant_id == "salon-a"
 
 
 def test_owner_cannot_act_on_a_different_tenant(registry):
