@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -84,7 +85,15 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
 class HashEmbeddingProvider(EmbeddingProvider):
     """Deterministic local embeddings for offline tests only — not semantically
-    meaningful, never use in production."""
+    meaningful, never use in production.
+
+    Bag-of-hashed-words (each word hashed to its own unit vector, then
+    averaged) rather than hashing the whole string: this gives texts that
+    share vocabulary a genuinely higher cosine similarity than unrelated
+    texts, so tests that exercise the real retrieval + evidence-gate
+    threshold (not just plumbing) get a meaningful signal instead of
+    effectively-random noise.
+    """
 
     DIMENSION = 128
 
@@ -99,8 +108,8 @@ class HashEmbeddingProvider(EmbeddingProvider):
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return [self._embed_one(t) for t in texts]
 
-    def _embed_one(self, text: str) -> list[float]:
-        digest = hashlib.sha256(text.encode("utf-8")).digest()
+    def _word_vector(self, word: str) -> list[float]:
+        digest = hashlib.sha256(word.encode("utf-8")).digest()
         values: list[float] = []
         while len(values) < self.DIMENSION:
             for byte in digest:
@@ -108,8 +117,19 @@ class HashEmbeddingProvider(EmbeddingProvider):
                 if len(values) >= self.DIMENSION:
                     break
             digest = hashlib.sha256(digest).digest()
-        norm = math.sqrt(sum(v * v for v in values)) or 1.0
-        return [v / norm for v in values]
+        return values
+
+    def _embed_one(self, text: str) -> list[float]:
+        words = re.findall(r"[a-z0-9]+", text.lower())
+        if not words:
+            words = ["__empty__"]
+        totals = [0.0] * self.DIMENSION
+        for word in words:
+            vec = self._word_vector(word)
+            for i, v in enumerate(vec):
+                totals[i] += v
+        norm = math.sqrt(sum(v * v for v in totals)) or 1.0
+        return [v / norm for v in totals]
 
 
 # ==============================================================================
