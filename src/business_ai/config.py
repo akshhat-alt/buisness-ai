@@ -55,8 +55,16 @@ class Settings:
     max_concurrent_requests: int
     max_query_length: int
 
-    # WhatsApp handoff
+    # WhatsApp handoff (wa.me click-to-chat fallback link)
     default_whatsapp_number: str | None
+
+    # WhatsApp Business Cloud API (platform-level: one Meta App shared by
+    # every tenant's own WhatsApp Business number). Each tenant brings
+    # their own phone_number_id + access token (see TenantConfig) — this
+    # app never holds a tenant's WhatsApp credentials as platform secrets.
+    whatsapp_app_secret: str | None
+    whatsapp_verify_token: str | None
+    whatsapp_api_version: str
 
     # Owner daily digest email (optional — digest send is skipped, not
     # fatal, if these aren't set; this is an add-on, not core auth)
@@ -64,6 +72,10 @@ class Settings:
     digest_from_email: str | None
     digest_window_hours: int
     public_base_url: str | None
+
+    # Customer win-back: platform-wide default "lapsed" threshold, used
+    # when a tenant hasn't set their own TenantConfig.winback_after_days.
+    winback_default_days: int
 
     # Server
     port: int
@@ -98,10 +110,14 @@ def load_settings() -> Settings:
         max_concurrent_requests=_int_env("MAX_CONCURRENT_REQUESTS_PER_SESSION", 1),
         max_query_length=_int_env("MAX_QUERY_LENGTH", 1000),
         default_whatsapp_number=(os.getenv("DEFAULT_WHATSAPP_NUMBER") or "").strip() or None,
+        whatsapp_app_secret=(os.getenv("WHATSAPP_APP_SECRET") or "").strip() or None,
+        whatsapp_verify_token=(os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip() or None,
+        whatsapp_api_version=os.getenv("WHATSAPP_API_VERSION", "v21.0").strip() or "v21.0",
         resend_api_key=(os.getenv("RESEND_API_KEY") or "").strip() or None,
         digest_from_email=(os.getenv("DIGEST_FROM_EMAIL") or "").strip() or None,
         digest_window_hours=_int_env("DIGEST_WINDOW_HOURS", 24),
         public_base_url=(os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None,
+        winback_default_days=_int_env("WINBACK_DEFAULT_DAYS", 45),
         port=_int_env("PORT", 8000),
         enabled=_bool_env("BUSINESS_AI_ENABLED", True),
     )

@@ -37,8 +37,27 @@ class TenantConfig(BaseModel):
     owner_email: str
     assistant_name: str = "Assistant"
     welcome_message: str = "Hi! How can I help you today?"
-    whatsapp_number: str | None = None  # E.164 without "+", e.g. "919329999716"
+    whatsapp_number: str | None = None  # E.164 without "+", e.g. "919329999716" (click-to-chat handoff link)
+    # WhatsApp Business Cloud API — this tenant's OWN WhatsApp Business
+    # number, registered by the owner in their own Meta developer console.
+    # Business AI has one shared Meta App/webhook (platform-level
+    # WHATSAPP_APP_SECRET/WHATSAPP_VERIFY_TOKEN); each tenant brings their
+    # own phone_number_id + permanent access token for THEIR number, the
+    # same "bring your own credential" shape as a tenant's review_link.
+    whatsapp_phone_number_id: str | None = None
+    whatsapp_access_token: str | None = None
     review_link: str | None = None  # e.g. a Google Business review URL, for review-request emails
+    # Deposit/payment links (Razorpay) — same "bring your own credential"
+    # shape as WhatsApp: the payment goes straight into the TENANT's own
+    # Razorpay account, never through a Business AI-held balance.
+    razorpay_key_id: str | None = None
+    razorpay_key_secret: str | None = None
+    deposit_amount_inr: int | None = None  # whole rupees; unset = deposit-link action is disabled
+    # Customer win-back: how many days without a repeat visit counts as
+    # "lapsed" for THIS business. None = platform default (config.
+    # winback_default_days) — a salon's natural cadence is weeks, a
+    # dental clinic's is months, so this can't be one hardcoded number.
+    winback_after_days: int | None = None
     status: TenantStatus = TenantStatus.PROVISIONING
     question_quota: int | None = None  # None = platform default (see config.active_tenant_quota)
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
@@ -192,6 +211,26 @@ class TenantRegistry:
         with self._lock, self._db() as conn:
             rows = conn.execute("SELECT config_json FROM tenants").fetchall()
             return [self._row_to_config(r) for r in rows]
+
+    def find_by_whatsapp_phone_number_id(self, phone_number_id: str) -> TenantConfig | None:
+        """Routes an inbound WhatsApp webhook event to its owning tenant.
+
+        Business AI runs ONE shared Meta App/webhook for every tenant, so
+        the webhook payload's `phone_number_id` (Meta's own routing key,
+        never client-suppliable in a way that could impersonate another
+        tenant — it's tied to the sender's verified WhatsApp Business
+        number at Meta's end) is the only trustworthy way to know which
+        business a message belongs to. A linear scan over all tenants is
+        the smallest correct implementation at pilot-phase tenant counts;
+        revisit with a dedicated index only if tenant volume ever makes
+        this a real bottleneck.
+        """
+        if not phone_number_id:
+            return None
+        for config in self.list_all():
+            if config.whatsapp_phone_number_id == phone_number_id:
+                return config
+        return None
 
     def is_registered(self, tenant_id: str) -> bool:
         with self._lock, self._db() as conn:

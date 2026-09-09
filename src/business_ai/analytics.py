@@ -29,6 +29,7 @@ class ConversationTurn(BaseModel):
     shows_buying_intent: bool = False
     suggested_handoff: bool = False
     shows_dissatisfaction: bool = False
+    channel: str = "web"  # "web" | "whatsapp" — which surface the question came in on
     created_at: str
 
 
@@ -100,6 +101,10 @@ class AnalyticsStore:
                 conn.execute("ALTER TABLE turns ADD COLUMN shows_dissatisfaction INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            try:
+                conn.execute("ALTER TABLE turns ADD COLUMN channel TEXT NOT NULL DEFAULT 'web'")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_tenant ON turns(tenant_id)")
             conn.commit()
 
@@ -113,6 +118,7 @@ class AnalyticsStore:
         shows_buying_intent: bool = False,
         suggested_handoff: bool = False,
         shows_dissatisfaction: bool = False,
+        channel: str = "web",
     ) -> ConversationTurn:
         turn = ConversationTurn(
             turn_id=f"turn_{secrets.token_hex(8)}",
@@ -123,19 +129,20 @@ class AnalyticsStore:
             shows_buying_intent=shows_buying_intent,
             suggested_handoff=suggested_handoff,
             shows_dissatisfaction=shows_dissatisfaction,
+            channel=channel,
             created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         )
         with self._lock, self._db() as conn:
             conn.execute(
                 """
                 INSERT INTO turns (turn_id, tenant_id, session_id, query, answer_status,
-                    shows_buying_intent, suggested_handoff, shows_dissatisfaction, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    shows_buying_intent, suggested_handoff, shows_dissatisfaction, channel, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     turn.turn_id, turn.tenant_id, turn.session_id, turn.query, turn.answer_status,
                     int(turn.shows_buying_intent), int(turn.suggested_handoff), int(turn.shows_dissatisfaction),
-                    turn.created_at,
+                    turn.channel, turn.created_at,
                 ),
             )
             conn.commit()

@@ -108,11 +108,15 @@ src/business_ai/
   retrieval.py    Embeddings, tenant-isolated vector store, retrieval engine
   generation.py   Prompts, abstention gate, LLM call, citation validator
   ingestion.py    SSRF-safe website fetch, PDF text extraction, SourceStore
-  leads.py        Lead capture (SQLite)
+  leads.py        Lead capture (SQLite) + appointment/reminder/reengagement/
+                  winback/deposit tracking fields and query methods
   analytics.py    Conversation turn logging + summary (SQLite)
+  whatsapp.py     WhatsApp Cloud API: webhook parsing/signature, send client,
+                  redelivery idempotency (WhatsAppInboxStore)
+  payments.py     Razorpay payment-link client (deposit links)
   app.py          FastAPI app factory: wires everything into HTTP routes
 static/           Vanilla HTML/CSS/JS frontend, no build step
-tests/            pytest suite (42 tests) — see README.md
+tests/            pytest suite (89 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,
@@ -128,10 +132,14 @@ when launched from a different directory.)
 The MVP is intentionally narrow, but the seams for later automation are
 already in the right places:
 
-- **New channels** (SMS, Instagram DM, a Business API WhatsApp bot):
-  each is just a new thin adapter that calls the existing `ask()` logic
-  and `LeadStore`/`AnalyticsStore` — the RAG/auth/tenant core doesn't
-  change.
+- **New channels**: WhatsApp is now built this exact way — `whatsapp.py`
+  is a thin adapter (webhook parsing, signature verification, an HTTP
+  send client) and `app.py`'s `_process_question()` is the one grounded-
+  answer pipeline both the website widget and the WhatsApp webhook call;
+  neither the RAG/auth/tenant core nor `/api/ask` itself had to change.
+  The same shape applies to a future channel (SMS, Instagram DM): a new
+  thin adapter calling `_process_question()` + `LeadStore`/
+  `AnalyticsStore`, nothing more.
 - **New structured signals** (e.g. `wants_appointment_booking`): add a
   field to `RESPONSE_SCHEMA` and `LLMResponseDraft`/`GroundedAnswer`,
   same pattern as `shows_buying_intent`/`suggested_handoff` — no second

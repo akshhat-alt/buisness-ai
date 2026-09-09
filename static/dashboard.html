@@ -93,6 +93,8 @@
     <a href="#knowledge">Knowledge</a>
     <a href="#leads">Leads</a>
     <a href="#staff">Staff Assistant</a>
+    <a href="#whatsapp">WhatsApp</a>
+    <a href="#growth">Deposits</a>
     <a href="#settings">Settings</a>
   </nav>
 
@@ -102,6 +104,8 @@
       <a class="dash-nav-link" href="#knowledge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Knowledge</a>
       <a class="dash-nav-link" href="#leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg> Leads</a>
       <a class="dash-nav-link" href="#staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Staff Assistant</a>
+      <a class="dash-nav-link" href="#whatsapp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> WhatsApp</a>
+      <a class="dash-nav-link" href="#growth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Deposits</a>
       <a class="dash-nav-link" href="#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg> Settings</a>
     </aside>
 
@@ -166,11 +170,11 @@
         <section class="dash-section" id="leads">
           <div class="dash-section-head">
             <h2>Leads</h2>
-            <p class="ba-muted" style="margin:0;">Once you've completed a service for a lead, request a review — sent to their email with your review link.</p>
+            <p class="ba-muted" style="margin:0;">Once you've completed a service for a lead, request a review — sent on WhatsApp for WhatsApp leads, or by email otherwise.</p>
           </div>
           <div class="ba-card" style="padding:0; overflow:hidden;">
             <table class="ba-table" id="leads-table" style="margin:0;">
-              <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>When</th><th></th></tr></thead>
+              <thead><tr><th>Channel</th><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>Appointment</th><th>Actions</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -201,6 +205,40 @@
             <div class="ba-field"><label class="ba-label">WhatsApp Number (with country code, no +, e.g. 919876543210)</label><input class="ba-input" id="cfg-whatsapp"></div>
             <div class="ba-field"><label class="ba-label">Review Link (e.g. your Google Business review URL)</label><input class="ba-input" id="cfg-review-link"></div>
             <button class="ba-btn" onclick="saveSettings(event)">Save</button>
+          </div>
+        </section>
+
+        <section class="dash-section" id="whatsapp">
+          <div class="dash-section-head">
+            <h2>WhatsApp Assistant</h2>
+            <p class="ba-muted" style="margin:0;">Let customers message your assistant directly on WhatsApp — same knowledge base, same lead capture, same complaint alerts as the website chat.</p>
+          </div>
+          <div class="ba-card">
+            <p class="ba-muted" style="margin-top:0;">Connect your own WhatsApp Business number from
+              <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers</a> —
+              add the WhatsApp product, copy your <strong>Phone Number ID</strong> and generate a
+              <strong>permanent access token</strong>, then paste both here.</p>
+            <div class="ba-field"><label class="ba-label">WhatsApp Phone Number ID</label><input class="ba-input" id="cfg-wa-phone-id" placeholder="e.g. 109876543210987"></div>
+            <div class="ba-field"><label class="ba-label">WhatsApp Access Token</label><input class="ba-input" type="password" id="cfg-wa-token" placeholder="Permanent access token from Meta"></div>
+            <button class="ba-btn" onclick="saveWhatsappSettings(event)">Save WhatsApp Connection</button>
+            <p id="wa-status" class="ba-muted" style="margin-bottom:0;"></p>
+          </div>
+        </section>
+
+        <section class="dash-section" id="growth">
+          <div class="dash-section-head">
+            <h2>Deposits &amp; Win-Back</h2>
+            <p class="ba-muted" style="margin:0;">Reduce no-shows with a booking deposit, and automatically reach out to regulars who've drifted away.</p>
+          </div>
+          <div class="ba-card">
+            <p class="ba-muted" style="margin-top:0;">Deposits are collected straight into your own
+              <a href="https://razorpay.com" target="_blank" rel="noopener">Razorpay</a> account — Business AI never
+              holds your money. Find your Key ID/Secret under Razorpay → Settings → API Keys.</p>
+            <div class="ba-field"><label class="ba-label">Deposit Amount (₹)</label><input class="ba-input" type="number" min="1" id="cfg-deposit-amount" placeholder="e.g. 200"></div>
+            <div class="ba-field"><label class="ba-label">Razorpay Key ID</label><input class="ba-input" id="cfg-rzp-key-id" placeholder="rzp_live_..."></div>
+            <div class="ba-field"><label class="ba-label">Razorpay Key Secret</label><input class="ba-input" type="password" id="cfg-rzp-key-secret" placeholder="Leave blank to keep the saved one"></div>
+            <div class="ba-field"><label class="ba-label">Win back a customer after (days of no visit)</label><input class="ba-input" type="number" min="1" id="cfg-winback-days" placeholder="Default: 45"></div>
+            <button class="ba-btn" onclick="saveGrowthSettings(event)">Save</button>
           </div>
         </section>
 
@@ -291,6 +329,13 @@
         document.getElementById('cfg-welcome').value = t.welcome_message || '';
         document.getElementById('cfg-whatsapp').value = t.whatsapp_number || '';
         document.getElementById('cfg-review-link').value = t.review_link || '';
+        document.getElementById('cfg-wa-phone-id').value = t.whatsapp_phone_number_id || '';
+        document.getElementById('wa-status').innerText = t.whatsapp_phone_number_id
+          ? 'Connected — customers can message this number and your assistant replies automatically.'
+          : 'Not connected yet — customers can only reach you through the website chat until you add this.';
+        document.getElementById('cfg-deposit-amount').value = t.deposit_amount_inr || '';
+        document.getElementById('cfg-rzp-key-id').value = t.razorpay_key_id || '';
+        document.getElementById('cfg-winback-days').value = t.winback_after_days || '';
       }
 
       let analytics = { total_questions: 0, answered_count: 0, buying_intent_count: 0, dissatisfaction_count: 0 };
@@ -310,12 +355,24 @@
         const l = await lRes.json();
         leads = l.leads;
         document.getElementById('m-leads').innerText = leads.length;
+        const canFollowUp = lead => lead.email || (lead.source === 'whatsapp' && lead.phone);
         document.querySelector('#leads-table tbody').innerHTML = leads.length ? leads.map(lead => `
-          <tr id="lead-${escapeHtml(lead.lead_id)}"><td>${escapeHtml(lead.name || '—')}</td><td>${escapeHtml(lead.phone || '—')}</td>
+          <tr id="lead-${escapeHtml(lead.lead_id)}"><td>${lead.source === 'whatsapp' ? '📱 WhatsApp' : (lead.source === 'chat' ? '💬 Web' : escapeHtml(lead.source || '—'))}</td>
+          <td>${escapeHtml(lead.name || '—')}<div class="ba-muted" style="font-size:.78rem;">${escapeHtml(lead.created_at)}</div></td>
+          <td>${escapeHtml(lead.phone || '—')}</td>
           <td>${escapeHtml(lead.email || '—')}</td><td>${escapeHtml((lead.message || '').slice(0, 60))}</td>
-          <td>${escapeHtml(lead.created_at)}</td>
-          <td>${lead.email ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="requestReview('${escapeHtml(lead.lead_id)}')">Request Review</button>` : ''}</td></tr>`).join('')
-          : `<tr><td colspan="6" class="ba-muted" style="text-align:center; padding:28px;">No leads yet — they'll show up here the moment a customer leaves their contact info.</td></tr>`;
+          <td>${lead.appointment_at
+            ? `<div>${escapeHtml(formatAppointment(lead.appointment_at))}</div><button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="showApptInput('${escapeHtml(lead.lead_id)}')">Reschedule</button>`
+            : ''
+          }<div id="appt-form-${escapeHtml(lead.lead_id)}" style="${lead.appointment_at ? 'display:none;' : ''} margin-top:4px;">
+              <input class="ba-input" type="datetime-local" id="appt-input-${escapeHtml(lead.lead_id)}" style="margin-bottom:4px; max-width:180px; font-size:.82rem;">
+              <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="setAppointment('${escapeHtml(lead.lead_id)}')">Save</button>
+            </div></td>
+          <td>
+            ${canFollowUp(lead) ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="requestReview('${escapeHtml(lead.lead_id)}', this)">Request Review</button>` : ''}
+            ${canFollowUp(lead) ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="sendDepositLink('${escapeHtml(lead.lead_id)}', this)">Send Deposit Link</button>` : ''}
+          </td></tr>`).join('')
+          : `<tr><td colspan="7" class="ba-muted" style="text-align:center; padding:28px;">No leads yet — they'll show up here the moment a customer leaves their contact info, or messages you on WhatsApp.</td></tr>`;
       }
 
       renderAttention({ gaps, leads, analytics });
@@ -482,9 +539,63 @@
       setTimeout(() => { btn.innerText = original; }, 1600);
     }
 
-    async function requestReview(leadId) {
-      const row = document.getElementById(`lead-${leadId}`);
-      const btn = row.querySelector('button');
+    async function saveWhatsappSettings(e) {
+      const btn = e.target;
+      const original = btn.innerText;
+      const body = { whatsapp_phone_number_id: document.getElementById('cfg-wa-phone-id').value.trim() };
+      // Never send an empty token — that would overwrite an already-saved
+      // one. The field is deliberately never pre-filled with the real
+      // saved token (it stays blank after load), so "leave it blank" is
+      // the natural way to keep the existing token unchanged.
+      const token = document.getElementById('cfg-wa-token').value.trim();
+      if (token) body.whatsapp_access_token = token;
+      try {
+        const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error('Failed to save.');
+        document.getElementById('cfg-wa-token').value = '';
+        document.getElementById('wa-status').innerText = body.whatsapp_phone_number_id
+          ? 'Connected — customers can message this number and your assistant replies automatically.'
+          : 'Not connected yet.';
+        btn.innerText = 'Saved ✓';
+      } catch (e) {
+        btn.innerText = 'Error';
+      }
+      setTimeout(() => { btn.innerText = original; }, 1600);
+    }
+
+    async function saveGrowthSettings(e) {
+      const btn = e.target;
+      const original = btn.innerText;
+      const body = {};
+      const depositAmount = document.getElementById('cfg-deposit-amount').value.trim();
+      if (depositAmount) body.deposit_amount_inr = parseInt(depositAmount, 10);
+      const keyId = document.getElementById('cfg-rzp-key-id').value.trim();
+      if (keyId) body.razorpay_key_id = keyId;
+      // Same "leave blank to keep the saved value" pattern as the
+      // WhatsApp access token above — never pre-filled, never overwritten
+      // with an accidental empty string.
+      const keySecret = document.getElementById('cfg-rzp-key-secret').value.trim();
+      if (keySecret) body.razorpay_key_secret = keySecret;
+      const winbackDays = document.getElementById('cfg-winback-days').value.trim();
+      if (winbackDays) body.winback_after_days = parseInt(winbackDays, 10);
+      try {
+        const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error('Failed to save.');
+        document.getElementById('cfg-rzp-key-secret').value = '';
+        btn.innerText = 'Saved ✓';
+      } catch (e) {
+        btn.innerText = 'Error';
+      }
+      setTimeout(() => { btn.innerText = original; }, 1600);
+    }
+
+    async function requestReview(leadId, btn) {
       btn.disabled = true;
       try {
         const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/request-review?tenant_id=${encodeURIComponent(tenantId)}`, {
@@ -496,6 +607,51 @@
       } catch (e) {
         alert(e.message);
         btn.disabled = false;
+      }
+    }
+
+    function formatAppointment(isoUtc) {
+      // appointment_at is stored UTC; show it back in IST, the one
+      // timezone this product supports today (see app.py's IST constant).
+      const d = new Date(isoUtc);
+      return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    }
+
+    function showApptInput(leadId) {
+      document.getElementById(`appt-form-${leadId}`).style.display = 'block';
+    }
+
+    async function setAppointment(leadId) {
+      const input = document.getElementById(`appt-input-${leadId}`);
+      if (!input.value) { alert('Pick a date and time first.'); return; }
+      try {
+        const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/appointment?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ appointment_at: input.value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to save the appointment.');
+        loadDashboard();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function sendDepositLink(leadId, btn) {
+      btn.disabled = true;
+      const original = btn.innerText;
+      btn.innerText = 'Sending...';
+      try {
+        const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/deposit-link?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to send the deposit link.');
+        btn.innerText = 'Sent ✓';
+      } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+        btn.innerText = original;
       }
     }
 
