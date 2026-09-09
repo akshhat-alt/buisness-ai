@@ -47,6 +47,24 @@ no shared secrets, no shared deploy.
   button (a safe, placeholder-filled template — never a guessed fact, see
   `generation.draft_faq_answer`) that the owner edits and publishes
   directly into the knowledge base with one click.
+- **Real-time dissatisfaction alert**: a customer message showing genuine
+  frustration or a complaint emails the owner immediately, not batched
+  into tomorrow's digest — loss prevention, not just reporting. Detected
+  independently of the grounded-answer path (`generation.
+  classify_dissatisfaction`), since a real complaint rarely matches FAQ
+  content and would otherwise trip the pre-LLM abstention gate before
+  the signal is ever extracted.
+- **Owner action-brief**: the digest includes 0-3 LLM-generated, data-
+  grounded recommendations (`generation.generate_action_brief`) — e.g.
+  flagging a question asked more than once as recurring unmet demand.
+  Gated in code (not just prompted) to return nothing rather than padded
+  generic advice when the period's activity doesn't support a real
+  recommendation.
+- **Review requests**: the owner marks a lead as serviced and one click
+  emails that customer a review-link request. Deliberately owner-
+  triggered, not automatic off a buying-intent-style chat signal — the
+  assistant has no way to know a service was actually delivered, and
+  asking too early would look presumptuous.
 
 ## What v1 deliberately does not do
 
@@ -91,15 +109,17 @@ token — there's no in-process scheduler in this app.
 pytest
 ```
 
-49 tests covering the full HTTP lifecycle (signup → ingest → activate →
+57 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
-from the new FAQ entry) and owner digest (sends only to active tenants
-with activity, skips gracefully when unconfigured), the `authorize()`
-chokepoint, chunking edge cases, usage-limiter behavior, and the SSRF
-guard. All offline — no OpenAI cost — using a deterministic fake
-generator and a word-overlap fake embedding provider that still
-exercises the real evidence-gate confidence threshold.
+from the new FAQ entry), owner digest (sends only to active tenants with
+activity, includes the action brief, skips gracefully when
+unconfigured), the real-time dissatisfaction alert and review-request
+flows (including tenant isolation), the `authorize()` chokepoint,
+chunking edge cases, usage-limiter behavior, and the SSRF guard. All
+offline — no OpenAI cost — using a deterministic fake generator and a
+word-overlap fake embedding provider that still exercises the real
+evidence-gate confidence threshold.
 
 ## Known limitations (v1, honestly stated)
 
