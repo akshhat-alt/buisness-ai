@@ -86,13 +86,13 @@ STAFF_ACTIONS = frozenset(
 
 # Actions a non-ACTIVE tenant may never perform, regardless of role, except
 # platform_admin managing its own lifecycle (activate/suspend/inspect).
-CUSTOMER_FACING_ACTIONS = frozenset(
-    {
-        TenantAction.QUERY_ASSISTANT,
-        TenantAction.VIEW_LEADS,
-        TenantAction.VIEW_ANALYTICS,
-    }
-)
+# Deliberately just QUERY_ASSISTANT: that's the one action an actual
+# customer triggers. VIEW_LEADS/VIEW_ANALYTICS/knowledge-source listing are
+# the OWNER's own dashboard views — they must keep working during
+# PROVISIONING, since that's exactly when an owner is setting up and
+# checking progress (caught by a real end-to-end test: gating these too
+# broke "see what I've uploaded so far" before activation).
+CUSTOMER_FACING_ACTIONS = frozenset({TenantAction.QUERY_ASSISTANT})
 
 
 class TenantRegistry:
