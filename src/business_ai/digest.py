@@ -26,8 +26,15 @@ def render_owner_digest(
     analytics: AnalyticsSummary,
     window_hours: int,
     dashboard_url: str | None,
+    action_items: list[str] | None = None,
 ) -> tuple[str, str]:
-    """Returns (subject, html_body)."""
+    """Returns (subject, html_body). action_items is the optional LLM-
+    generated advisory brief (see generation.generate_action_brief) — a
+    report of raw numbers turned into 1-3 concrete recommendations. None
+    or an empty list simply omits that section, so a digest still renders
+    correctly without it (e.g. when email is configured but the caller
+    chooses not to spend the extra LLM call, or the brief came back
+    empty because there was nothing meaningful to say)."""
     period = "today" if window_hours <= 24 else f"the last {window_hours} hours"
     subject = f"{tenant.business_name}: {len(new_leads)} new lead(s), {analytics.total_questions} question(s) {period}"
 
@@ -45,6 +52,16 @@ def render_owner_digest(
         f'<p><a href="{escape(dashboard_url)}">Open your dashboard &rarr;</a></p>' if dashboard_url else ""
     )
 
+    action_section = ""
+    if action_items:
+        items_html = "".join(f"<li>{escape(item)}</li>" for item in action_items)
+        action_section = f"""
+      <div style="background:#f0f7f2; border-left:3px solid #2f6f4f; padding:12px 16px; margin:16px 0;">
+        <h3 style="margin-top:0;">What to do about it</h3>
+        <ul style="margin-bottom:0;">{items_html}</ul>
+      </div>
+        """
+
     html = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <h2 style="margin-bottom: 4px;">{escape(tenant.business_name)} — {period}'s summary</h2>
@@ -58,6 +75,8 @@ def render_owner_digest(
           <td style="padding:8px; background:#f5f5f5; text-align:center;"><strong>{analytics.buying_intent_count}</strong><br>Buying interest</td>
         </tr>
       </table>
+
+      {action_section}
 
       <h3>New leads</h3>
       <table style="width:100%; border-collapse:collapse;">
