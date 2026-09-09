@@ -19,6 +19,14 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Explicit path, not the default upward-search: this app can be launched
+# with a cwd outside the project (e.g. a dev-server runner invoked from a
+# sibling directory), so relying on load_dotenv()'s implicit cwd-walk
+# would silently no-op in that case.
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -54,8 +62,15 @@ from business_ai.tenant import (
 )
 from business_ai.usage_limiter import AccessDecision, UsageLimiter
 
-DATA_ROOT = Path("data")
-STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# Anchored to this project's own directory, never to the launching
+# process's cwd. A cwd-relative "data" path is a real cross-project
+# isolation hazard: this app could otherwise be started from a sibling
+# project's directory and silently read/write that project's own
+# data/ (found in dev when a mismatched schema surfaced the collision
+# before any actual write happened).
+DATA_ROOT = PROJECT_ROOT / "data"
+STATIC_DIR = PROJECT_ROOT / "static"
 
 
 class Services:
