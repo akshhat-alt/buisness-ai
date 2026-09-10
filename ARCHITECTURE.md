@@ -112,11 +112,13 @@ src/business_ai/
                   winback/deposit tracking fields and query methods
   analytics.py    Conversation turn logging + summary (SQLite)
   whatsapp.py     WhatsApp Cloud API: webhook parsing/signature, send client,
-                  redelivery idempotency (WhatsAppInboxStore)
+                  redelivery idempotency (WhatsAppInboxStore), and
+                  MetaEmbeddedSignupClient (one-click onboarding's OAuth
+                  code exchange, gated behind WHATSAPP_APP_ID)
   payments.py     Razorpay payment-link client (deposit links)
   app.py          FastAPI app factory: wires everything into HTTP routes
 static/           Vanilla HTML/CSS/JS frontend, no build step
-tests/            pytest suite (89 tests) — see README.md
+tests/            pytest suite (132 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

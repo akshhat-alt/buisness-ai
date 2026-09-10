@@ -92,3 +92,40 @@ def render_owner_digest(
     </div>
     """
     return subject, html
+
+
+def render_owner_whatsapp_summary(
+    tenant: TenantConfig,
+    *,
+    new_leads: list[Lead],
+    analytics: AnalyticsSummary,
+    open_gaps_count: int,
+    window_label: str,
+    action_items: list[str] | None = None,
+) -> str:
+    """A short, plain-text version of the same digest content, for the
+    owner's own WhatsApp — both the pushed daily summary and the pull
+    ("what needs my attention today?") command render through this one
+    function, since they show the same kind of thing on demand vs. on a
+    schedule. WhatsApp brevity rules apply: numbers first, no HTML, no
+    more than a couple of action lines.
+    """
+    lines = [
+        f"📊 {tenant.business_name} — {window_label}",
+        "",
+        f"{analytics.total_questions} questions asked ({analytics.answered_count} answered)",
+        f"{len(new_leads)} new lead(s)",
+        f"{analytics.buying_intent_count} showed buying interest",
+    ]
+    if analytics.dissatisfaction_count:
+        lines.append(f"⚠️ {analytics.dissatisfaction_count} complaint(s) flagged")
+    if open_gaps_count:
+        lines.append(f"{open_gaps_count} knowledge gap(s) open")
+    if action_items:
+        lines.append("")
+        lines.append("What to do:")
+        lines.extend(f"• {item}" for item in action_items[:3])
+    if not (new_leads or analytics.total_questions or open_gaps_count):
+        lines.append("")
+        lines.append("All quiet — nothing needs you right now.")
+    return "\n".join(lines)

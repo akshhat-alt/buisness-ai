@@ -65,6 +65,12 @@ class Settings:
     whatsapp_app_secret: str | None
     whatsapp_verify_token: str | None
     whatsapp_api_version: str
+    # Embedded Signup ("Connect WhatsApp" one-click onboarding). The App
+    # ID is public (safe in frontend JS, unlike the secret above); both
+    # being unset simply means the manual Cloud API flow is the only
+    # option, which is the correct default until Business AI is an
+    # approved Meta Tech Provider.
+    whatsapp_app_id: str | None
 
     # Owner daily digest email (optional — digest send is skipped, not
     # fatal, if these aren't set; this is an add-on, not core auth)
@@ -72,6 +78,19 @@ class Settings:
     digest_from_email: str | None
     digest_window_hours: int
     public_base_url: str | None
+    # Onboarding: notifies you when a new business signs up (otherwise
+    # only visible by checking the admin panel) and notifies the owner
+    # when you activate them. Optional — skipped gracefully if unset,
+    # same as every other email feature above.
+    platform_admin_email: str | None
+
+    # Business AI's OWN Razorpay account, for collecting subscription
+    # payment FROM tenants — distinct from a tenant's own razorpay_key_id/
+    # secret (TenantConfig), which collects deposits from THAT tenant's
+    # own customers into that tenant's own account. Unset = billing links
+    # can't be sent yet; tenants without a price set are unaffected.
+    platform_razorpay_key_id: str | None
+    platform_razorpay_key_secret: str | None
 
     # Customer win-back: platform-wide default "lapsed" threshold, used
     # when a tenant hasn't set their own TenantConfig.winback_after_days.
@@ -113,8 +132,12 @@ def load_settings() -> Settings:
         whatsapp_app_secret=(os.getenv("WHATSAPP_APP_SECRET") or "").strip() or None,
         whatsapp_verify_token=(os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip() or None,
         whatsapp_api_version=os.getenv("WHATSAPP_API_VERSION", "v21.0").strip() or "v21.0",
+        whatsapp_app_id=(os.getenv("WHATSAPP_APP_ID") or "").strip() or None,
         resend_api_key=(os.getenv("RESEND_API_KEY") or "").strip() or None,
         digest_from_email=(os.getenv("DIGEST_FROM_EMAIL") or "").strip() or None,
+        platform_admin_email=(os.getenv("PLATFORM_ADMIN_EMAIL") or "").strip() or None,
+        platform_razorpay_key_id=(os.getenv("PLATFORM_RAZORPAY_KEY_ID") or "").strip() or None,
+        platform_razorpay_key_secret=(os.getenv("PLATFORM_RAZORPAY_KEY_SECRET") or "").strip() or None,
         digest_window_hours=_int_env("DIGEST_WINDOW_HOURS", 24),
         public_base_url=(os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None,
         winback_default_days=_int_env("WINBACK_DEFAULT_DAYS", 45),

@@ -47,6 +47,12 @@ class FakeGenerator:
     def generate_action_brief(self, **kwargs) -> list[str]:
         return self.action_brief_items
 
+    def translate_to_english_for_retrieval(self, *, text: str) -> str:
+        # Deterministic no-op in tests — the real translation call is
+        # exercised only in the live (non-CI) validation script, never
+        # against the real OpenAI API in the test suite.
+        return text
+
 
 class FakeEmailSender:
     """Captures every send() call instead of hitting a real network

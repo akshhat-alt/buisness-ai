@@ -38,9 +38,16 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from business_ai.alerts import render_dissatisfaction_alert, render_review_request
+from business_ai.alerts import (
+    render_billing_link_email,
+    render_dissatisfaction_alert,
+    render_new_tenant_signup_alert,
+    render_review_request,
+    render_tenant_activated_email,
+    render_tenant_self_activated_notice,
+)
 from business_ai.analytics import AnalyticsStore
-from business_ai.digest import has_digest_content, render_owner_digest
+from business_ai.digest import has_digest_content, render_owner_digest, render_owner_whatsapp_summary
 from business_ai.email_sender import EmailSendError, EmailSender
 from business_ai.auth import Principal, UserStore, create_access_token, resolve_principal, AuthenticationError
 from business_ai.config import Settings, load_settings, validate_environment
@@ -50,7 +57,9 @@ from business_ai.generation import (
     build_abstention_answer,
     build_system_prompt,
     build_user_prompt,
+    default_abstention_message,
     evaluate_evidence_gate,
+    is_hindi_script,
     validate_llm_draft,
 )
 from business_ai.ingestion import IngestionError, SourceStore, extract_pdf_text, fetch_website_text, ingest_text
@@ -71,6 +80,8 @@ from business_ai.tenant import (
 from business_ai.usage_limiter import AccessDecision, ReservationResult, UsageLimiter
 from business_ai.whatsapp import (
     REENGAGEMENT_WINDOW_CLOSED_CODE,
+    MetaEmbeddedSignupClient,
+    MetaEmbeddedSignupError,
     WhatsAppClient,
     WhatsAppInboxStore,
     WhatsAppSendError,
@@ -135,6 +146,9 @@ class Services:
     def razorpay_client(self) -> RazorpayClient:
         return RazorpayClient()
 
+    def meta_signup_client(self) -> MetaEmbeddedSignupClient:
+        return MetaEmbeddedSignupClient(api_version=self.settings.whatsapp_api_version)
+
 
 def _openai_key() -> str:
     import os
@@ -188,12 +202,28 @@ class AppointmentRequest(BaseModel):
     appointment_at: str = Field(min_length=1)  # ISO 8601 datetime, e.g. "2026-09-20T16:00:00"
 
 
+class EmbeddedSignupRequest(BaseModel):
+    # Both handed to the frontend directly by Meta's Embedded Signup
+    # popup callback — see MetaEmbeddedSignupClient's docstring.
+    code: str = Field(min_length=1)
+    phone_number_id: str = Field(min_length=1)
+
+
+class BillingLinkRequest(BaseModel):
+    amount_inr: int = Field(gt=0)
+
+
+class MarkPaidRequest(BaseModel):
+    amount_inr: int | None = None
+
+
 class TenantConfigUpdate(BaseModel):
     assistant_name: str | None = None
     welcome_message: str | None = None
     whatsapp_number: str | None = None
     whatsapp_phone_number_id: str | None = None
     whatsapp_access_token: str | None = None
+    owner_whatsapp_number: str | None = None
     review_link: str | None = None
     razorpay_key_id: str | None = None
     razorpay_key_secret: str | None = None
@@ -231,6 +261,15 @@ def _parse_appointment_to_utc(raw: str) -> str:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=IST)
     return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _normalize_phone(raw: str | None) -> str:
+    """Strips everything but digits, so "+91 98765 43210" and
+    "919876543210" (Meta's own wa_id format) compare equal. Does not
+    attempt general phone-number parsing — the owner is expected to enter
+    their full number with country code, same convention as every other
+    WhatsApp number field in this app."""
+    return re.sub(r"\D", "", raw or "")
 
 
 def _format_appointment_ist(iso_utc: str) -> str:
@@ -324,12 +363,96 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=401, detail="Authentication required.")
         return principal
 
+    def _notify_admin_of_signup(tenant: TenantConfig) -> None:
+        """Best-effort, same pattern as every other optional email
+        feature: silently skipped if PLATFORM_ADMIN_EMAIL /
+        RESEND_API_KEY / DIGEST_FROM_EMAIL aren't all configured, never
+        allowed to fail the signup itself."""
+        if not (svc.settings.platform_admin_email and svc.settings.resend_api_key and svc.settings.digest_from_email):
+            return
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+        subject, html = render_new_tenant_signup_alert(
+            business_name=tenant.business_name, owner_email=tenant.owner_email,
+            tenant_id=tenant.tenant_id, dashboard_url=dashboard_url,
+        )
+        try:
+            svc.email_sender().send(to=svc.settings.platform_admin_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            logger.warning("Failed to send new-signup admin notification for tenant %s: %s", tenant.tenant_id, exc)
+
+    def _notify_owner_of_activation(tenant: TenantConfig) -> None:
+        if not (svc.settings.resend_api_key and svc.settings.digest_from_email):
+            return
+        chat_url = f"{svc.settings.public_base_url}/chat?tenant_id={tenant.tenant_id}" if svc.settings.public_base_url else None
+        subject, html = render_tenant_activated_email(
+            business_name=tenant.business_name, assistant_name=tenant.assistant_name, chat_url=chat_url,
+        )
+        try:
+            svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            logger.warning("Failed to send activation email for tenant %s: %s", tenant.tenant_id, exc)
+
+    def _notify_admin_of_self_activation(tenant: TenantConfig) -> None:
+        """Visibility only, never a gate — see self_activate_tenant."""
+        if not (svc.settings.platform_admin_email and svc.settings.resend_api_key and svc.settings.digest_from_email):
+            return
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+        subject, html = render_tenant_self_activated_notice(
+            business_name=tenant.business_name, tenant_id=tenant.tenant_id, dashboard_url=dashboard_url,
+        )
+        try:
+            svc.email_sender().send(to=svc.settings.platform_admin_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            logger.warning("Failed to send self-activation notice for tenant %s: %s", tenant.tenant_id, exc)
+
+    def _activation_blocker(tenant_id: str) -> str | None:
+        """The one bar every activation path must clear — admin-triggered
+        or owner self-service alike. Returns a human-readable reason to
+        block, or None when clear to activate."""
+        if svc.vector_store.count_for_tenant(tenant_id) == 0:
+            return "Cannot activate: no knowledge sources ingested yet."
+        tenant = svc.tenant_registry.get_config(tenant_id)
+        if tenant.subscription_price_inr and tenant.billing_status != "paid":
+            return "Payment is required before activating — check your email for the payment link."
+        return None
+
+    def _send_owner_whatsapp(tenant: TenantConfig, body: str) -> bool:
+        """Best-effort push to the OWNER's own WhatsApp — a fast, far-
+        more-likely-to-be-seen companion to email for the two things that
+        most benefit from it: an instant complaint alert, and the daily
+        digest. Requires both a connected business number (to send FROM)
+        and the owner's own number configured (to send TO); silently
+        unavailable, not an error, when either is missing — email stays
+        the guaranteed channel regardless. A business-initiated message
+        to a number that hasn't messaged the business's line in the last
+        24h fails Meta's customer-service-window rule exactly like it
+        would for a customer; that's expected, not a bug, and is exactly
+        why this is a bonus fast path, never the only one."""
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token and tenant.owner_whatsapp_number):
+            return False
+        try:
+            svc.whatsapp_client().send_text(
+                phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                to=tenant.owner_whatsapp_number, body=body,
+            )
+            return True
+        except WhatsAppSendError as exc:
+            logger.warning("Owner WhatsApp push failed for tenant %s: %s", tenant.tenant_id, exc)
+            return False
+
     def _send_dissatisfaction_alert(*, tenant: TenantConfig, query: str, answer_text: str, session_id: str) -> None:
-        """Best-effort: a slow/failed alert email must never break the
+        """Best-effort: a slow/failed alert must never break the
         customer's actual chat response, so failures are swallowed here,
         not raised — this mirrors the digest-run route's per-tenant
         failure collection, just for a single synchronous event instead
-        of a batch job."""
+        of a batch job. Tries the owner's WhatsApp AND email independently
+        — neither gates the other."""
+        _send_owner_whatsapp(
+            tenant,
+            f"⚠️ A customer sounds unhappy on {tenant.business_name}'s assistant.\n\n"
+            f'They said: "{query}"\n\nOpen your dashboard for the full conversation.',
+        )
+
         if not svc.settings.resend_api_key or not svc.settings.digest_from_email:
             return
         dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
@@ -373,7 +496,25 @@ def create_app(services: Services | None = None) -> FastAPI:
 
         try:
             engine = RetrievalEngine(svc.vector_store, svc.embeddings())
-            pack = engine.retrieve(query, tenant_id=tenant_id, top_k=5)
+            retrieval_query = query
+            if is_hindi_script(query):
+                # Live-validated (see generation.translate_to_english_for_
+                # retrieval's docstring): a Devanagari query embedded as-is
+                # scores well below the abstention threshold against
+                # English-language content even when the answer is right
+                # there; translating for retrieval only recovers most of
+                # that gap. Best-effort — falls back to the original text
+                # on any failure, never blocks the request.
+                try:
+                    retrieval_query = svc.generator().translate_to_english_for_retrieval(text=query)
+                except Exception as exc:  # noqa: BLE001 - a failed translation must not block retrieval
+                    logger.warning("Hindi query translation for retrieval failed: %s", exc)
+            pack = engine.retrieve(retrieval_query, tenant_id=tenant_id, top_k=5)
+            if retrieval_query != query:
+                # The customer's ORIGINAL text is what generation sees and
+                # what abstention-language-detection runs on — only the
+                # embedding lookup used the translated version.
+                pack = pack.model_copy(update={"query": query})
 
             gate = evaluate_evidence_gate(pack)
             if gate.should_abstain:
@@ -426,12 +567,13 @@ def create_app(services: Services | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        svc.tenant_registry.register(
+        new_tenant = svc.tenant_registry.register(
             TenantConfig(
                 tenant_id=tenant_id, business_name=request.business_name, owner_email=user.email,
                 status=TenantStatus.PROVISIONING,
             )
         )
+        _notify_admin_of_signup(new_tenant)
 
         principal = Principal.owner(user.user_id, tenant_id)
         token = create_access_token(principal, svc.settings)
@@ -527,6 +669,34 @@ def create_app(services: Services | None = None) -> FastAPI:
 
         return PlainTextResponse(challenge or "")
 
+    def _handle_owner_command(tenant: TenantConfig, to_wa_id: str) -> None:
+        """Any message from the tenant's configured owner_whatsapp_number
+        is a live status pull ("what needs my attention today?"), not a
+        customer question — no keyword/command parsing, since this
+        number is for the owner/staff, not customers, so any message
+        here means the same thing. Reuses the exact same summary as the
+        daily digest; deliberately skips the LLM action-brief call (see
+        generate_action_brief) to keep an on-demand reply fast and free,
+        unlike the once-a-day push which can afford the extra call."""
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
+            return
+        since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - svc.settings.digest_window_hours * 3600))
+        new_leads = svc.lead_store.list_for_tenant(tenant.tenant_id, since_iso=since_iso)
+        analytics = svc.analytics_store.summary_for_tenant(tenant.tenant_id, since_iso=since_iso)
+        window_label = "today" if svc.settings.digest_window_hours <= 24 else f"the last {svc.settings.digest_window_hours}h"
+        summary = render_owner_whatsapp_summary(
+            tenant, new_leads=new_leads, analytics=analytics,
+            open_gaps_count=len(svc.analytics_store.list_open_gaps(tenant.tenant_id)),
+            window_label=window_label, action_items=None,
+        )
+        try:
+            svc.whatsapp_client().send_text(
+                phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                to=to_wa_id, body=summary,
+            )
+        except WhatsAppSendError as exc:
+            logger.warning("Owner status-pull reply failed for tenant %s: %s", tenant.tenant_id, exc)
+
     @app.post("/api/whatsapp/webhook")
     async def receive_whatsapp_webhook(req: Request) -> dict:
         """Inbound WhatsApp messages, from Meta. Routes to the owning
@@ -571,6 +741,10 @@ def create_app(services: Services | None = None) -> FastAPI:
                 if not svc.whatsapp_inbox.claim(msg.message_id, tenant.tenant_id):
                     continue  # already processed (Meta redelivery)
 
+                if tenant.owner_whatsapp_number and _normalize_phone(msg.wa_id) == _normalize_phone(tenant.owner_whatsapp_number):
+                    _handle_owner_command(tenant, msg.wa_id)
+                    continue  # internal command, not a customer — no lead, no RAG, no quota spent
+
                 session_id = f"wa_{msg.wa_id}"
                 if not svc.lead_store.exists_for_session(tenant.tenant_id, session_id):
                     # A real, Meta-verified phone number on first contact —
@@ -589,11 +763,15 @@ def create_app(services: Services | None = None) -> FastAPI:
                     tenant=tenant, tenant_id=tenant.tenant_id, session_id=session_id, query=msg.text, channel="whatsapp",
                 )
                 if res.decision != AccessDecision.ALLOW:
-                    reply_text = "Thanks for your message — our team will get back to you shortly."
+                    reply_text = (
+                        "आपके संदेश के लिए धन्यवाद — हमारी टीम जल्द ही आपसे संपर्क करेगी।"
+                        if is_hindi_script(msg.text)
+                        else "Thanks for your message — our team will get back to you shortly."
+                    )
                 elif answer.status.value == "answered":  # type: ignore[union-attr]
                     reply_text = _strip_citation_markers(answer.answer_text)  # type: ignore[union-attr]
                 else:
-                    reply_text = answer.abstention_reason or "Let me connect you with someone from the team who can help."  # type: ignore[union-attr]
+                    reply_text = answer.abstention_reason or default_abstention_message(msg.text)  # type: ignore[union-attr]
 
                 if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
                     logger.warning("Tenant %s has no WhatsApp credentials configured to reply with.", tenant.tenant_id)
@@ -1007,6 +1185,52 @@ def create_app(services: Services | None = None) -> FastAPI:
         updated = svc.tenant_registry.update_config(tenant_id, **fields)
         return updated.model_dump()
 
+    @app.get("/api/tenant/whatsapp/embedded-signup-status")
+    def whatsapp_embedded_signup_status() -> dict:
+        """Unauthenticated, read-only: whether the "Connect WhatsApp"
+        one-click flow can even be offered on this deployment yet. The
+        dashboard uses this to decide whether to show that button at
+        all, rather than showing it and failing on click — this is a
+        platform-wide capability flag, not tenant data."""
+        return {"available": bool(svc.settings.whatsapp_app_id and svc.settings.whatsapp_app_secret)}
+
+    @app.post("/api/tenant/whatsapp/embedded-signup")
+    def connect_whatsapp_embedded_signup(
+        request: EmbeddedSignupRequest, tenant_id: str, authorization: str | None = Header(default=None)
+    ) -> dict:
+        """Completes WhatsApp Embedded Signup for one tenant: exchanges
+        the authorization code Meta's popup handed the frontend for a
+        long-lived access token, server-side, using Business AI's own
+        Meta App credentials — then stores it in the exact same
+        TenantConfig fields the manual flow already uses. Same
+        authorization as the manual flow (MANAGE_ASSISTANT): whoever can
+        change assistant settings can connect WhatsApp either way."""
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.MANAGE_ASSISTANT, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if not (svc.settings.whatsapp_app_id and svc.settings.whatsapp_app_secret):
+            raise HTTPException(
+                status_code=400,
+                detail="One-click WhatsApp connection isn't available on this deployment yet — use the manual connection fields below instead.",
+            )
+
+        try:
+            access_token = svc.meta_signup_client().exchange_code_for_token(
+                app_id=svc.settings.whatsapp_app_id, app_secret=svc.settings.whatsapp_app_secret, code=request.code,
+            )
+        except MetaEmbeddedSignupError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not connect WhatsApp: {exc}") from exc
+
+        updated = svc.tenant_registry.update_config(
+            tenant_id, whatsapp_phone_number_id=request.phone_number_id, whatsapp_access_token=access_token,
+        )
+        return {"whatsapp_phone_number_id": updated.whatsapp_phone_number_id, "connected": True}
+
     # -------------------------------------------------------------- platform admin
     @app.get("/api/v1/admin/tenants")
     def admin_list_tenants(authorization: str | None = Header(default=None)) -> dict:
@@ -1025,10 +1249,110 @@ def create_app(services: Services | None = None) -> FastAPI:
         except TenantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-        if svc.vector_store.count_for_tenant(target_tenant_id) == 0:
-            raise HTTPException(status_code=400, detail="Cannot activate: no knowledge sources ingested yet.")
+        blocker = _activation_blocker(target_tenant_id)
+        if blocker:
+            raise HTTPException(status_code=400, detail=blocker)
 
         updated = svc.tenant_registry.update_status(target_tenant_id, TenantStatus.ACTIVE)
+        _notify_owner_of_activation(updated)
+        return updated.model_dump()
+
+    @app.post("/api/tenant/activate")
+    def self_activate_tenant(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Lets the OWNER activate their own tenant once they've cleared
+        the same bar an admin would check — knowledge ingested, and paid
+        if a subscription price was set. Removes the founder from the
+        loop as the default path; admin activation (above) still works
+        unchanged for anyone who wants to do it by hand, and `suspend`
+        remains the escape hatch if a self-activated tenant needs to be
+        pulled back."""
+        principal = _resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.MANAGE_ASSISTANT, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if tenant.status == TenantStatus.SUSPENDED:
+            raise HTTPException(status_code=403, detail="This account has been suspended — contact support.")
+        if tenant.status == TenantStatus.ACTIVE:
+            raise HTTPException(status_code=400, detail="Already active.")
+
+        blocker = _activation_blocker(tenant_id)
+        if blocker:
+            raise HTTPException(status_code=400, detail=blocker)
+
+        updated = svc.tenant_registry.update_status(tenant_id, TenantStatus.ACTIVE)
+        _notify_admin_of_self_activation(updated)
+        return updated.model_dump()
+
+    @app.post("/api/v1/admin/tenants/{target_tenant_id}/billing-link")
+    def admin_send_billing_link(
+        target_tenant_id: str, request: BillingLinkRequest, authorization: str | None = Header(default=None)
+    ) -> dict:
+        """Generates a Business AI subscription payment link (platform's
+        own Razorpay account, never the tenant's) and emails it to the
+        owner. Same "send a link, confirm manually" shape as every other
+        payment feature in this app — see payments.py's own scope note
+        on why there's no webhook-based auto-confirmation."""
+        principal = _require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+        try:
+            tenant = svc.tenant_registry.get_config(target_tenant_id)
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if not (svc.settings.platform_razorpay_key_id and svc.settings.platform_razorpay_key_secret):
+            raise HTTPException(status_code=400, detail="Platform Razorpay isn't configured (PLATFORM_RAZORPAY_KEY_ID/SECRET).")
+        if not (svc.settings.resend_api_key and svc.settings.digest_from_email):
+            raise HTTPException(status_code=400, detail="Email sending is not configured for this deployment.")
+
+        try:
+            payment_url = svc.razorpay_client().create_payment_link(
+                key_id=svc.settings.platform_razorpay_key_id, key_secret=svc.settings.platform_razorpay_key_secret,
+                amount_inr=request.amount_inr, description=f"Business AI subscription — {tenant.business_name}",
+                customer_name=tenant.business_name,
+            )
+        except PaymentLinkError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not create payment link: {exc}") from exc
+
+        subject, html = render_billing_link_email(
+            business_name=tenant.business_name, assistant_name=tenant.assistant_name,
+            amount_inr=request.amount_inr, payment_url=payment_url,
+        )
+        try:
+            svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not send the billing email: {exc}") from exc
+
+        updated = svc.tenant_registry.update_config(
+            target_tenant_id, subscription_price_inr=request.amount_inr, billing_status="invoiced",
+            billing_link_sent_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        )
+        return {"sent_to": tenant.owner_email, "payment_url": payment_url, "billing_status": updated.billing_status}
+
+    @app.post("/api/v1/admin/tenants/{target_tenant_id}/mark-paid")
+    def admin_mark_paid(
+        target_tenant_id: str, request: MarkPaidRequest, authorization: str | None = Header(default=None)
+    ) -> dict:
+        """Manual payment confirmation — the admin checked their own
+        Razorpay dashboard and is recording it here. No webhook-based
+        auto-confirmation exists (same honest limitation as deposit
+        links); see README's known-limitations section."""
+        principal = _require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+        try:
+            svc.tenant_registry.get_config(target_tenant_id)
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        fields: dict = {"billing_status": "paid", "billing_paid_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        if request.amount_inr is not None:
+            fields["subscription_price_inr"] = request.amount_inr
+        updated = svc.tenant_registry.update_config(target_tenant_id, **fields)
         return updated.model_dump()
 
     @app.post("/api/v1/admin/tenants/{target_tenant_id}/suspend")
@@ -1100,6 +1424,17 @@ def create_app(services: Services | None = None) -> FastAPI:
                 sent.append(tenant.tenant_id)
             except EmailSendError as exc:
                 failed.append({"tenant_id": tenant.tenant_id, "error": str(exc)})
+
+            # Bonus fast path alongside the guaranteed email above — never
+            # gates it, never blocks it, failure here is invisible to the
+            # caller by design (see _send_owner_whatsapp's docstring).
+            window_label = "today" if svc.settings.digest_window_hours <= 24 else f"the last {svc.settings.digest_window_hours}h"
+            whatsapp_summary = render_owner_whatsapp_summary(
+                tenant, new_leads=new_leads, analytics=analytics,
+                open_gaps_count=len(svc.analytics_store.list_open_gaps(tenant.tenant_id)),
+                window_label=window_label, action_items=action_items,
+            )
+            _send_owner_whatsapp(tenant, whatsapp_summary)
 
         return {"sent": sent, "skipped": skipped, "failed": failed}
 

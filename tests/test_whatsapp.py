@@ -300,3 +300,172 @@ def test_request_review_reports_closed_reengagement_window(client_wa, services_w
     r = client_wa.post(f"/api/leads/{lead_id}/request-review?tenant_id={tenant_id}", headers=headers)
     assert r.status_code == 400
     assert "24-hour" in r.json()["detail"]
+
+
+# ------------------------------------------------------------------ owner "what needs my attention today?" command
+
+
+def test_owner_message_gets_status_pull_not_customer_rag(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    client_wa.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "919999888877"}, headers=headers)
+
+    payload = _wa_payload(phone_number_id="PNID_1", wa_id="919999888877", message_id="wamid.owner1", text="hey, what's up")
+    r = _signed_post(client_wa, payload)
+    assert r.status_code == 200, r.text
+
+    sent = services_wa.fake_whatsapp_client.sent
+    assert len(sent) == 1
+    assert sent[0]["to"] == "919999888877"
+    assert "📊" in sent[0]["body"]
+    assert "questions asked" in sent[0]["body"].lower()
+
+    # Not treated as a customer: no lead captured for the owner's own number.
+    leads = client_wa.get(f"/api/leads?tenant_id={tenant_id}", headers=headers).json()["leads"]
+    assert leads == []
+
+
+def test_owner_command_ignores_message_content(client_wa, services_wa):
+    """No keyword parsing — any message from the owner's number triggers
+    the same status pull, since that number is for the owner, not customers."""
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    client_wa.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "919999888877"}, headers=headers)
+
+    payload = _wa_payload(phone_number_id="PNID_1", wa_id="919999888877", message_id="wamid.owner2", text="asdf random text")
+    r = _signed_post(client_wa, payload)
+    assert r.status_code == 200, r.text
+    assert len(services_wa.fake_whatsapp_client.sent) == 1
+    assert "📊" in services_wa.fake_whatsapp_client.sent[0]["body"]
+
+
+def test_regular_customer_unaffected_when_owner_number_configured(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    client_wa.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "919999888877"}, headers=headers)
+
+    payload = _wa_payload(phone_number_id="PNID_1", wa_id="919876543210", message_id="wamid.cust1", text="what are your hours?")
+    r = _signed_post(client_wa, payload)
+    assert r.status_code == 200, r.text
+
+    sent = services_wa.fake_whatsapp_client.sent
+    assert len(sent) == 1
+    assert sent[0]["to"] == "919876543210"
+    assert "📊" not in sent[0]["body"]  # a normal grounded reply, not the owner status pull
+
+    leads = client_wa.get(f"/api/leads?tenant_id={tenant_id}", headers=headers).json()["leads"]
+    assert len(leads) == 1
+    assert leads[0]["phone"] == "919876543210"
+
+
+def test_owner_number_matches_regardless_of_plus_or_spacing(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    client_wa.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "+91 99998 88877"}, headers=headers)
+
+    payload = _wa_payload(phone_number_id="PNID_1", wa_id="919999888877", message_id="wamid.owner3", text="status?")
+    r = _signed_post(client_wa, payload)
+    assert r.status_code == 200, r.text
+    assert len(services_wa.fake_whatsapp_client.sent) == 1
+    assert "📊" in services_wa.fake_whatsapp_client.sent[0]["body"]
+
+
+# ------------------------------------------------------------------ WhatsApp Embedded Signup (one-click onboarding)
+
+
+class FakeMetaEmbeddedSignupClient:
+    def __init__(self, *, raise_error: Exception | None = None) -> None:
+        self.calls: list[dict] = []
+        self.raise_error = raise_error
+
+    def exchange_code_for_token(self, *, app_id: str, app_secret: str, code: str) -> str:
+        if self.raise_error:
+            raise self.raise_error
+        self.calls.append({"app_id": app_id, "app_secret": app_secret, "code": code})
+        return "fake-long-lived-token"
+
+
+def test_embedded_signup_status_unavailable_without_app_id(client_wa, services_wa):
+    r = client_wa.get("/api/tenant/whatsapp/embedded-signup-status")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"available": False}  # services_wa never sets whatsapp_app_id
+
+
+def test_embedded_signup_status_available_when_configured(client_wa, services_wa):
+    services_wa.settings = dataclasses.replace(services_wa.settings, whatsapp_app_id="fake-app-id")
+    r = client_wa.get("/api/tenant/whatsapp/embedded-signup-status")
+    assert r.json() == {"available": True}
+
+
+def test_embedded_signup_rejected_when_not_configured(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    r = client_wa.post(
+        f"/api/tenant/whatsapp/embedded-signup?tenant_id={tenant_id}",
+        json={"code": "authcode123", "phone_number_id": "PNID_NEW"}, headers=headers,
+    )
+    assert r.status_code == 400
+    assert "manual connection" in r.json()["detail"].lower()
+
+
+def test_embedded_signup_connects_tenant_on_success(client_wa, services_wa):
+    services_wa.settings = dataclasses.replace(services_wa.settings, whatsapp_app_id="fake-app-id")
+    fake_signup = FakeMetaEmbeddedSignupClient()
+    services_wa.meta_signup_client = lambda: fake_signup
+
+    headers, tenant_id = _signup(client_wa)
+    r = client_wa.post(
+        f"/api/tenant/whatsapp/embedded-signup?tenant_id={tenant_id}",
+        json={"code": "authcode123", "phone_number_id": "PNID_NEW"}, headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"whatsapp_phone_number_id": "PNID_NEW", "connected": True}
+    assert len(fake_signup.calls) == 1
+    assert fake_signup.calls[0]["code"] == "authcode123"
+
+    tenant = client_wa.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
+    assert tenant["whatsapp_phone_number_id"] == "PNID_NEW"
+    assert tenant["whatsapp_access_token"] == "fake-long-lived-token"
+
+
+def test_embedded_signup_surfaces_meta_error(client_wa, services_wa):
+    from business_ai.whatsapp import MetaEmbeddedSignupError
+
+    services_wa.settings = dataclasses.replace(services_wa.settings, whatsapp_app_id="fake-app-id")
+    services_wa.meta_signup_client = lambda: FakeMetaEmbeddedSignupClient(
+        raise_error=MetaEmbeddedSignupError("Meta token exchange failed (400): invalid code")
+    )
+
+    headers, tenant_id = _signup(client_wa)
+    r = client_wa.post(
+        f"/api/tenant/whatsapp/embedded-signup?tenant_id={tenant_id}",
+        json={"code": "bad-code", "phone_number_id": "PNID_NEW"}, headers=headers,
+    )
+    assert r.status_code == 502
+    assert "invalid code" in r.json()["detail"]
+
+
+def test_embedded_signup_requires_authentication(client_wa, services_wa):
+    """Matches this codebase's consistent convention (see authorize()):
+    a missing/absent token on a tenant-scoped action is a 403, not a 401
+    — the same as every other MANAGE_ASSISTANT-gated endpoint."""
+    services_wa.settings = dataclasses.replace(services_wa.settings, whatsapp_app_id="fake-app-id")
+    headers, tenant_id = _signup(client_wa)
+    r = client_wa.post(
+        f"/api/tenant/whatsapp/embedded-signup?tenant_id={tenant_id}",
+        json={"code": "authcode123", "phone_number_id": "PNID_NEW"},
+    )
+    assert r.status_code == 403
+
+
+def test_embedded_signup_is_tenant_isolated(client_wa, services_wa):
+    services_wa.settings = dataclasses.replace(services_wa.settings, whatsapp_app_id="fake-app-id")
+    services_wa.meta_signup_client = lambda: FakeMetaEmbeddedSignupClient()
+
+    headers_a, tenant_a = _signup(client_wa, business_name="Salon A", email="a@example.com")
+    headers_b, tenant_b = _signup(client_wa, business_name="Salon B", email="b@example.com")
+
+    r = client_wa.post(
+        f"/api/tenant/whatsapp/embedded-signup?tenant_id={tenant_a}",
+        json={"code": "authcode123", "phone_number_id": "PNID_NEW"}, headers=headers_b,
+    )
+    assert r.status_code == 403

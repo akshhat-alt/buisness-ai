@@ -46,6 +46,14 @@ class TenantConfig(BaseModel):
     # same "bring your own credential" shape as a tenant's review_link.
     whatsapp_phone_number_id: str | None = None
     whatsapp_access_token: str | None = None
+    # The OWNER's (or staff's) own personal WhatsApp number — E.164 without
+    # "+". Two things read this: (1) real-time complaint alerts and the
+    # daily digest are pushed here over WhatsApp as a best-effort fast
+    # path alongside the guaranteed email; (2) any inbound message FROM
+    # this number on the tenant's WhatsApp line is treated as an internal
+    # owner command ("what needs my attention today?"), not a customer
+    # question — see app.py's webhook handler.
+    owner_whatsapp_number: str | None = None
     review_link: str | None = None  # e.g. a Google Business review URL, for review-request emails
     # Deposit/payment links (Razorpay) — same "bring your own credential"
     # shape as WhatsApp: the payment goes straight into the TENANT's own
@@ -58,6 +66,15 @@ class TenantConfig(BaseModel):
     # winback_default_days) — a salon's natural cadence is weeks, a
     # dental clinic's is months, so this can't be one hardcoded number.
     winback_after_days: int | None = None
+    # Business AI's OWN subscription revenue from this tenant — separate
+    # from razorpay_key_id/secret above, which are the TENANT's own
+    # account for collecting deposits from THEIR customers. None/0 means
+    # this tenant was never priced (e.g. an early free pilot) and the
+    # activation gate below simply doesn't apply to them.
+    subscription_price_inr: int | None = None
+    billing_status: str = "unbilled"  # "unbilled" | "invoiced" | "paid"
+    billing_link_sent_at: str | None = None
+    billing_paid_at: str | None = None
     status: TenantStatus = TenantStatus.PROVISIONING
     question_quota: int | None = None  # None = platform default (see config.active_tenant_quota)
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))

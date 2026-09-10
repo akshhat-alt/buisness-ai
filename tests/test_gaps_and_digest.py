@@ -208,6 +208,7 @@ def test_digest_run_sends_only_to_active_tenants_with_activity(client_with_email
     # Tenant C: never activated -> should be skipped regardless of activity.
     headers_c, tenant_c = _signup(client_with_email, business_name="Still Provisioning", email="c@example.com")
 
+    services_with_email.fake_email_sender.sent.clear()  # discard the two activation emails above
     r = client_with_email.post("/api/v1/admin/digest/run", headers=admin_headers)
     assert r.status_code == 200, r.text
     result = r.json()
@@ -233,6 +234,7 @@ def test_digest_run_includes_the_action_brief_when_generated(client_with_email, 
     client_with_email.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
     _activate(client_with_email, admin_headers, tenant_id)
     client_with_email.post(f"/api/leads?tenant_id={tenant_id}", json={"session_id": "s1", "phone": "9876543210"})
+    services_with_email.fake_email_sender.sent.clear()  # discard the activation email
 
     services_with_email.generator = lambda: FakeGenerator(
         action_brief_items=["3 customers asked about weekend hours — consider opening Saturdays."]

@@ -63,6 +63,7 @@ def client_dissatisfied(services_dissatisfied):
 def test_dissatisfaction_triggers_instant_owner_alert(client_dissatisfied, services_dissatisfied):
     headers, tenant_id = _signup(client_dissatisfied)
     _activate(client_dissatisfied, headers, tenant_id, services_dissatisfied.settings.admin_secret)
+    services_dissatisfied.fake_email_sender.sent.clear()  # discard the activation email — not what this test checks
 
     # example.com's boilerplate text shares no real vocabulary with this
     # complaint, so it still abstains via the pre-LLM gate rather than
@@ -85,6 +86,7 @@ def test_dissatisfaction_triggers_instant_owner_alert(client_dissatisfied, servi
 def test_non_dissatisfied_query_sends_no_alert(client_dissatisfied, services_dissatisfied):
     headers, tenant_id = _signup(client_dissatisfied, email="owner2@example.com")
     _activate(client_dissatisfied, headers, tenant_id, services_dissatisfied.settings.admin_secret)
+    services_dissatisfied.fake_email_sender.sent.clear()  # discard the activation email — not what this test checks
 
     r = client_dissatisfied.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "what are your hours"}, headers=headers)
     assert r.status_code == 200, r.text
@@ -111,6 +113,7 @@ def test_dissatisfaction_alert_skipped_when_email_not_configured(client, owner_s
 def test_request_review_sends_to_lead_email(client_with_email, services_with_email):
     headers, tenant_id = _signup(client_with_email)
     _activate(client_with_email, headers, tenant_id, services_with_email.settings.admin_secret)
+    services_with_email.fake_email_sender.sent.clear()  # discard the activation email — not what this test checks
 
     r = client_with_email.put(
         f"/api/tenant?tenant_id={tenant_id}", json={"review_link": "https://g.page/r/fake-review-link"}, headers=headers,
@@ -173,3 +176,49 @@ def test_request_review_is_tenant_isolated(client_with_email, services_with_emai
 
     r = client_with_email.post(f"/api/leads/{lead_id}/request-review?tenant_id={tenant_b}", headers=headers_b)
     assert r.status_code == 404
+
+
+# ------------------------------------------------------------------ onboarding notifications
+
+
+def test_admin_notified_on_new_signup(client_with_email, services_with_email):
+    services_with_email.settings = dataclasses.replace(services_with_email.settings, platform_admin_email="admin@business-ai.example")
+
+    _signup(client_with_email, business_name="Fresh Salon", email="fresh@example.com")
+
+    sent = services_with_email.fake_email_sender.sent
+    assert len(sent) == 1
+    assert sent[0]["to"] == "admin@business-ai.example"
+    assert "Fresh Salon" in sent[0]["subject"]
+    assert "fresh@example.com" in sent[0]["html_body"]
+
+
+def test_admin_not_notified_when_platform_admin_email_unset(client_with_email, services_with_email):
+    # services_with_email never sets platform_admin_email — signup must
+    # not crash or send anything unexpected.
+    _signup(client_with_email, business_name="Quiet Salon", email="quiet@example.com")
+    assert services_with_email.fake_email_sender.sent == []
+
+
+def test_owner_notified_on_activation(client_with_email, services_with_email):
+    headers, tenant_id = _signup(client_with_email, business_name="Glow Salon", email="glow@example.com")
+    client_with_email.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
+    admin_login = client_with_email.post("/api/auth/login", json={"email": "admin", "password": services_with_email.settings.admin_secret})
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    r = client_with_email.post(f"/api/v1/admin/tenants/{tenant_id}/activate", headers=admin_headers)
+    assert r.status_code == 200, r.text
+
+    sent = services_with_email.fake_email_sender.sent
+    assert len(sent) == 1
+    assert sent[0]["to"] == "glow@example.com"
+    assert "live" in sent[0]["subject"].lower()
+
+
+def test_activation_notification_skipped_gracefully_when_email_not_configured(client, owner_session, activate_tenant):
+    """Uses the plain `client`/`owner_session` fixtures (no email config)
+    to prove activation still succeeds without crashing when there's no
+    email provider configured — best-effort, not a hard dependency."""
+    headers, tenant_id = owner_session
+    client.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
+    activate_tenant(tenant_id)  # would raise/fail loudly if the notification path broke activation

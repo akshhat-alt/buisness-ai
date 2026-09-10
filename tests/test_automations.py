@@ -14,6 +14,7 @@ faked — no real network calls, no OpenAI cost.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 
 import pytest
@@ -377,6 +378,97 @@ def test_whatsapp_channel_gets_a_brevity_instruction_web_does_not():
     assert "whatsapp style" not in default_prompt  # "web" stays the default, unchanged behavior
 
 
+def test_is_hindi_script_detects_devanagari_only():
+    from business_ai.generation import is_hindi_script
+
+    assert is_hindi_script("आपका सैलून कब खुलता है?") is True
+    assert is_hindi_script("aapka salon kab khulta hai") is False  # Hinglish — not detectable by script alone
+    assert is_hindi_script("what are your hours?") is False
+    assert is_hindi_script("") is False
+    assert is_hindi_script(None) is False
+
+
+def test_default_abstention_message_switches_on_script():
+    from business_ai.generation import DEFAULT_ABSTENTION_MESSAGE, default_abstention_message
+
+    assert default_abstention_message("what are your hours?") == DEFAULT_ABSTENTION_MESSAGE
+    hindi_reason = default_abstention_message("आपका सैलून कब खुलता है?")
+    assert hindi_reason != DEFAULT_ABSTENTION_MESSAGE
+    assert any("ऀ" <= ch <= "ॿ" for ch in hindi_reason)  # actually Devanagari, not a stub
+
+
+def test_abstention_reason_is_hindi_for_a_devanagari_question(client, owner_session, activate_tenant):
+    """End-to-end: the pre-LLM abstention gate (no LLM call involved)
+    still returns a Hindi message when the customer asked in Hindi."""
+    headers, tenant_id = owner_session
+    client.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
+    activate_tenant(tenant_id)
+
+    r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "आपकी सेवाएं क्या हैं?"}, headers=headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "insufficient_evidence"
+    assert any("ऀ" <= ch <= "ॿ" for ch in data["abstention_reason"])
+
+
+class _TrackingFakeGenerator(FakeGenerator):
+    """Same as FakeGenerator, but records what it was asked to translate
+    — for proving the Devanagari retrieval-normalization wiring without
+    a real OpenAI call. The actual confidence-lift claim is validated
+    live, separately (see hindi_validation.py / hindi_translation_test.py
+    run against the real API), not re-asserted here with a fake."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.translate_calls: list[str] = []
+
+    def translate_to_english_for_retrieval(self, *, text: str) -> str:
+        self.translate_calls.append(text)
+        return f"[EN] {text}"
+
+
+def test_devanagari_query_is_translated_before_retrieval(client, owner_session, activate_tenant, services):
+    headers, tenant_id = owner_session
+    client.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
+    activate_tenant(tenant_id)
+
+    tracker = _TrackingFakeGenerator()
+    services.generator = lambda: tracker
+
+    r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "आपकी सेवाएं क्या हैं?"}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert tracker.translate_calls == ["आपकी सेवाएं क्या हैं?"]
+    # The customer's original text — not the translation — is what's logged/returned.
+    assert r.json()["status"] == "insufficient_evidence"
+
+
+def test_english_and_hinglish_queries_are_never_translated(client, owner_session, activate_tenant, services):
+    headers, tenant_id = owner_session
+    client.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
+    activate_tenant(tenant_id)
+
+    tracker = _TrackingFakeGenerator()
+    services.generator = lambda: tracker
+
+    client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "what are your hours?"}, headers=headers)
+    client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "aapka salon kab khulta hai"}, headers=headers)
+    assert tracker.translate_calls == []
+
+
+def test_translation_failure_falls_back_to_original_query(client, owner_session, activate_tenant, services):
+    class _FailingGenerator(FakeGenerator):
+        def translate_to_english_for_retrieval(self, *, text: str) -> str:
+            raise RuntimeError("simulated translation failure")
+
+    headers, tenant_id = owner_session
+    client.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
+    activate_tenant(tenant_id)
+    services.generator = lambda: _FailingGenerator()
+
+    r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "आपकी सेवाएं क्या हैं?"}, headers=headers)
+    assert r.status_code == 200, r.text  # a failed translation must never break the customer's response
+
+
 # ============================================================== Feature 5: customer win-back
 
 
@@ -453,3 +545,109 @@ def test_winback_refires_after_a_new_lapse(client_auto, services_auto):
     services_auto.lead_store.set_appointment(tenant_id, lead.lead_id, _iso_hours_ago(24 * 50))
     r = client_auto.post("/api/v1/admin/winback/run", headers=admin_headers)
     assert len(r.json()["sent"]) == 1  # eligible again for the NEW lapse
+
+
+# ============================================================== Feature 6: owner WhatsApp alerts
+
+
+def test_dissatisfaction_alert_pushes_to_owner_whatsapp(client_auto, services_auto):
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    _connect_whatsapp(client_auto, headers, tenant_id)
+    client_auto.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "919999888877"}, headers=headers)
+
+    services_auto.generator = lambda: FakeGenerator(dissatisfied_queries=frozenset({"this is unacceptable"}))
+    r = client_auto.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "this is unacceptable"}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["shows_dissatisfaction"] is True
+
+    sent = services_auto.fake_whatsapp_client.sent
+    assert len(sent) == 1
+    assert sent[0]["to"] == "919999888877"
+    assert "unhappy" in sent[0]["body"].lower()
+
+
+def test_dissatisfaction_alert_skips_whatsapp_push_when_owner_number_not_set(client_auto, services_auto):
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    _connect_whatsapp(client_auto, headers, tenant_id)
+    # deliberately not setting owner_whatsapp_number
+
+    services_auto.generator = lambda: FakeGenerator(dissatisfied_queries=frozenset({"this is unacceptable"}))
+    r = client_auto.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "this is unacceptable"}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert services_auto.fake_whatsapp_client.sent == []
+
+
+def test_dissatisfaction_whatsapp_push_does_not_block_email(client_auto, services_auto):
+    """Neither channel gates the other — email must still send even if
+    the owner's WhatsApp push would fail (e.g. their 24h window closed)."""
+    from tests.conftest import FakeEmailSender
+
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    _connect_whatsapp(client_auto, headers, tenant_id)
+    client_auto.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "919999888877"}, headers=headers)
+    services_auto.settings = dataclasses.replace(
+        services_auto.settings, resend_api_key="re_test", digest_from_email="digest@example.com",
+    )
+    fake_sender = FakeEmailSender()
+    services_auto.email_sender = lambda: fake_sender
+
+    class FailingWhatsAppClient:
+        def send_text(self, **kwargs):
+            from business_ai.whatsapp import WhatsAppSendError
+
+            raise WhatsAppSendError("window closed")
+
+    services_auto.whatsapp_client = lambda: FailingWhatsAppClient()
+    services_auto.generator = lambda: FakeGenerator(dissatisfied_queries=frozenset({"this is unacceptable"}))
+
+    r = client_auto.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "this is unacceptable"}, headers=headers)
+    assert r.status_code == 200, r.text  # a failed WhatsApp push must never break the actual chat response
+    assert len(fake_sender.sent) == 1
+    assert fake_sender.sent[0]["to"] == "owner@example.com"
+
+
+def test_digest_pushes_condensed_summary_to_owner_whatsapp(client_auto, services_auto):
+    from tests.conftest import FakeEmailSender
+
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    _connect_whatsapp(client_auto, headers, tenant_id)
+    client_auto.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "919999888877"}, headers=headers)
+    services_auto.settings = dataclasses.replace(
+        services_auto.settings, resend_api_key="re_test", digest_from_email="digest@example.com",
+    )
+    fake_sender = FakeEmailSender()
+    services_auto.email_sender = lambda: fake_sender
+    _make_lead(services_auto, tenant_id, source="whatsapp")
+
+    admin_login = client_auto.post("/api/auth/login", json={"email": "admin", "password": services_auto.settings.admin_secret})
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    r = client_auto.post("/api/v1/admin/digest/run", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    assert tenant_id in r.json()["sent"]
+
+    wa_sent = services_auto.fake_whatsapp_client.sent
+    assert len(wa_sent) == 1
+    assert wa_sent[0]["to"] == "919999888877"
+    assert "new lead" in wa_sent[0]["body"].lower()
+
+
+def test_digest_skips_whatsapp_push_when_owner_number_not_set(client_auto, services_auto):
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    _connect_whatsapp(client_auto, headers, tenant_id)
+    services_auto.settings = dataclasses.replace(
+        services_auto.settings, resend_api_key="re_test", digest_from_email="digest@example.com",
+    )
+    from tests.conftest import FakeEmailSender
+
+    services_auto.email_sender = lambda: FakeEmailSender()
+    _make_lead(services_auto, tenant_id, source="whatsapp")
+
+    admin_login = client_auto.post("/api/auth/login", json={"email": "admin", "password": services_auto.settings.admin_secret})
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    client_auto.post("/api/v1/admin/digest/run", headers=admin_headers)
+    assert services_auto.fake_whatsapp_client.sent == []

@@ -2,16 +2,24 @@
 signature verification, outbound message sending, and inbox idempotency.
 
 Architecture (see ARCHITECTURE.md for the full writeup): Business AI runs
-ONE Meta App with ONE webhook URL, shared by every tenant. Each tenant
-brings their own WhatsApp Business phone number, registered by the owner
-in their own Meta developer console (the standard "Cloud API developer"
-onboarding, not the heavier Tech-Provider "Embedded Signup" flow — that
-needs Meta Solution Partner status, out of scope for a first paying
-customer). A tenant's `phone_number_id` + permanent `access_token` are
-stored on their own TenantConfig; the platform-level Meta App only holds
-the shared `WHATSAPP_APP_SECRET` (signature verification) and
-`WHATSAPP_VERIFY_TOKEN` (webhook handshake) — it never needs its own
-WhatsApp number.
+ONE Meta App with ONE webhook URL, shared by every tenant. A tenant's
+`phone_number_id` + permanent `access_token` are stored on their own
+TenantConfig either way; there are two ways they get there:
+
+  1. Manual Cloud API setup — the owner creates their own Meta Developer
+     App, generates a token, and pastes both values into the dashboard.
+     Always available, zero external dependency, the fallback forever.
+  2. WhatsApp Embedded Signup (MetaEmbeddedSignupClient below) — the
+     owner clicks "Connect WhatsApp," authorizes inside a Meta-hosted
+     popup, and never sees a raw token. Requires Business AI to be a
+     registered Meta Tech Provider with the relevant App Review approved
+     (WHATSAPP_APP_ID configured) — until then, this path reports itself
+     unavailable and callers fall back to (1) automatically.
+
+Either way, the platform-level Meta App holds the shared
+`WHATSAPP_APP_SECRET` (webhook signature verification AND, for Embedded
+Signup, the OAuth code exchange) and `WHATSAPP_VERIFY_TOKEN` (webhook
+handshake) — it never needs its own WhatsApp number.
 
 Uses stdlib urllib for the same reason email_sender.py does: one HTTP
 call, one JSON payload, no SDK dependency justified.
@@ -110,6 +118,50 @@ class WhatsAppClient:
         webhook turn over, so callers should swallow errors from this."""
         payload = {"messaging_product": "whatsapp", "status": "read", "message_id": message_id}
         self._post(phone_number_id=phone_number_id, access_token=access_token, payload=payload)
+
+
+class MetaEmbeddedSignupError(Exception):
+    """Raised when Embedded Signup's OAuth code exchange fails."""
+
+
+class MetaEmbeddedSignupClient:
+    """Server-side half of WhatsApp Embedded Signup.
+
+    The frontend flow (not implemented here — it needs a real
+    WHATSAPP_APP_ID and an approved Meta Tech Provider registration,
+    neither of which exist yet) opens Meta's own hosted popup via their
+    JS SDK. When the owner finishes connecting their WhatsApp number
+    inside that popup, Meta's callback hands the frontend two things
+    directly: a short-lived authorization `code`, and the new
+    `phone_number_id` itself (Embedded Signup returns it inline — no
+    separate discovery call needed). This client exists only to turn
+    that `code` into a long-lived access token, server-side, using
+    Business AI's OWN app credentials — the entire point of Embedded
+    Signup is that the business never sees or handles a raw token.
+    """
+
+    def __init__(self, *, api_version: str = "v21.0") -> None:
+        self._api_version = api_version
+
+    def exchange_code_for_token(self, *, app_id: str, app_secret: str, code: str) -> str:
+        import json
+        from urllib.parse import urlencode
+
+        query = urlencode({"client_id": app_id, "client_secret": app_secret, "code": code})
+        url = f"{GRAPH_API_HOST}/{self._api_version}/oauth/access_token?{query}"
+        try:
+            with urlopen(Request(url, method="GET"), timeout=15) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            raise MetaEmbeddedSignupError(f"Meta token exchange failed ({exc.code}): {detail}") from exc
+        except URLError as exc:
+            raise MetaEmbeddedSignupError(f"Could not reach Meta: {exc}") from exc
+
+        token = body.get("access_token")
+        if not token:
+            raise MetaEmbeddedSignupError("Meta did not return an access token.")
+        return token
 
 
 def verify_webhook_signature(*, raw_body: bytes, signature_header: str | None, app_secret: str) -> bool:

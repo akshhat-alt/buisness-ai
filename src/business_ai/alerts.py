@@ -43,6 +43,92 @@ def render_dissatisfaction_alert(
     return subject, html
 
 
+def render_new_tenant_signup_alert(
+    *, business_name: str, owner_email: str, tenant_id: str, dashboard_url: str | None,
+) -> tuple[str, str]:
+    """For the PLATFORM ADMIN: a new business just signed up and is
+    sitting in PROVISIONING until manually activated. Without this, a
+    signup is only visible if the admin happens to check the dashboard's
+    admin panel — a real gap for onboarding a real, unfamiliar customer
+    rather than a pilot the founder is already watching closely."""
+    subject = f"New Business AI signup: {business_name}"
+    dashboard_link = (
+        f'<p><a href="{escape(dashboard_url)}">Open the admin panel to activate &rarr;</a></p>' if dashboard_url else ""
+    )
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px;">New business signed up</h2>
+      <p><strong>{escape(business_name)}</strong> ({escape(owner_email)}) just created a Business AI
+      account and is waiting to be activated once they've added their knowledge base.</p>
+      <p style="color:#999; font-size:0.875rem;">Tenant ID: {escape(tenant_id)}</p>
+      {dashboard_link}
+    </div>
+    """
+    return subject, html
+
+
+def render_tenant_activated_email(*, business_name: str, assistant_name: str, chat_url: str | None) -> tuple[str, str]:
+    """For the OWNER: their assistant just went live. Without this, the
+    owner has no signal that activation happened beyond refreshing their
+    own dashboard — a confusing silence right at the moment they're
+    handing this off to their team or telling customers about it."""
+    subject = f"{business_name} is live on Business AI"
+    chat_block = (
+        f'<p><a href="{escape(chat_url)}">Try your assistant &rarr;</a></p>' if chat_url else ""
+    )
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px;">You're live!</h2>
+      <p>{escape(assistant_name)} is now answering questions for {escape(business_name)}.</p>
+      {chat_block}
+    </div>
+    """
+    return subject, html
+
+
+def render_billing_link_email(*, business_name: str, assistant_name: str, amount_inr: int, payment_url: str) -> tuple[str, str]:
+    """For the OWNER: a subscription payment is due before their
+    assistant can go live. The payment itself lands directly in Business
+    AI's own Razorpay account (platform-level credentials, never the
+    tenant's) — see app.py's billing-link route."""
+    subject = f"Complete your Business AI subscription — {business_name}"
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px;">Complete your subscription</h2>
+      <p>To activate {escape(assistant_name)} for {escape(business_name)}, please complete your subscription
+      payment of ₹{amount_inr}:</p>
+      <p>
+        <a href="{escape(payment_url)}"
+           style="display:inline-block; padding:10px 16px; background:#1F5C4E; color:#fff;
+                  text-decoration:none; border-radius:6px;">Pay &#8377;{amount_inr}</a>
+      </p>
+      <p style="color:#666;">Once payment is confirmed, activate your assistant from your dashboard.</p>
+    </div>
+    """
+    return subject, html
+
+
+def render_tenant_self_activated_notice(*, business_name: str, tenant_id: str, dashboard_url: str | None) -> tuple[str, str]:
+    """For the PLATFORM ADMIN: visibility, not a gate — a business just
+    activated itself without you clicking anything. Nothing to do here;
+    this exists purely so you're not surprised by a new business going
+    live that you never touched."""
+    subject = f"{business_name} activated itself"
+    dashboard_link = (
+        f'<p><a href="{escape(dashboard_url)}">Open the admin panel &rarr;</a></p>' if dashboard_url else ""
+    )
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px;">A business went live on its own</h2>
+      <p><strong>{escape(business_name)}</strong> just activated their own Business AI assistant — no action
+      needed from you.</p>
+      <p style="color:#999; font-size:0.875rem;">Tenant ID: {escape(tenant_id)}</p>
+      {dashboard_link}
+    </div>
+    """
+    return subject, html
+
+
 def render_review_request(*, business_name: str, assistant_name: str, review_link: str) -> tuple[str, str]:
     """For the CUSTOMER: sent only when the owner explicitly marks a lead
     as serviced (see /api/leads/{id}/request-review) — deliberately NOT

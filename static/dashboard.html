@@ -131,6 +131,7 @@
             </div>
             <a id="chat-link" href="#" target="_blank" class="ba-btn">Open Chat &rarr;</a>
           </div>
+          <div id="activate-box" style="display:none; margin-bottom:20px;"></div>
 
           <div class="ba-metric">
             <div class="ba-metric-box"><div class="ba-metric-label">Questions Asked</div><div class="ba-metric-val" id="m-total">—</div></div>
@@ -222,6 +223,12 @@
             <div class="ba-field"><label class="ba-label">WhatsApp Access Token</label><input class="ba-input" type="password" id="cfg-wa-token" placeholder="Permanent access token from Meta"></div>
             <button class="ba-btn" onclick="saveWhatsappSettings(event)">Save WhatsApp Connection</button>
             <p id="wa-status" class="ba-muted" style="margin-bottom:0;"></p>
+          </div>
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Your own WhatsApp number</h3>
+            <p class="ba-muted">Get instant complaint alerts and the daily summary pushed to your own WhatsApp, and text your business's number anytime to ask "what needs my attention today?"</p>
+            <div class="ba-field"><label class="ba-label">Owner/Staff WhatsApp Number (with country code, no +)</label><input class="ba-input" id="cfg-owner-whatsapp" placeholder="e.g. 919876543210"></div>
+            <button class="ba-btn" onclick="saveOwnerWhatsapp(event)">Save</button>
           </div>
         </section>
 
@@ -325,6 +332,7 @@
       if (tRes.ok) {
         const t = await tRes.json();
         document.getElementById('status-line').innerText = `Status: ${t.status}`;
+        renderActivateBox(t);
         document.getElementById('cfg-assistant-name').value = t.assistant_name || '';
         document.getElementById('cfg-welcome').value = t.welcome_message || '';
         document.getElementById('cfg-whatsapp').value = t.whatsapp_number || '';
@@ -336,6 +344,7 @@
         document.getElementById('cfg-deposit-amount').value = t.deposit_amount_inr || '';
         document.getElementById('cfg-rzp-key-id').value = t.razorpay_key_id || '';
         document.getElementById('cfg-winback-days').value = t.winback_after_days || '';
+        document.getElementById('cfg-owner-whatsapp').value = t.owner_whatsapp_number || '';
       }
 
       let analytics = { total_questions: 0, answered_count: 0, buying_intent_count: 0, dissatisfaction_count: 0 };
@@ -385,6 +394,38 @@
       }
     }
     loadDashboard();
+
+    function renderActivateBox(t) {
+      const box = document.getElementById('activate-box');
+      if (t.status === 'provisioning') {
+        box.style.display = 'block';
+        const priceNote = t.subscription_price_inr
+          ? `<div class="ba-muted" style="margin-top:6px; font-size:0.8125rem;">Subscription: ₹${t.subscription_price_inr} — ${t.billing_status === 'paid' ? 'paid ✓' : 'payment pending — check your email for the link'}</div>`
+          : '';
+        box.innerHTML = `
+          <div class="ba-alert ba-alert-info">
+            <div style="flex:1;">
+              <strong>Your assistant isn't live yet.</strong> Add at least one knowledge source below, then activate it yourself — no need to wait on anyone.
+              ${priceNote}
+            </div>
+            <button class="ba-btn ba-btn-sm" onclick="selfActivate()">Activate Now</button>
+          </div>`;
+      } else if (t.status === 'suspended') {
+        box.style.display = 'block';
+        box.innerHTML = `<div class="ba-alert ba-alert-error">This account has been suspended. Contact support to resolve this.</div>`;
+      } else {
+        box.style.display = 'none';
+      }
+    }
+
+    async function selfActivate() {
+      const res = await fetch(`/api/tenant/activate?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.detail || 'Could not activate yet.'); return; }
+      loadDashboard();
+    }
 
     async function ingestWebsite() {
       const url = document.getElementById('website-url').value.trim();
@@ -566,6 +607,22 @@
       setTimeout(() => { btn.innerText = original; }, 1600);
     }
 
+    async function saveOwnerWhatsapp(e) {
+      const btn = e.target;
+      const original = btn.innerText;
+      try {
+        const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ owner_whatsapp_number: document.getElementById('cfg-owner-whatsapp').value.trim() }),
+        });
+        if (!res.ok) throw new Error('Failed to save.');
+        btn.innerText = 'Saved ✓';
+      } catch (e) {
+        btn.innerText = 'Error';
+      }
+      setTimeout(() => { btn.innerText = original; }, 1600);
+    }
+
     async function saveGrowthSettings(e) {
       const btn = e.target;
       const original = btn.innerText;
@@ -660,14 +717,25 @@
       if (!res.ok) return;
       const data = await res.json();
       const badgeClass = { active: 'ba-badge-primary', provisioning: 'ba-badge-warn', suspended: 'ba-badge-error', disabled: 'ba-badge-neutral' };
+      const billingBadgeClass = { unbilled: 'ba-badge-neutral', invoiced: 'ba-badge-warn', paid: 'ba-badge-primary' };
       document.getElementById('admin-tenants-list').innerHTML = data.tenants.map(t => `
-        <div class="admin-row">
-          <div><strong>${escapeHtml(t.business_name)}</strong> <span class="ba-muted">— ${escapeHtml(t.tenant_id)}</span>
-            <span class="ba-badge ${badgeClass[t.status] || 'ba-badge-neutral'}" style="margin-left:8px;">${escapeHtml(t.status)}</span></div>
-          <div>
-            ${t.status === 'provisioning' ? `<button class="ba-btn ba-btn-sm" onclick="adminActivate('${t.tenant_id}')">Activate</button>` : ''}
-            ${t.status === 'active' ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="adminSuspend('${t.tenant_id}')">Suspend</button>` : ''}
+        <div class="admin-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div><strong>${escapeHtml(t.business_name)}</strong> <span class="ba-muted">— ${escapeHtml(t.tenant_id)}</span>
+              <span class="ba-badge ${badgeClass[t.status] || 'ba-badge-neutral'}" style="margin-left:8px;">${escapeHtml(t.status)}</span>
+              <span class="ba-badge ${billingBadgeClass[t.billing_status] || 'ba-badge-neutral'}" style="margin-left:4px;">${escapeHtml(t.billing_status)}${t.subscription_price_inr ? ' · ₹' + t.subscription_price_inr : ''}</span>
+            </div>
+            <div>
+              ${t.status === 'provisioning' ? `<button class="ba-btn ba-btn-sm" onclick="adminActivate('${t.tenant_id}')">Activate</button>` : ''}
+              ${t.status === 'active' ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="adminSuspend('${t.tenant_id}')">Suspend</button>` : ''}
+            </div>
           </div>
+          ${t.status !== 'active' ? `
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input class="ba-input" type="number" min="1" placeholder="₹ amount" id="price-${t.tenant_id}" style="max-width:120px; padding:6px 10px; font-size:0.8125rem;">
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="adminSendBillingLink('${t.tenant_id}')">Send Billing Link</button>
+            ${t.billing_status === 'invoiced' ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="adminMarkPaid('${t.tenant_id}')">Mark Paid</button>` : ''}
+          </div>` : ''}
         </div>`).join('');
     }
 
@@ -679,6 +747,24 @@
     }
     async function adminSuspend(id) {
       await fetch(`/api/v1/admin/tenants/${encodeURIComponent(id)}/suspend`, { method: 'POST', headers: BizAuth.getAuthHeaders() });
+      loadAdminPanel();
+    }
+    async function adminSendBillingLink(id) {
+      const amount = parseInt(document.getElementById(`price-${id}`).value, 10);
+      if (!amount || amount <= 0) { alert('Enter a valid amount first.'); return; }
+      const res = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(id)}/billing-link`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ amount_inr: amount }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert('Could not send billing link: ' + (data.detail || 'unknown error')); return; }
+      loadAdminPanel();
+    }
+    async function adminMarkPaid(id) {
+      const res = await fetch(`/api/v1/admin/tenants/${encodeURIComponent(id)}/mark-paid`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({}),
+      });
+      if (!res.ok) { alert('Could not mark as paid.'); return; }
       loadAdminPanel();
     }
   </script>

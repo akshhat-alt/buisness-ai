@@ -128,16 +128,99 @@ dependency or a new channel.
   configured (or platform-default) win-back threshold, one WhatsApp
   nudge goes out; rebooking and lapsing again makes them eligible again.
 
+## What V1.4 adds: WhatsApp as a true AI employee
+
+Built directly from "The Employee Handbook" plan (research-first, then
+implementation) — the two fast, fully-buildable wins, a live-validated
+Hindi fix, and the testable half of the onboarding recommendation.
+
+- **Owner WhatsApp alerts**: the real-time complaint alert and the daily
+  digest are now also pushed to the owner's own WhatsApp (`TenantConfig.
+  owner_whatsapp_number`), alongside the guaranteed email — neither
+  channel gates the other. A business-initiated message outside Meta's
+  24-hour customer-service window simply fails silently on the WhatsApp
+  side (expected, not a bug); email stays authoritative.
+- **"What needs my attention today?"**: any message from the owner's
+  configured number, sent to the tenant's own WhatsApp line, gets an
+  instant live status pull instead of the customer RAG pipeline — same
+  content as the digest, computed on demand, no LLM call (so it's fast
+  and free), no keyword parsing (any message means the same thing, since
+  that number is for the owner, not customers). Doesn't create a lead or
+  spend quota.
+- **Hindi/Hinglish, live-validated**: ran real Hindi (Devanagari),
+  Hinglish, and English questions against a real ingested knowledge base
+  through the real OpenAI API (not a mock) before touching any code.
+  Finding: Hinglish already retrieves fine; a Devanagari query scored
+  0.12-0.21 pack_confidence against clearly-relevant English content
+  (below the 0.35 abstention threshold every time), while the identical
+  question translated to English scored 0.28-0.44 — a consistent
+  +0.12-0.22 lift, confirmed on four separate questions before building
+  anything. `generation.translate_to_english_for_retrieval` now
+  normalizes a Devanagari query for the embedding lookup only; the
+  original text still goes to the generation model, so the reply still
+  mirrors the customer's Hindi. Also fixed the two fixed, pre-LLM
+  fallback strings (the abstention message, WhatsApp's quota-busy
+  message) that used to stay English even in an otherwise-Hindi
+  conversation.
+- **WhatsApp Embedded Signup — backend only**: `MetaEmbeddedSignupClient`
+  (OAuth code exchange) and `POST /api/tenant/whatsapp/embedded-signup`
+  are built and tested, gated behind `WHATSAPP_APP_ID` being configured.
+  The frontend "Connect WhatsApp" button is deliberately NOT built yet —
+  it needs a real Meta App ID and an approved Tech Provider registration
+  to be testable at all, and shipping an untestable OAuth popup flow
+  isn't "production-ready." The manual per-tenant connection flow (V1.2)
+  remains the only active path until that registration completes.
+
+### An unplanned but important finding
+
+Validating Hindi retrieval surfaced something bigger: **even English
+queries abstained more than expected** against a realistic multi-topic
+knowledge base — e.g. "Where can I park?" scored 0.262 against content
+that directly answers it, below the 0.35 threshold. This is a
+general retrieval-confidence calibration question, not specific to
+language, and out of scope for this pass — flagged here as a real
+finding worth its own investigation, not quietly fixed alongside an
+unrelated feature.
+
+## What V1.5 adds: billing and self-serve activation
+
+Two onboarding gaps closed, from the site/onboarding review: there was
+no way to collect Business AI's own subscription revenue inside the
+product, and every single new tenant needed a platform admin to
+personally click "Activate."
+
+- **Billing**: `POST /api/v1/admin/tenants/{id}/billing-link` generates
+  a Razorpay payment link — using Business AI's *own* Razorpay account
+  (`PLATFORM_RAZORPAY_KEY_ID/SECRET`, distinct from a tenant's own
+  `razorpay_key_id/secret`, which collects deposits from *that tenant's*
+  customers) — and emails it to the owner. Same "send a link, confirm
+  manually" shape as every other payment feature here: there's no
+  webhook, so `POST .../mark-paid` is how you record that you checked
+  your own Razorpay dashboard and got paid. A tenant with no price ever
+  set on them is completely unaffected — this is opt-in per tenant, not
+  a blanket paywall.
+- **Self-serve activation**: `POST /api/tenant/activate` lets the owner
+  activate their own tenant once they've cleared the exact same bar an
+  admin already had to check — a knowledge source ingested, and paid if
+  a price was set. Admin activation still works unchanged for anyone who
+  wants to do it by hand; `suspend` remains the way to pull back a
+  tenant that shouldn't have gone live. The dashboard now shows an
+  "Activate Now" button directly to the owner instead of a silent wait,
+  and the admin panel gained inline billing controls (send a link, mark
+  paid) per tenant.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
-billing. No customer-facing email (only the owner-facing digest above —
-no password-reset flow, no email support inbox). No multi-instance/
+customer-facing email (only the owner-facing digest above — no
+password-reset flow, no email support inbox). No multi-instance/
 distributed mode — single SQLite + local Chroma, correct for one Railway
 instance. No WhatsApp *outbound* message templates (business-initiated
 messages outside the 24-hour customer-service window) — that needs
-Meta template approval per tenant, out of scope for V1.2. These are
-scoped omissions, not oversights: the goal is the smallest product a
+Meta template approval per tenant, out of scope for V1.2. No recurring/
+auto-charging subscriptions (V1.5's billing is request-and-confirm, not
+Razorpay Subscriptions with auto-debit) — see Known Limitations. These
+are scoped omissions, not oversights: the goal is the smallest product a
 real local business would actually pay for, not "everything a business
 could ever want."
 
@@ -207,7 +290,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-89 tests covering the full HTTP lifecycle (signup → ingest → activate →
+132 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
 from the new FAQ entry), owner digest (sends only to active tenants with
@@ -221,12 +304,23 @@ idempotency, shared RAG/lead/dissatisfaction pipeline reuse, the
 resetting the reminder marker, deposit links checking deliverability
 before creating a Razorpay link, the language-mirroring system-prompt
 contract, and win-back's per-tenant threshold + re-lapse eligibility),
-the `authorize()` chokepoint, chunking edge cases, usage-limiter
-behavior, and the SSRF guard. All offline — no OpenAI cost, no real Meta
-or Razorpay API calls — using a deterministic fake generator, a
-word-overlap fake embedding provider that still exercises the real
-evidence-gate confidence threshold, and fake WhatsApp/Razorpay clients
-that capture calls instead of hitting real APIs.
+the WhatsApp AI-employee upgrades (owner WhatsApp push not gating email,
+the owner status-pull command including phone-number normalization,
+Devanagari query translation wiring with a fail-open fallback, and
+Embedded Signup's token exchange including tenant isolation), the
+`authorize()` chokepoint, chunking edge cases, usage-limiter behavior,
+and the SSRF guard. All offline — no OpenAI cost, no real Meta or
+Razorpay API calls — using a deterministic fake generator, a word-overlap
+fake embedding provider that still exercises the real evidence-gate
+confidence threshold, and fake WhatsApp/Razorpay/Meta-signup clients that
+capture calls instead of hitting real APIs. The Hindi/Hinglish retrieval
+claim itself (the +0.12-0.22 confidence lift) was validated separately,
+live, against the real OpenAI API — see the V1.4 section above; that run
+is not part of the committed test suite since it costs real API money.
+V1.5 adds billing (link creation, manual paid-confirmation, the shared
+activation-blocker gate) and self-serve activation (knowledge + payment
+preconditions, tenant isolation, suspended/already-active rejection,
+graceful no-op when nobody's configured to be notified).
 
 ## Known limitations (v1, honestly stated)
 
@@ -278,3 +372,34 @@ that capture calls instead of hitting real APIs.
   skipped (reported, not silently dropped) rather than falling back to
   email — email nudges for these two specifically weren't built, since
   WhatsApp's open rate is the entire premise of the feature.
+- **Owner WhatsApp alerts are also 24-hour-window-limited.** A push to
+  the owner's own number can fail the same Meta rule a customer message
+  can, if they haven't messaged the business's line recently. Email is
+  the guaranteed channel; WhatsApp is a bonus fast path, not a
+  replacement for it — by design, not an oversight.
+- **WhatsApp Embedded Signup has no frontend yet.** The backend token
+  exchange is built and tested, but the actual "Connect WhatsApp" button
+  needs a real `WHATSAPP_APP_ID` and an approved Meta Tech Provider
+  registration to be testable at all — building the popup flow against
+  credentials that don't exist yet isn't "production-ready," it's
+  guesswork. The manual per-tenant connection flow remains the only
+  active path until that registration completes.
+- **The Devanagari-to-English retrieval fix does not fully close the
+  confidence gap for every question** — it recovers most of it (see the
+  V1.4 section above), but a couple of translated queries still landed
+  under the 0.35 threshold in live testing, consistent with the separate,
+  unrelated finding that some *English* questions do too. Fixing that
+  underlying threshold/scoring calibration is flagged, not fixed here.
+- **Billing is request-and-confirm, not automated recurring billing.**
+  There's no Razorpay Subscriptions integration, no auto-charge, no
+  dunning, no invoice history — you send a link when payment is due and
+  mark it paid once you've checked your own Razorpay dashboard. Fine for
+  a handful of early customers; a real subscription-billing system is
+  separate, larger scope if this needs to run unattended at volume.
+- **Self-activation checks knowledge + payment, nothing else.** It
+  doesn't re-verify WhatsApp is connected, doesn't sanity-check the
+  knowledge base's quality, and doesn't require the owner to have tested
+  their assistant first. A business could self-activate having only
+  ingested one thin page. This mirrors exactly what the admin's own
+  activate button already allowed — self-service didn't lower the bar,
+  it just removed the requirement that a human click it.
