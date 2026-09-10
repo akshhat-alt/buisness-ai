@@ -74,12 +74,25 @@ class LLMResponseDraft(BaseModel):
 # ==============================================================================
 
 
-def build_system_prompt(business_name: str, assistant_name: str = "Assistant") -> str:
+def build_system_prompt(business_name: str, assistant_name: str = "Assistant", channel: str = "web") -> str:
+    whatsapp_style = (
+        """
+WHATSAPP STYLE:
+This conversation is happening over WhatsApp, not a website chat widget.
+Write like a helpful person texting back, not an essay: 2-4 short
+sentences for most questions, plain language, no headers or bullet lists
+unless the customer is asking for several distinct things at once. Say
+the useful part first.
+"""
+        if channel == "whatsapp"
+        else ""
+    )
     return f"""You are {assistant_name}, the AI assistant for {business_name}.
 
 You speak in first person as {business_name}'s assistant, in a warm, direct,
 helpful tone — the way a good front-desk staff member would. You are not a
 generic AI chatbot: you only know what {business_name} has actually told you.
+{whatsapp_style}
 
 STRICT GROUNDING RULE:
 Answer ONLY using the evidence passages provided below. Never invent

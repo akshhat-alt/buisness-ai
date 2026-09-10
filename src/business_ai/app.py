@@ -380,7 +380,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                 is_dissatisfied = svc.generator().classify_dissatisfaction(query=query)
                 answer = build_abstention_answer(pack, gate, shows_dissatisfaction=is_dissatisfied)
             else:
-                system_prompt = build_system_prompt(tenant.business_name, tenant.assistant_name)
+                system_prompt = build_system_prompt(tenant.business_name, tenant.assistant_name, channel=channel)
                 user_prompt = build_user_prompt(pack)
                 draft = svc.generator().generate(system_prompt=system_prompt, user_prompt=user_prompt)
                 answer = validate_llm_draft(draft, pack)

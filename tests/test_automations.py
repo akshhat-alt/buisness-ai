@@ -367,6 +367,16 @@ def test_system_prompt_instructs_language_mirroring():
     assert "same language" in lowered
 
 
+def test_whatsapp_channel_gets_a_brevity_instruction_web_does_not():
+    wa_prompt = build_system_prompt("Priya Salon", "Priya's Assistant", channel="whatsapp").lower()
+    web_prompt = build_system_prompt("Priya Salon", "Priya's Assistant", channel="web").lower()
+    default_prompt = build_system_prompt("Priya Salon", "Priya's Assistant").lower()
+    assert "whatsapp style" in wa_prompt
+    assert "short" in wa_prompt
+    assert "whatsapp style" not in web_prompt
+    assert "whatsapp style" not in default_prompt  # "web" stays the default, unchanged behavior
+
+
 # ============================================================== Feature 5: customer win-back
 
 
