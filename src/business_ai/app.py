@@ -43,13 +43,17 @@ from business_ai.alerts import (
     render_dissatisfaction_alert,
     render_new_tenant_signup_alert,
     render_review_request,
+    render_task_escalation_alert,
     render_tenant_activated_email,
     render_tenant_self_activated_notice,
+    render_urgent_feedback_alert,
 )
 from business_ai.analytics import AnalyticsStore
 from business_ai.audit import AuditLogStore
 from business_ai.digest import has_digest_content, render_owner_digest, render_owner_whatsapp_summary
 from business_ai.employees import Employee, EmployeeStore
+from business_ai.feedback import FeedbackStore
+from business_ai.memory import SopStore
 from business_ai.email_sender import EmailSendError, EmailSender
 from business_ai.auth import Principal, UserStore, create_access_token, resolve_principal, AuthenticationError
 from business_ai.config import Settings, load_settings, validate_environment
@@ -113,6 +117,13 @@ REENGAGEMENT_MIN_AGE_HOURS = 48  # give a lead a fair chance to book on their ow
 REENGAGEMENT_MAX_AGE_HOURS = 24 * 14  # older than this is stale — don't blast old history on first run
 REMINDER_WINDOW_START_HOURS = 20  # a ~24h-before reminder, with slack for cron timing drift
 REMINDER_WINDOW_END_HOURS = 28
+# A feedback theme reported at least this many times in one window is a
+# pattern worth surfacing to management (digest, action brief, scorecard),
+# not a one-off complaint.
+RECURRING_FEEDBACK_THRESHOLD = 3
+# A task overdue by more than this is a proactive-alert-worthy problem,
+# not just a line in tomorrow's digest — see /api/v1/admin/task-escalation/run.
+TASK_ESCALATION_HOURS = 48
 
 
 class Services:
@@ -132,6 +143,8 @@ class Services:
         self.employee_store = EmployeeStore(data_root / "employees.db")
         self.task_store = TaskStore(data_root / "tasks.db")
         self.audit_log = AuditLogStore(data_root / "audit.db")
+        self.feedback_store = FeedbackStore(data_root / "feedback.db")
+        self.sop_store = SopStore(data_root / "sops.db")
 
     def embeddings(self):
         return OpenAIEmbeddingProvider(model_name=self.settings.embedding_model, api_key=_openai_key())
@@ -229,6 +242,20 @@ class CreateEmployeeRequest(BaseModel):
     role: str = "staff"  # "owner" | "manager" | "staff"
 
 
+class CreateTaskRequest(BaseModel):
+    title: str
+    assigned_to_employee_id: str
+    description: str | None = None
+    due_at: str | None = None  # parsed the same way as appointment_at (local business time -> UTC)
+    approval_required: bool = False
+    customer_facing_lead_id: str | None = None  # enables the verified-outcome customer ping on completion
+
+
+class ApproveSopRequest(BaseModel):
+    theme: str
+    text: str
+
+
 class UpdateEmployeeRequest(BaseModel):
     role: str | None = None
     active: bool | None = None
@@ -241,6 +268,7 @@ class TenantConfigUpdate(BaseModel):
     whatsapp_phone_number_id: str | None = None
     whatsapp_access_token: str | None = None
     owner_whatsapp_number: str | None = None
+    admin_notify_template_name: str | None = None
     review_link: str | None = None
     razorpay_key_id: str | None = None
     razorpay_key_secret: str | None = None
@@ -312,9 +340,26 @@ def _strip_citation_markers(text: str) -> str:
 # needs to be correct and free, not clever. "assign <title> to <name> [by
 # <date>]" and "reassign <id> to <name>" are the only two-clause commands;
 # everything else is "<verb> <short task id> [reason]" or a bare keyword.
-_ADMIN_ASSIGN_RE = re.compile(r"^assign\s+(.+?)\s+to\s+(.+?)(?:\s+by\s+(.+))?$", re.IGNORECASE)
+_ADMIN_ASSIGN_RE = re.compile(
+    r"^assign\s+(.+?)\s+to\s+(.+?)(?:\s+for\s+lead\s+(\S+))?(?:\s+by\s+(.+))?$", re.IGNORECASE
+)
 _ADMIN_REASSIGN_RE = re.compile(r"^reassign\s+(\S+)\s+to\s+(.+)$", re.IGNORECASE)
 _ADMIN_STATUS_VERBS = frozenset({"start", "done", "blocked", "cancel", "approve", "reject"})
+_ADMIN_FEEDBACK_RE = re.compile(r"^feedback\s+(.+)$", re.IGNORECASE | re.DOTALL)
+_ADMIN_SOP_RE = re.compile(r"^approve sop\s+(.+?)\s*:\s*(.+)$", re.IGNORECASE | re.DOTALL)
+
+_FEEDBACK_THEME_LABELS = {
+    "equipment_or_supplies": "Equipment/supplies",
+    "software_or_tools": "Software/tools",
+    "scheduling_or_shifts": "Scheduling/shifts",
+    "communication_or_coordination": "Communication/coordination",
+    "training_or_process": "Training/process",
+    "workload_or_staffing": "Workload/staffing",
+    "customer_related": "Customer-related",
+    "pay_or_compensation": "Pay/compensation",
+    "safety_or_compliance": "Safety/compliance",
+    "other": "Other",
+}
 
 
 def _admin_bot_help_text() -> str:
@@ -327,7 +372,12 @@ def _admin_bot_help_text() -> str:
         "• assign <task> to <name> [by <YYYY-MM-DD HH:MM>] (owner/manager)\n"
         "• start/done/blocked/cancel <task id> [reason]\n"
         "• approve/reject <task id> [reason] (owner/manager)\n"
-        "• reassign <task id> to <name> (owner/manager)"
+        "• reassign <task id> to <name> (owner/manager)\n"
+        "• feedback <what's going on> — report a concern or suggestion\n"
+        "• feedback themes — recurring issues (owner/manager)\n"
+        "• scorecard / health — business snapshot (owner/manager)\n"
+        "• approve sop <theme>: <note text> — save team guidance (owner)\n"
+        "\nOr just type naturally — I'll do my best to understand."
     )
 
 
@@ -454,38 +504,62 @@ def create_app(services: Services | None = None) -> FastAPI:
             return "Payment is required before activating — check your email for the payment link."
         return None
 
-    def _send_owner_whatsapp(tenant: TenantConfig, body: str) -> bool:
-        """Best-effort push to the OWNER's own WhatsApp — a fast, far-
-        more-likely-to-be-seen companion to email for the two things that
-        most benefit from it: an instant complaint alert, and the daily
-        digest. Requires both a connected business number (to send FROM)
-        and the owner's own number configured (to send TO); silently
-        unavailable, not an error, when either is missing — email stays
-        the guaranteed channel regardless. A business-initiated message
-        to a number that hasn't messaged the business's line in the last
-        24h fails Meta's customer-service-window rule exactly like it
-        would for a customer; that's expected, not a bug, and is exactly
-        why this is a bonus fast path, never the only one."""
-        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token and tenant.owner_whatsapp_number):
-            return False
-        try:
-            svc.whatsapp_client().send_text(
-                phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
-                to=tenant.owner_whatsapp_number, body=body,
-            )
-            return True
-        except WhatsAppSendError as exc:
-            logger.warning("Owner WhatsApp push failed for tenant %s: %s", tenant.tenant_id, exc)
-            return False
+    def _notify_management_whatsapp(tenant: TenantConfig, body: str) -> int:
+        """Best-effort push to EVERY owner/manager on the tenant's
+        employee roster — a fast, far-more-likely-to-be-seen companion to
+        email for the things that most benefit from it: an instant
+        complaint/urgent-feedback alert, and the daily digest. Generalizes
+        the old single-scalar owner_whatsapp_number push (Phase 0's
+        EmployeeStore roster is the source of truth now; the scalar still
+        bootstraps into it, see EmployeeStore.ensure_owner_bootstrap).
+
+        Requires a connected business number to send FROM; silently
+        unavailable, not an error, when missing — email stays the
+        guaranteed channel regardless. A business-initiated free-text
+        message to someone who hasn't messaged the business's line in the
+        last 24h fails Meta's customer-service-window rule exactly like it
+        would for a customer; when that happens AND the tenant has
+        configured an approved template (admin_notify_template_name), a
+        short fixed fallback notice goes out as a template instead — real
+        text content still only ever reaches someone inside the live
+        window. Returns how many recipients were actually reached."""
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
+            return 0
+        svc.employee_store.ensure_owner_bootstrap(tenant.tenant_id, tenant.owner_whatsapp_number)
+        recipients = [
+            e for e in svc.employee_store.list_for_tenant(tenant.tenant_id) if e.role in ("owner", "manager")
+        ]
+        sent_count = 0
+        for recipient in recipients:
+            try:
+                svc.whatsapp_client().send_text(
+                    phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                    to=recipient.whatsapp_number, body=body,
+                )
+                sent_count += 1
+                continue
+            except WhatsAppSendError as exc:
+                if exc.error_code != REENGAGEMENT_WINDOW_CLOSED_CODE or not tenant.admin_notify_template_name:
+                    logger.warning("Management WhatsApp push failed for tenant %s: %s", tenant.tenant_id, exc)
+                    continue
+            try:
+                svc.whatsapp_client().send_template(
+                    phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                    to=recipient.whatsapp_number, template_name=tenant.admin_notify_template_name,
+                )
+                sent_count += 1
+            except WhatsAppSendError as exc:
+                logger.warning("Management WhatsApp template fallback failed for tenant %s: %s", tenant.tenant_id, exc)
+        return sent_count
 
     def _send_dissatisfaction_alert(*, tenant: TenantConfig, query: str, answer_text: str, session_id: str) -> None:
         """Best-effort: a slow/failed alert must never break the
         customer's actual chat response, so failures are swallowed here,
         not raised — this mirrors the digest-run route's per-tenant
         failure collection, just for a single synchronous event instead
-        of a batch job. Tries the owner's WhatsApp AND email independently
+        of a batch job. Tries management's WhatsApp AND email independently
         — neither gates the other."""
-        _send_owner_whatsapp(
+        _notify_management_whatsapp(
             tenant,
             f"⚠️ A customer sounds unhappy on {tenant.business_name}'s assistant.\n\n"
             f'They said: "{query}"\n\nOpen your dashboard for the full conversation.',
@@ -502,6 +576,30 @@ def create_app(services: Services | None = None) -> FastAPI:
             svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
         except EmailSendError as exc:
             logger.warning("Failed to send dissatisfaction alert for tenant %s: %s", tenant.tenant_id, exc)
+
+    def _send_urgent_feedback_alert(tenant: TenantConfig, employee: Employee, feedback_text: str, classification) -> None:
+        """Instant alert for high-urgency employee feedback — same
+        "don't wait for tomorrow's digest" shape as
+        _send_dissatisfaction_alert, mirrored for the team side of the
+        business. Best-effort on both channels; never blocks the
+        employee's own acknowledgment reply."""
+        theme_label = _FEEDBACK_THEME_LABELS.get(classification.theme, classification.theme)
+        _notify_management_whatsapp(
+            tenant,
+            f"🚨 Urgent feedback from {employee.name} ({theme_label}):\n\n"
+            f'"{feedback_text}"\n\n{classification.suggested_action}',
+        )
+        if not svc.settings.resend_api_key or not svc.settings.digest_from_email:
+            return
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+        subject, html = render_urgent_feedback_alert(
+            business_name=tenant.business_name, employee_name=employee.name, theme_label=theme_label,
+            raw_text=feedback_text, suggested_action=classification.suggested_action, dashboard_url=dashboard_url,
+        )
+        try:
+            svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            logger.warning("Failed to send urgent feedback alert for tenant %s: %s", tenant.tenant_id, exc)
 
     def _process_question(
         *, tenant: TenantConfig, tenant_id: str, session_id: str, query: str, channel: str = "web",
@@ -709,9 +807,10 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     def _send_admin_bot_message(tenant: TenantConfig, to_wa_id: str, body: str) -> bool:
         """Proactive/reply send to any recognized internal roster number
-        (owner, manager, or staff) — the generalized form of
-        _send_owner_whatsapp, now used for task-assignment notices and
-        command replies to any employee, not just the owner."""
+        (owner, manager, or staff), for task-assignment notices and
+        command replies to a specific employee — see
+        _notify_management_whatsapp for the "everyone who manages this
+        tenant" broadcast variant used by alerts/digest."""
         if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token and to_wa_id):
             return False
         try:
@@ -736,6 +835,43 @@ def create_app(services: Services | None = None) -> FastAPI:
         matches = [t for t in svc.task_store.list_for_tenant(tenant_id) if t.task_id.lower().endswith(short_id)]
         return matches[0] if len(matches) == 1 else None
 
+    def _find_lead_by_short_id(tenant_id: str, short_id: str) -> Lead | None:
+        """Same short-id-suffix convention as _find_task_by_short_id, so
+        an owner can link a task to "the customer who complained" (e.g.
+        `assign call back the customer to Ravi for lead a1b2c3`) without
+        typing a full lead_id."""
+        short_id = short_id.strip().lower()
+        if not short_id:
+            return None
+        matches = [l for l in svc.lead_store.list_for_tenant(tenant_id, limit=1000) if l.lead_id.lower().endswith(short_id)]
+        return matches[0] if len(matches) == 1 else None
+
+    def _maybe_verify_outcome_with_customer(tenant: TenantConfig, task: Task) -> None:
+        """The "Verified Outcome" step of Insight -> Task -> Owner ->
+        Deadline -> Verified Outcome: when a task linked to a real
+        customer conversation (customer_facing_lead_id) closes to "done",
+        best-effort ping that SAME customer to confirm the issue is
+        actually resolved, over the same channel/credentials as every
+        other customer-facing send. Fire-and-forget, same honest "no
+        webhook, no reconciliation" shape as every other one-way
+        WhatsApp send in this app — never blocks task completion."""
+        if not task.customer_facing_lead_id:
+            return
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
+            return
+        lead = svc.lead_store.get(tenant.tenant_id, task.customer_facing_lead_id)
+        if not (lead and lead.phone):
+            return
+        try:
+            svc.whatsapp_client().send_text(
+                phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                to=lead.phone,
+                body=f"Hi! Following up on your recent request with {tenant.business_name} — "
+                     "has this been resolved to your satisfaction? Just reply to let us know.",
+            )
+        except WhatsAppSendError as exc:
+            logger.warning("Verified-outcome ping failed for tenant %s task %s: %s", tenant.tenant_id, task.task_id, exc)
+
     def _render_task_list(tasks: list[Task], employees_by_id: dict[str, Employee], *, show_assignee: bool) -> str:
         if not tasks:
             return "No open tasks. 🎉"
@@ -748,17 +884,129 @@ def create_app(services: Services | None = None) -> FastAPI:
             lines.append(f"[{_short_task_id(t.task_id)}] {t.title}{due}{who} ({t.status})")
         return "\n".join(lines)
 
-    def _render_overdue_list(tasks: list[Task], employees_by_id: dict[str, Employee]) -> str:
-        if not tasks:
-            return "No overdue tasks. 🎉"
+    def _overdue_lines_by_employee(tasks: list[Task], employees_by_id: dict[str, Employee]) -> list[str]:
+        """One line per employee with overdue work — reused by the
+        `overdue` command, the daily digest, and the `scorecard` command,
+        so "who owns what's overdue" is computed exactly once."""
         by_employee: dict[str, list[Task]] = {}
         for t in tasks:
             by_employee.setdefault(t.assigned_to_employee_id, []).append(t)
-        lines = ["⚠️ Overdue:"]
+        lines = []
         for emp_id, emp_tasks in by_employee.items():
             name = employees_by_id[emp_id].name if emp_id in employees_by_id else "Unassigned"
             titles = "; ".join(f"{t.title} [{_short_task_id(t.task_id)}]" for t in emp_tasks)
             lines.append(f"{name}: {len(emp_tasks)} overdue — {titles}")
+        return lines
+
+    def _render_overdue_list(tasks: list[Task], employees_by_id: dict[str, Employee]) -> str:
+        if not tasks:
+            return "No overdue tasks. 🎉"
+        return "⚠️ Overdue:\n" + "\n".join(_overdue_lines_by_employee(tasks, employees_by_id))
+
+    def _recurring_feedback_lines(tenant_id: str, *, since_iso: str | None = None) -> list[str]:
+        """Themes that have crossed the "this is a pattern, not a one-off"
+        threshold — reused by the digest, the action brief, and the
+        `scorecard` command."""
+        lines = []
+        for s in svc.feedback_store.summarize_by_theme(tenant_id, since_iso=since_iso):
+            if s.count >= RECURRING_FEEDBACK_THRESHOLD:
+                label = _FEEDBACK_THEME_LABELS.get(s.theme, s.theme)
+                lines.append(f"{label}: {s.count} report(s), {s.negative_count} negative")
+        return lines
+
+    def _resolve_theme_key(fragment: str) -> str | None:
+        """Matches a human-typed theme reference ("software/tools",
+        "Software", the raw key "software_or_tools") against the fixed
+        FEEDBACK_THEMES taxonomy — never a free-form new theme, so SOPs
+        stay attached to the same buckets FeedbackStore aggregates by."""
+        clean = fragment.strip().lower()
+        for key, label in _FEEDBACK_THEME_LABELS.items():
+            if clean == key or clean == label.lower() or clean in label.lower():
+                return key
+        return None
+
+    def _render_feedback_theme_summary(tenant_id: str, summaries: list) -> str:
+        if not summaries:
+            return "No feedback logged yet."
+        lines = ["📋 Recurring themes:"]
+        for s in summaries[:10]:
+            label = _FEEDBACK_THEME_LABELS.get(s.theme, s.theme)
+            sop = svc.sop_store.get_for_theme(tenant_id, s.theme)
+            status = " ✅ has approved guidance" if sop else ""
+            lines.append(f"{label}: {s.count} report(s), {s.negative_count} negative (last {s.most_recent_at[:10]}){status}")
+        return "\n".join(lines)
+
+    def _record_feedback(
+        tenant: TenantConfig, employee: Employee, feedback_text: str, message_id: str | None, reply
+    ) -> None:
+        """Shared by the deterministic `feedback <text>` command and the
+        NL fallback (see _handle_admin_bot_message) — one classification
+        + storage + SOP-lookup + alert path, however the intent was
+        detected."""
+        classification = svc.generator().classify_feedback_sentiment(text=feedback_text)
+        svc.feedback_store.record(
+            tenant_id=tenant.tenant_id, employee_id=employee.employee_id, raw_text=feedback_text,
+            sentiment=classification.sentiment, theme=classification.theme, urgency=classification.urgency,
+            root_cause_hint=classification.root_cause_hint, suggested_action=classification.suggested_action,
+            source_message_id=message_id,
+        )
+        existing_sop = svc.sop_store.get_for_theme(tenant.tenant_id, classification.theme)
+        sop_note = f'\n\nWe know about this — current guidance: "{existing_sop.text}"' if existing_sop else ""
+        if classification.urgency == "high":
+            reply(f"Got it — this sounds urgent, I've flagged it to management right away.{sop_note}")
+            _send_urgent_feedback_alert(tenant, employee, feedback_text, classification)
+        else:
+            reply(f"Got it — logged, thanks. I'll flag it to management if it's part of a pattern.{sop_note}")
+
+    def _business_health_snapshot(tenant: TenantConfig, *, since_iso: str) -> dict:
+        """One place computing the transparent, component-based health
+        view used by both the on-demand `scorecard` command and
+        `GET /api/business-health` — never a single opaque score, always
+        named numbers an owner can trace back to a real source."""
+        all_tasks = [t for t in svc.task_store.list_for_tenant(tenant.tenant_id) if t.created_at >= since_iso]
+        done_tasks = [t for t in all_tasks if t.status == "done"]
+        employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
+        overdue_tasks = svc.task_store.list_overdue(tenant.tenant_id)
+        analytics = svc.analytics_store.summary_for_tenant(tenant.tenant_id, since_iso=since_iso)
+        recurring_themes = [
+            s for s in svc.feedback_store.summarize_by_theme(tenant.tenant_id, since_iso=since_iso)
+            if s.count >= RECURRING_FEEDBACK_THRESHOLD
+        ]
+        themes_with_sop = sum(1 for s in recurring_themes if svc.sop_store.get_for_theme(tenant.tenant_id, s.theme))
+        return {
+            "tasks_assigned": len(all_tasks),
+            "tasks_done": len(done_tasks),
+            "tasks_overdue": len(overdue_tasks),
+            "overdue_lines": _overdue_lines_by_employee(overdue_tasks, employees_by_id),
+            "recurring_feedback_lines": _recurring_feedback_lines(tenant.tenant_id, since_iso=since_iso),
+            "recurring_themes_total": len(recurring_themes),
+            "recurring_themes_with_sop": themes_with_sop,
+            "questions_asked": analytics.total_questions,
+            "questions_answered": analytics.answered_count,
+            "dissatisfaction_count": analytics.dissatisfaction_count,
+            "buying_intent_count": analytics.buying_intent_count,
+        }
+
+    def _render_business_health(snapshot: dict, *, window_label: str) -> str:
+        lines = [
+            f"📈 Business health — {window_label}",
+            "",
+            f"Tasks: {snapshot['tasks_done']}/{snapshot['tasks_assigned']} completed, "
+            f"{snapshot['tasks_overdue']} overdue",
+        ]
+        lines.extend(f"  • {line}" for line in snapshot["overdue_lines"])
+        lines.append(f"Customer questions: {snapshot['questions_asked']} ({snapshot['questions_answered']} answered)")
+        if snapshot["dissatisfaction_count"]:
+            lines.append(f"⚠️ {snapshot['dissatisfaction_count']} customer complaint(s)")
+        if snapshot["buying_intent_count"]:
+            lines.append(f"{snapshot['buying_intent_count']} showed buying interest")
+        if snapshot["recurring_feedback_lines"]:
+            lines.append("")
+            lines.append("Recurring employee feedback:")
+            lines.extend(f"  • {line}" for line in snapshot["recurring_feedback_lines"])
+            lines.append(f"  ({snapshot['recurring_themes_with_sop']}/{snapshot['recurring_themes_total']} have approved guidance)")
+        else:
+            lines.append("No recurring employee issues.")
         return "\n".join(lines)
 
     def _daily_pulse_text(tenant: TenantConfig, employee: Employee) -> str:
@@ -787,30 +1035,49 @@ def create_app(services: Services | None = None) -> FastAPI:
             + _render_task_list(my_open, {}, show_assignee=False)
         )
 
-    def _handle_admin_bot_message(tenant: TenantConfig, employee: Employee, from_wa_id: str, text: str) -> None:
-        """The admin bot's command dispatcher for anyone in the tenant's
-        employee roster (owner, manager, or staff). Phase 0 is
-        deterministic keyword parsing (no LLM cost) — a later phase can
-        swap the parser for an NL classifier while every handler below
-        stays unchanged, since routing is decided by intent, not by
-        exactly how the intent was detected."""
-        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
-            return
-        raw = text.strip()
-        clean = raw.rstrip("?!. ").lower()
-        can_manage = employee.role in ("owner", "manager")
+    def _find_task_by_title_fragment(tenant_id: str, employee: Employee, fragment: str, can_manage: bool) -> Task | None:
+        """Fuzzy title match against the relevant open-task pool — used
+        by the NL fallback's task_status_update intent, which gets a
+        free-text description ("the shelf restock") rather than an exact
+        short id. Word-set containment, not literal substring: an LLM's
+        task_reference commonly reorders or drops words relative to the
+        original title ("shelf restock" for a task titled "restock shelf
+        3"), so a strict substring check would wrongly report no match
+        on cases a person would obviously consider a match. Staff only
+        match against their own open tasks, same scoping as the
+        deterministic `my tasks`/`tasks` commands."""
+        fragment_words = set(fragment.strip().lower().split())
+        if not fragment_words:
+            return None
+        candidates = (
+            svc.task_store.list_open_for_tenant(tenant_id)
+            if can_manage
+            else svc.task_store.list_open_for_tenant(tenant_id, assigned_to_employee_id=employee.employee_id)
+        )
+        matches = [t for t in candidates if fragment_words.issubset(set(t.title.lower().split()))]
+        return matches[0] if len(matches) == 1 else None
 
-        def reply(body: str) -> None:
-            _send_admin_bot_message(tenant, from_wa_id, body)
-
+    def _try_deterministic_admin_command(
+        tenant: TenantConfig, employee: Employee, raw: str, clean: str, can_manage: bool,
+        message_id: str | None, reply,
+    ) -> bool:
+        """Every EXACT-syntax admin-bot command — free, instant, 100%
+        predictable. Returns True if `raw`/`clean` matched something
+        (and a reply was already sent), False if nothing matched, in
+        which case the caller (_handle_admin_bot_message) falls back to
+        NL classification. Also reused BY the NL path itself: once an
+        intent is extracted, its slots are reformatted into the exact
+        syntax below and replayed through this same function, so every
+        permission check / lookup / store call / notification exists in
+        exactly one place regardless of how the command was phrased."""
         if clean in ("today", "status"):
             reply(_daily_pulse_text(tenant, employee))
-            return
+            return True
 
         if clean == "my tasks":
             my_tasks = svc.task_store.list_open_for_tenant(tenant.tenant_id, assigned_to_employee_id=employee.employee_id)
             reply(_render_task_list(my_tasks, {}, show_assignee=False))
-            return
+            return True
 
         if clean == "tasks":
             employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
@@ -820,7 +1087,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                 else svc.task_store.list_open_for_tenant(tenant.tenant_id, assigned_to_employee_id=employee.employee_id)
             )
             reply(_render_task_list(tasks, employees_by_id, show_assignee=can_manage))
-            return
+            return True
 
         if clean == "overdue":
             employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
@@ -828,32 +1095,87 @@ def create_app(services: Services | None = None) -> FastAPI:
             if not can_manage:
                 overdue = [t for t in overdue if t.assigned_to_employee_id == employee.employee_id]
             reply(_render_overdue_list(overdue, employees_by_id))
-            return
+            return True
 
         if clean in ("help", "commands"):
             reply(_admin_bot_help_text())
-            return
+            return True
+
+        if clean == "feedback themes":
+            if not can_manage:
+                reply("Only an owner or manager can view feedback themes.")
+                return True
+            reply(_render_feedback_theme_summary(tenant.tenant_id, svc.feedback_store.summarize_by_theme(tenant.tenant_id)))
+            return True
+
+        sop_match = _ADMIN_SOP_RE.match(raw)
+        if sop_match:
+            if employee.role != "owner":
+                reply("Only the owner can approve team guidance for a theme.")
+                return True
+            theme_fragment, note_text = sop_match.group(1), sop_match.group(2)
+            theme_key = _resolve_theme_key(theme_fragment)
+            if theme_key is None:
+                reply(f'Couldn\'t match "{theme_fragment}" to a feedback theme. Try "feedback themes" to see the list.')
+                return True
+            svc.sop_store.approve(
+                tenant_id=tenant.tenant_id, theme=theme_key, text=note_text.strip(),
+                approved_by_employee_id=employee.employee_id,
+            )
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="sop_approved",
+                target_type="sop", target_id=theme_key,
+            )
+            reply(f'✅ Saved guidance for "{_FEEDBACK_THEME_LABELS.get(theme_key, theme_key)}". Employees reporting this will now see it.')
+            return True
+
+        if clean in ("scorecard", "health"):
+            if not can_manage:
+                reply("Only an owner or manager can view the business scorecard.")
+                return True
+            since_iso = time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - svc.settings.digest_window_hours * 3600)
+            )
+            window_label = "today" if svc.settings.digest_window_hours <= 24 else f"the last {svc.settings.digest_window_hours}h"
+            snapshot = _business_health_snapshot(tenant, since_iso=since_iso)
+            reply(_render_business_health(snapshot, window_label=window_label))
+            return True
+
+        feedback_match = _ADMIN_FEEDBACK_RE.match(raw)
+        if feedback_match:
+            _record_feedback(tenant, employee, feedback_match.group(1).strip(), message_id, reply)
+            return True
 
         assign_match = _ADMIN_ASSIGN_RE.match(raw)
         if assign_match:
             if not can_manage:
                 reply("Only an owner or manager can assign tasks.")
-                return
-            title, name_fragment, when = assign_match.group(1), assign_match.group(2), assign_match.group(3)
+                return True
+            title, name_fragment, lead_short_id, when = (
+                assign_match.group(1), assign_match.group(2), assign_match.group(3), assign_match.group(4)
+            )
             assignee = _find_employee_by_name(tenant.tenant_id, name_fragment)
             if assignee is None:
                 reply(f'Couldn\'t find exactly one active employee matching "{name_fragment}". Check the roster and try again.')
-                return
+                return True
+            customer_facing_lead_id = None
+            if lead_short_id:
+                lead = _find_lead_by_short_id(tenant.tenant_id, lead_short_id)
+                if lead is None:
+                    reply(f'Couldn\'t find a customer matching lead id "{lead_short_id}".')
+                    return True
+                customer_facing_lead_id = lead.lead_id
             due_at = None
             if when:
                 try:
                     due_at = _parse_appointment_to_utc(when.strip())
                 except ValueError:
                     reply(f'Couldn\'t understand the due date "{when}". Use YYYY-MM-DD or YYYY-MM-DD HH:MM.')
-                    return
+                    return True
             task = svc.task_store.create(
                 tenant_id=tenant.tenant_id, title=title.strip(), assigned_to_employee_id=assignee.employee_id,
                 assigned_by_employee_id=employee.employee_id, due_at=due_at,
+                customer_facing_lead_id=customer_facing_lead_id,
             )
             svc.audit_log.record(
                 tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="task_assigned",
@@ -866,29 +1188,29 @@ def create_app(services: Services | None = None) -> FastAPI:
                 f'📋 New task from {employee.name}: "{task.title}"{due_note}. '
                 f'Reply "done {_short_task_id(task.task_id)}" when finished.',
             )
-            return
+            return True
 
         reassign_match = _ADMIN_REASSIGN_RE.match(raw)
         if reassign_match:
             if not can_manage:
                 reply("Only an owner or manager can reassign tasks.")
-                return
+                return True
             short_id, name_fragment = reassign_match.group(1), reassign_match.group(2)
             task = _find_task_by_short_id(tenant.tenant_id, short_id)
             if task is None:
                 reply(f'Couldn\'t find a task matching "{short_id}".')
-                return
+                return True
             assignee = _find_employee_by_name(tenant.tenant_id, name_fragment)
             if assignee is None:
                 reply(f'Couldn\'t find exactly one active employee matching "{name_fragment}".')
-                return
+                return True
             svc.task_store.reassign(tenant.tenant_id, task.task_id, assignee.employee_id)
             svc.audit_log.record(
                 tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="task_reassigned",
                 target_type="task", target_id=task.task_id, metadata={"to": assignee.employee_id},
             )
             reply(f'🔁 Reassigned "{task.title}" to {assignee.name}.')
-            return
+            return True
 
         parts = raw.split(None, 1)
         verb = parts[0].lower() if parts else ""
@@ -900,14 +1222,14 @@ def create_app(services: Services | None = None) -> FastAPI:
             task = _find_task_by_short_id(tenant.tenant_id, short_id)
             if task is None:
                 reply(f'Couldn\'t find a task matching "{short_id}". Try "tasks" to see open work.')
-                return
+                return True
 
             if verb in ("approve", "reject") and not can_manage:
                 reply("Only an owner or manager can approve or reject a task.")
-                return
+                return True
             if verb in ("start", "done", "blocked") and not (can_manage or task.assigned_to_employee_id == employee.employee_id):
                 reply("You can only update the status of tasks assigned to you.")
-                return
+                return True
 
             if verb == "start":
                 svc.task_store.update_status(tenant.tenant_id, task.task_id, "in_progress")
@@ -928,6 +1250,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                     reply(f'🎉 Marked "{task.title}" as done. Nice work.')
                     if assigner and assigner.employee_id != employee.employee_id:
                         _send_admin_bot_message(tenant, assigner.whatsapp_number, f'✅ {employee.name} finished "{task.title}".')
+                    _maybe_verify_outcome_with_customer(tenant, task)
             elif verb == "blocked":
                 svc.task_store.update_status(tenant.tenant_id, task.task_id, "blocked", block_reason=reason)
                 reply(f'🚧 Marked "{task.title}" as blocked' + (f": {reason}" if reason else "") + ".")
@@ -941,6 +1264,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                     target_type="task", target_id=task.task_id,
                 )
                 reply(f'✅ Approved "{task.title}".')
+                _maybe_verify_outcome_with_customer(tenant, task)
             elif verb == "reject":
                 svc.task_store.reject(tenant.tenant_id, task.task_id, reason=reason)
                 svc.audit_log.record(
@@ -948,9 +1272,83 @@ def create_app(services: Services | None = None) -> FastAPI:
                     target_type="task", target_id=task.task_id, metadata={"reason": reason},
                 )
                 reply(f'↩️ Sent "{task.title}" back to in progress' + (f": {reason}" if reason else "") + ".")
+            return True
+
+        return False
+
+    def _handle_nl_admin_command(
+        tenant: TenantConfig, employee: Employee, raw: str, can_manage: bool, message_id: str | None, reply,
+    ) -> None:
+        """Fallback for messages that matched no deterministic syntax —
+        one narrow structured-output call extracts intent + slots, then
+        every action is replayed through _try_deterministic_admin_command
+        (assign/status-update) or the shared _record_feedback helper
+        (feedback), so nothing here re-implements permission checks,
+        lookups, or notifications."""
+        today_iso = time.strftime("%Y-%m-%d", time.gmtime())
+        try:
+            classification = svc.generator().classify_employee_message(
+                text=raw, current_date_iso=today_iso, employee_role=employee.role,
+            )
+        except Exception as exc:  # noqa: BLE001 - never break the webhook turn over a best-effort NL classification
+            logger.warning("NL admin-bot classification failed for tenant %s: %s", tenant.tenant_id, exc)
+            reply(_admin_bot_help_text())
             return
 
+        if classification.intent == "feedback" and classification.feedback_text:
+            _record_feedback(tenant, employee, classification.feedback_text, message_id, reply)
+            return
+
+        if classification.intent == "assign_task" and classification.task_title and classification.assignee_name:
+            synthetic = f"assign {classification.task_title} to {classification.assignee_name}"
+            if classification.due_date_iso:
+                synthetic += f" by {classification.due_date_iso}"
+            if _try_deterministic_admin_command(tenant, employee, synthetic, synthetic.lower(), can_manage, message_id, reply):
+                return
+            reply(_admin_bot_help_text())
+            return
+
+        if classification.intent == "task_status_update" and classification.task_reference and classification.new_status:
+            task = _find_task_by_title_fragment(tenant.tenant_id, employee, classification.task_reference, can_manage)
+            if task is None:
+                reply(
+                    f'I think you mean a task about "{classification.task_reference}" but couldn\'t find exactly '
+                    'one match. Try "tasks" to see open work and reply with its exact id.'
+                )
+                return
+            synthetic = f"{classification.new_status} {_short_task_id(task.task_id)}"
+            if _try_deterministic_admin_command(tenant, employee, synthetic, synthetic.lower(), can_manage, message_id, reply):
+                return
+            reply(_admin_bot_help_text())
+            return
+
+        if classification.intent == "report_request" and classification.report_type:
+            mapped = "feedback themes" if classification.report_type == "feedback_themes" else classification.report_type
+            if _try_deterministic_admin_command(tenant, employee, mapped, mapped, can_manage, message_id, reply):
+                return
+
         reply(_admin_bot_help_text())
+
+    def _handle_admin_bot_message(
+        tenant: TenantConfig, employee: Employee, from_wa_id: str, text: str, *, message_id: str | None = None
+    ) -> None:
+        """The admin bot's command dispatcher for anyone in the tenant's
+        employee roster (owner, manager, or staff). Deterministic keyword
+        parsing is tried first (free, instant, exact); only a message
+        that matches nothing pays for an NL classification call — see
+        _try_deterministic_admin_command and _handle_nl_admin_command."""
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
+            return
+        raw = text.strip()
+        clean = raw.rstrip("?!. ").lower()
+        can_manage = employee.role in ("owner", "manager")
+
+        def reply(body: str) -> None:
+            _send_admin_bot_message(tenant, from_wa_id, body)
+
+        if _try_deterministic_admin_command(tenant, employee, raw, clean, can_manage, message_id, reply):
+            return
+        _handle_nl_admin_command(tenant, employee, raw, can_manage, message_id, reply)
 
     @app.post("/api/whatsapp/webhook")
     async def receive_whatsapp_webhook(req: Request) -> dict:
@@ -1003,7 +1401,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                 svc.employee_store.ensure_owner_bootstrap(tenant.tenant_id, tenant.owner_whatsapp_number)
                 employee = svc.employee_store.find_by_whatsapp(tenant.tenant_id, msg.wa_id)
                 if employee is not None:
-                    _handle_admin_bot_message(tenant, employee, msg.wa_id, msg.text)
+                    _handle_admin_bot_message(tenant, employee, msg.wa_id, msg.text, message_id=msg.message_id)
                     continue  # internal admin-bot message, not a customer — no lead, no RAG, no quota spent
 
                 session_id = f"wa_{msg.wa_id}"
@@ -1561,6 +1959,53 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Unknown employee_id for this business.")
         return updated.model_dump()
 
+    @app.post("/api/tasks")
+    def create_task(request: CreateTaskRequest, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Dashboard-side task creation — the WhatsApp `assign` command's
+        equivalent for a caller that already knows the exact
+        assigned_to_employee_id (e.g. from GET /api/employees) rather
+        than typing a name to fuzzy-match. The only way today to set
+        customer_facing_lead_id (linking a task to the lead/conversation
+        it originated from) without going through the store directly,
+        which is what enables the verified-outcome ping on completion."""
+        principal = _resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.ASSIGN_TASK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        assignee = svc.employee_store.get(tenant_id, request.assigned_to_employee_id)
+        if assignee is None:
+            raise HTTPException(status_code=404, detail="Unknown assigned_to_employee_id for this business.")
+        if request.customer_facing_lead_id and svc.lead_store.get(tenant_id, request.customer_facing_lead_id) is None:
+            raise HTTPException(status_code=404, detail="Unknown customer_facing_lead_id for this business.")
+
+        due_at = None
+        if request.due_at:
+            try:
+                due_at = _parse_appointment_to_utc(request.due_at)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid due_at: {exc}") from exc
+
+        task = svc.task_store.create(
+            tenant_id=tenant_id, title=request.title, description=request.description,
+            assigned_to_employee_id=assignee.employee_id, assigned_by_employee_id=principal.principal_id,
+            due_at=due_at, approval_required=request.approval_required,
+            customer_facing_lead_id=request.customer_facing_lead_id,
+        )
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="task_assigned",
+            target_type="task", target_id=task.task_id, metadata={"assigned_to": assignee.employee_id, "via": "api"},
+        )
+        due_note = f" — due {due_at[:16].replace('T', ' ')} UTC" if due_at else ""
+        _send_admin_bot_message(
+            tenant, assignee.whatsapp_number,
+            f'📋 New task: "{task.title}"{due_note}. Reply "done {_short_task_id(task.task_id)}" when finished.',
+        )
+        return task.model_dump()
+
     @app.get("/api/tasks")
     def list_tasks(tenant_id: str, authorization: str | None = Header(default=None), status: str | None = None) -> dict:
         principal = _resolve(authorization)
@@ -1571,6 +2016,92 @@ def create_app(services: Services | None = None) -> FastAPI:
         except TenantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"tasks": [t.model_dump() for t in svc.task_store.list_for_tenant(tenant_id, status=status)]}
+
+    @app.get("/api/feedback")
+    def list_feedback(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_FEEDBACK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "items": [f.model_dump() for f in svc.feedback_store.list_for_tenant(tenant_id)],
+            "themes": [t.model_dump() for t in svc.feedback_store.summarize_by_theme(tenant_id)],
+        }
+
+    @app.post("/api/feedback/{feedback_id}/resolve")
+    def resolve_feedback(feedback_id: str, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_FEEDBACK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        updated = svc.feedback_store.mark_resolved(tenant_id, feedback_id)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Unknown feedback_id for this business.")
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="feedback_resolved",
+            target_type="feedback", target_id=feedback_id,
+        )
+        return updated.model_dump()
+
+    @app.get("/api/business-health")
+    def get_business_health(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """The dashboard's read of the same transparent, component-based
+        snapshot the `scorecard`/`health` WhatsApp command renders as
+        text — one computation (_business_health_snapshot), two
+        presentations. Gated the same as feedback: aggregated management
+        insight, not something staff sees."""
+        principal = _resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.VIEW_FEEDBACK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        since_iso = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - svc.settings.digest_window_hours * 3600)
+        )
+        return _business_health_snapshot(tenant, since_iso=since_iso)
+
+    @app.get("/api/sops")
+    def list_sops(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_FEEDBACK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"sops": [s.model_dump() for s in svc.sop_store.list_for_tenant(tenant_id)]}
+
+    @app.post("/api/sops")
+    def approve_sop(request: ApproveSopRequest, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.MANAGE_SOPS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        theme_key = _resolve_theme_key(request.theme)
+        if theme_key is None:
+            raise HTTPException(status_code=400, detail=f"Unknown feedback theme '{request.theme}'.")
+        try:
+            note = svc.sop_store.approve(
+                tenant_id=tenant_id, theme=theme_key, text=request.text, approved_by_employee_id=principal.principal_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="sop_approved",
+            target_type="sop", target_id=theme_key,
+        )
+        return note.model_dump()
 
     # -------------------------------------------------------------- platform admin
     @app.get("/api/v1/admin/tenants")
@@ -1740,7 +2271,12 @@ def create_app(services: Services | None = None) -> FastAPI:
 
             new_leads = svc.lead_store.list_for_tenant(tenant.tenant_id, since_iso=since_iso)
             analytics = svc.analytics_store.summary_for_tenant(tenant.tenant_id, since_iso=since_iso)
-            if not has_digest_content(new_leads, analytics):
+            employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
+            overdue_lines = _overdue_lines_by_employee(svc.task_store.list_overdue(tenant.tenant_id), employees_by_id)
+            recurring_lines = _recurring_feedback_lines(tenant.tenant_id, since_iso=since_iso)
+            if not has_digest_content(
+                new_leads, analytics, overdue_summary_lines=overdue_lines, recurring_feedback_lines=recurring_lines
+            ):
                 skipped.append({"tenant_id": tenant.tenant_id, "reason": "no activity in window"})
                 continue
 
@@ -1750,6 +2286,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                     answered_count=analytics.answered_count, abstention_count=analytics.abstention_count,
                     buying_intent_count=analytics.buying_intent_count, dissatisfaction_count=analytics.dissatisfaction_count,
                     new_leads_count=len(new_leads), recent_knowledge_gaps=analytics.recent_knowledge_gaps,
+                    overdue_task_lines=overdue_lines, recurring_feedback_lines=recurring_lines,
                 )
             except Exception as exc:  # noqa: BLE001 - a failed advisory brief must not block the digest itself
                 logger.warning("Action brief generation failed for tenant %s: %s", tenant.tenant_id, exc)
@@ -1758,7 +2295,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             subject, html = render_owner_digest(
                 tenant, new_leads=new_leads, analytics=analytics,
                 window_hours=svc.settings.digest_window_hours, dashboard_url=dashboard_url,
-                action_items=action_items,
+                action_items=action_items, overdue_summary_lines=overdue_lines, recurring_feedback_lines=recurring_lines,
             )
             try:
                 sender.send(to=tenant.owner_email, subject=subject, html_body=html)
@@ -1768,14 +2305,15 @@ def create_app(services: Services | None = None) -> FastAPI:
 
             # Bonus fast path alongside the guaranteed email above — never
             # gates it, never blocks it, failure here is invisible to the
-            # caller by design (see _send_owner_whatsapp's docstring).
+            # caller by design (see _notify_management_whatsapp's docstring).
             window_label = "today" if svc.settings.digest_window_hours <= 24 else f"the last {svc.settings.digest_window_hours}h"
             whatsapp_summary = render_owner_whatsapp_summary(
                 tenant, new_leads=new_leads, analytics=analytics,
                 open_gaps_count=len(svc.analytics_store.list_open_gaps(tenant.tenant_id)),
                 window_label=window_label, action_items=action_items,
+                overdue_summary_lines=overdue_lines, recurring_feedback_lines=recurring_lines,
             )
-            _send_owner_whatsapp(tenant, whatsapp_summary)
+            _notify_management_whatsapp(tenant, whatsapp_summary)
 
         return {"sent": sent, "skipped": skipped, "failed": failed}
 
@@ -1893,6 +2431,56 @@ def create_app(services: Services | None = None) -> FastAPI:
                 else:
                     skipped.append({"lead_id": lead.lead_id, "tenant_id": tenant.tenant_id, "reason": "no WhatsApp channel available"})
         return {"sent": sent, "skipped": skipped}
+
+    @app.post("/api/v1/admin/task-escalation/run")
+    def admin_run_task_escalation(authorization: str | None = Header(default=None)) -> dict:
+        """Proactive alert for tasks overdue by more than
+        TASK_ESCALATION_HOURS — a daily digest mention isn't enough for
+        something that's been sitting for two days. Meant to be polled
+        more often than the once-a-day digest (e.g. every few hours);
+        idempotent either way since escalation is deduped per-task via
+        TaskStore.mark_reminder_sent (reused as "already escalated", the
+        same field name/shape as the lead-reminder marker). Consolidates
+        every escalating task into ONE message per tenant per run, not
+        one ping per task."""
+        principal = _require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        escalation_cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - TASK_ESCALATION_HOURS * 3600))
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+        escalated: list[str] = []
+        skipped: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            overdue = svc.task_store.list_overdue(tenant.tenant_id)
+            to_escalate = [
+                t for t in overdue if t.due_at and t.due_at < escalation_cutoff and t.reminder_sent_at is None
+            ]
+            if not to_escalate:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "nothing newly escalating"})
+                continue
+
+            employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
+            overdue_lines = _overdue_lines_by_employee(to_escalate, employees_by_id)
+            sent_count = _notify_management_whatsapp(
+                tenant, "🔴 Task escalation — significantly overdue:\n" + "\n".join(overdue_lines)
+            )
+            if svc.settings.resend_api_key and svc.settings.digest_from_email:
+                subject, html = render_task_escalation_alert(
+                    business_name=tenant.business_name, overdue_lines=overdue_lines, dashboard_url=dashboard_url,
+                )
+                try:
+                    svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+                except EmailSendError as exc:
+                    logger.warning("Task escalation email failed for tenant %s: %s", tenant.tenant_id, exc)
+            for t in to_escalate:
+                svc.task_store.mark_reminder_sent(tenant.tenant_id, t.task_id)
+            escalated.append(tenant.tenant_id)
+            if sent_count == 0:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no WhatsApp recipient reachable (email attempted)"})
+        return {"escalated": escalated, "skipped": skipped}
 
     # -------------------------------------------------------------- static pages
     for route, filename in (

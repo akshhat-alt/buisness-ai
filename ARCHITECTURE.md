@@ -119,9 +119,13 @@ src/business_ai/
   employees.py    Admin WhatsApp bot: tenant-scoped employee roster/identity
   tasks.py        Admin WhatsApp bot: task assignment, status, approvals
   audit.py        Append-only audit log for admin-bot state changes
+  feedback.py     Admin WhatsApp bot: classified employee feedback (sentiment/
+                  theme/urgency), theme aggregation for management review
+  memory.py       Admin WhatsApp bot: owner-approved SOP/workaround notes
+                  per recurring feedback theme
   app.py          FastAPI app factory: wires everything into HTTP routes
 static/           Vanilla HTML/CSS/JS frontend, no build step
-tests/            pytest suite (173 tests) — see README.md
+tests/            pytest suite (230 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

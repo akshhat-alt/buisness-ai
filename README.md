@@ -243,6 +243,115 @@ is completely unaffected either way.
   rejection writes an immutable row (`AuditLogStore`) — who did what,
   to what, and when.
 
+## What V1.7 adds: employee feedback + sentiment/theme classification
+
+- **`feedback <what's going on>`**: any roster member (owner, manager, or
+  staff) can report a concern, complaint, or suggestion in plain
+  language over WhatsApp. `generation.classify_feedback_sentiment` — a
+  dedicated structured-output call, separate from the customer-facing
+  answer schema — classifies it into `sentiment` (positive/neutral/
+  negative), a fixed `theme` taxonomy (software/tools, scheduling,
+  equipment/supplies, pay, etc. — bounded, not free text, so results
+  aggregate cleanly instead of fuzzy-matching drifting phrasing),
+  `urgency`, a `root_cause_hint`, and a `suggested_action`. Live-
+  validated against the real OpenAI API on 8 realistic employee
+  messages before landing (correct theme on all 8, sensible sentiment/
+  urgency even on subtler cases — a scheduling *suggestion* stayed
+  neutral rather than reading as a complaint).
+- **`feedback themes`** (owner/manager only — `VIEW_FEEDBACK`): a
+  WhatsApp summary of recurring themes with report counts and how many
+  were negative. `GET /api/feedback` / `POST /api/feedback/{id}/resolve`
+  expose the same data to the dashboard.
+- **Submitting needs no permission check; viewing the aggregate does.**
+  Anyone on the roster can report an issue; only an owner or manager can
+  see the rolled-up pattern — deliberately never surfaced as a per-
+  employee sentiment score (see `FeedbackStore.summarize_by_theme`'s
+  docstring).
+
+## What V1.8 adds: proactive alerts, business scorecard, WhatsApp automation
+
+Phase 1 + Phase 2 combined into one sprint, prioritized by business value
+rather than built as sequential milestones — reusing the digest, alert,
+roster, and classification infrastructure that already existed rather
+than standing up parallel systems.
+
+- **Recurring issues feed the owner's daily digest, not just a WhatsApp
+  command.** `admin_run_digest` now pulls overdue tasks (named by
+  employee, via `EmployeeStore`) and feedback themes that have crossed a
+  repeat threshold (`RECURRING_FEEDBACK_THRESHOLD = 3`) into the SAME
+  email/WhatsApp send as leads/analytics — one daily message covering
+  the whole business, not a second inbox to check.
+- **The LLM action-brief is now genuinely cross-functional.**
+  `generate_action_brief` takes the same overdue-task and recurring-
+  feedback data and writes it into the SAME structured-output call —
+  live-validated against the real OpenAI API to confirm it surfaces
+  operational signals (not just sales/lead advice) without inventing
+  any name, number, or task not actually in the data.
+- **Instant alert for urgent feedback**: `classify_feedback_sentiment`
+  returning `urgency: "high"` fires the same "don't wait for tomorrow"
+  treatment as the customer dissatisfaction alert (`render_
+  urgent_feedback_alert`), to every owner/manager, over email and
+  WhatsApp independently.
+- **Management notifications now reach the whole roster, not one
+  scalar number.** `_notify_management_whatsapp` replaces the old
+  single-owner-number push — every `owner`/`manager` row gets the
+  digest and both instant alerts, best-effort per recipient.
+- **WhatsApp message templates** (`WhatsAppClient.send_template`,
+  `TenantConfig.admin_notify_template_name`): when a free-text push
+  fails because nobody on the roster has messaged the business's line in
+  the last 24h, and the tenant has an approved template configured, a
+  short fixed fallback notice goes out instead of silently dropping the
+  notification. Real content still only ever reaches someone inside the
+  live conversation window — Meta doesn't allow arbitrary text in an
+  approved template without pre-registered variables, which isn't built.
+- **`scorecard` / `health`** (owner/manager, WhatsApp command and
+  `GET /api/business-health`): one transparent, component-based snapshot
+  — task completion count, named overdue work, customer questions/
+  answer rate, complaints, buying interest, recurring feedback — never
+  collapsed into a single opaque score, and every number traces back to
+  a real store query.
+
+## What V1.9 adds: NL commands, SOP conversion, escalation, verified outcomes
+
+- **Natural-language employee commands**: deterministic keyword parsing
+  (`app.py`'s `_try_deterministic_admin_command`) is tried first — free,
+  instant, exact — and only a message matching nothing pays for one
+  fallback LLM call (`generation.classify_employee_message`). Free-form
+  phrasing ("hey can ravi handle the shelf restock tomorrow", "just
+  finished the shelf restock", "how are we doing this week") now routes
+  to the exact same handlers as the typed commands, by construction: the
+  classifier only extracts intent + slots, then its output is replayed
+  through the deterministic function itself — no permission check,
+  lookup, or notification exists in two places. Live-validated against
+  the real OpenAI API across all 5 intents, including an adversarial
+  "assign nothing to nobody" case that correctly classified as `other`
+  rather than hallucinating a fake assignment. That validation caught and
+  fixed a real prompt bug: asking for "YYYY-MM-DD **or**
+  YYYY-MM-DDTHH:MM" made the model reproducibly emit a corrupted date
+  string; simplified to date-only, re-validated clean.
+- **SOP / action conversion** (`memory.py`, owner-only —
+  `approve sop <theme>: <note text>`, `GET/POST /api/sops`): turns a
+  recurring feedback theme into a short, owner-approved workaround note.
+  The next employee reporting that same theme gets it echoed back
+  ("We know about this — current guidance: ...") in the exact same
+  acknowledgment their `feedback` message already gets — no new command
+  for employees to learn. `feedback themes` and the scorecard both show
+  SOP coverage (e.g. "1/2 have approved guidance").
+- **Proactive task escalation** (`POST /api/v1/admin/task-escalation/run`,
+  platform-admin, externally cron'd — meant to be polled more often than
+  the once-daily digest): a task overdue by more than 48h gets an instant
+  alert to management instead of waiting for tomorrow's summary.
+  Deduped per-task via the same `reminder_sent_at` marker convention
+  `TaskStore` already used for lead reminders.
+- **Verified customer outcomes**: `TaskStore.customer_facing_lead_id`
+  (present since Phase 0, unused until now) links a task to the lead/
+  conversation it came from — settable via the WhatsApp `assign ... for
+  lead <id>` clause or the new `POST /api/tasks`. Completing (or
+  approving) such a task fires a best-effort WhatsApp ping back to that
+  SAME customer asking if their issue was actually resolved — fire-and-
+  forget, same honest "no webhook, no reconciliation" shape as every
+  other one-way send in this app, never blocking task completion.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -324,7 +433,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-173 tests covering the full HTTP lifecycle (signup → ingest → activate →
+230 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
 from the new FAQ entry), owner digest (sends only to active tenants with
@@ -362,6 +471,13 @@ full WhatsApp task-command grammar (assignment + notification,
 role-gated status updates, the approval/reject round trip, reassignment,
 and the `today`/`tasks`/`my tasks`/`overdue` views scoped correctly by
 role) — all against the same fake-WhatsApp-client harness as V1.2's tests.
+V1.7 adds FeedbackStore (tenant isolation, theme aggregation, unresolved-
+negative queries) and the classification pipeline end-to-end (submission
+by any role, `VIEW_FEEDBACK`-gated viewing, tenant-isolated capture over
+a real webhook payload) — via the same deterministic `FakeGenerator`
+pattern as every other LLM-touching test, plus a separate, uncommitted
+live check against the real OpenAI API on realistic employee messages
+before the prompt/schema was finalized.
 
 ## Known limitations (v1, honestly stated)
 
@@ -462,3 +578,66 @@ role) — all against the same fake-WhatsApp-client harness as V1.2's tests.
   by an inbound message, same 24-hour-window constraint as the rest of
   this app's WhatsApp sends. Scheduled pushes need outbound message
   templates, which aren't built (see above).
+- **Feedback classification costs one real LLM call per `feedback`
+  message** — unlike Phase 0's task commands, this isn't free. It isn't
+  yet metered against a separate admin-bot quota (see the architecture
+  plan's Phase-1 "second `UsageLimiter` instance" item) — today it draws
+  from the same OpenAI budget as everything else, with no per-tenant cap
+  of its own.
+- **No recurring-issue → SOP/workaround conversion yet.** `feedback
+  themes` surfaces counts and negative-report totals so an owner can see
+  a pattern, but there's no one-tap "turn this into a documented fix"
+  flow yet — that's a deliberately separate, later increment.
+- **Raw feedback text has no retention/expiry policy yet.** Every
+  submission is kept indefinitely; a time-based fade-out for the raw
+  text (keeping only the aggregated theme counts) is a recommended,
+  not-yet-built privacy hardening step given this data is about people,
+  not just business operations.
+- **No sales/expense/inventory data model exists, so no such reports
+  exist.** The scorecard and digest report real task/feedback/customer
+  data only — never a fabricated or estimated revenue/inventory number.
+  Building a manual metrics ledger (and PDF/CSV report export) was
+  deliberately deferred this sprint rather than shipped half-real.
+- **The admin bot's LLM calls (feedback classification, the extended
+  action brief) draw from the same OpenAI budget as everything else** —
+  there's no separate quota/rate-limit dimension for admin-bot usage yet.
+  Fine at pilot scale; a malicious or runaway insider sending many
+  `feedback` messages has no per-tenant cap of its own before it would
+  hit the platform's overall API budget.
+- **WhatsApp template fallback sends a fixed, static notice only** — no
+  dynamic content (the actual digest numbers, the actual complaint text)
+  can go into it without Meta-side template variables, which aren't
+  built. It exists to avoid a silent drop, not to fully replace the
+  free-text push.
+- **`find_by_whatsapp_phone_number_id` has no uniqueness check.** Two
+  tenants could technically end up with the same `phone_number_id` if
+  one were manually mistyped or copy-pasted (caught during this sprint's
+  own live smoke test, with two throwaway test tenants) — in real usage
+  each WhatsApp Business number's `phone_number_id` is assigned uniquely
+  by Meta, so this is a data-entry-error edge case, not a normal-path
+  risk, but a validation/uniqueness constraint is a reasonable future
+  hardening step.
+- **NL commands add a real LLM call per unmatched message, still on the
+  shared OpenAI budget.** Exact-syntax commands stay free; free-form
+  phrasing now costs one classification call each, on top of feedback
+  classification's own per-message cost — the "no dedicated admin-bot
+  quota" limitation above applies more now than it did in V1.7.
+- **NL date extraction is date-only (no time-of-day).** "by friday
+  evening" resolves to a plain date, dropping "evening" — a deliberate
+  simplification made after live validation showed asking the model for
+  two possible formats (date-or-datetime) reproducibly corrupted its
+  output; a plain date-only format is fully validated and reliable.
+- **NL report-request recognition is best-effort, not exhaustive.**
+  "how are we doing this week" was classified as `other` (falls back to
+  help text) rather than `report_request` in live validation — a real
+  recall gap, not a correctness bug (nothing wrong gets returned, the
+  user just needs to try the exact `scorecard` command or rephrase).
+- **Linking a task to a lead via WhatsApp requires knowing (or being
+  told) the lead's short id** (`assign ... for lead <id>`) — there's no
+  "convert this complaint into a task" one-tap flow yet from the
+  dashboard or from a dissatisfaction alert; `POST /api/tasks` is the
+  more practical way to set `customer_facing_lead_id` today.
+- **The verified-outcome customer ping is fire-and-forget, like every
+  other one-way send in this app.** The customer's reply (if any) isn't
+  parsed or tracked anywhere — an owner sees it as a normal WhatsApp
+  reply, not a structured "resolved: yes/no" signal.

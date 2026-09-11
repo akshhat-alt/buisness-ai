@@ -214,6 +214,66 @@ def evaluate_evidence_gate(pack: EvidencePack) -> GateResult:
 
 
 # ==============================================================================
+# Admin WhatsApp bot — employee feedback classification (separate pipeline
+# from the customer-facing RESPONSE_SCHEMA below: different audience,
+# different input, different signals needed)
+# ==============================================================================
+
+FEEDBACK_SENTIMENTS = ("positive", "neutral", "negative")
+FEEDBACK_URGENCIES = ("low", "medium", "high")
+
+# A fixed, small taxonomy rather than free text — so FeedbackStore.
+# summarize_by_theme can group by exact match instead of fuzzy-matching
+# drifting LLM phrasing ("billing logs out" vs "software timeout issue").
+FEEDBACK_THEMES = (
+    "equipment_or_supplies",
+    "software_or_tools",
+    "scheduling_or_shifts",
+    "communication_or_coordination",
+    "training_or_process",
+    "workload_or_staffing",
+    "customer_related",
+    "pay_or_compensation",
+    "safety_or_compliance",
+    "other",
+)
+
+
+class FeedbackClassification(BaseModel):
+    sentiment: str  # positive | neutral | negative
+    theme: str  # one of FEEDBACK_THEMES
+    urgency: str  # low | medium | high
+    root_cause_hint: str
+    suggested_action: str
+
+
+# ==============================================================================
+# Admin WhatsApp bot — natural-language command routing
+# ==============================================================================
+# Deterministic keyword parsing (app.py's _try_deterministic_admin_command)
+# is tried FIRST and is the only path for exact syntax — free, instant,
+# 100% predictable. This classifier is a FALLBACK spent only on messages
+# that didn't match any deterministic pattern, so free-form phrasing
+# ("hey can ravi handle the shelf thing tomorrow") still works without
+# paying an LLM call on every single structured command.
+
+EMPLOYEE_INTENTS = ("assign_task", "task_status_update", "feedback", "report_request", "other")
+EMPLOYEE_STATUS_WORDS = ("start", "done", "blocked", "cancel", "approve", "reject")
+EMPLOYEE_REPORT_TYPES = ("today", "tasks", "overdue", "feedback_themes", "scorecard")
+
+
+class EmployeeCommandIntent(BaseModel):
+    intent: str  # one of EMPLOYEE_INTENTS
+    task_title: str | None = None  # assign_task
+    assignee_name: str | None = None  # assign_task
+    due_date_iso: str | None = None  # assign_task — resolved to an absolute date, never invented if unmentioned
+    task_reference: str | None = None  # task_status_update — a fragment identifying which task
+    new_status: str | None = None  # task_status_update — one of EMPLOYEE_STATUS_WORDS
+    feedback_text: str | None = None  # feedback — the concern/complaint, lightly cleaned up
+    report_type: str | None = None  # report_request — one of EMPLOYEE_REPORT_TYPES
+
+
+# ==============================================================================
 # OpenAI provider — structured JSON schema output (same reliable pattern Shri AI uses)
 # ==============================================================================
 
@@ -426,6 +486,8 @@ class OpenAIGenerationProvider:
         dissatisfaction_count: int,
         new_leads_count: int,
         recent_knowledge_gaps: list[str],
+        overdue_task_lines: list[str] | None = None,
+        recurring_feedback_lines: list[str] | None = None,
     ) -> list[str]:
         """0-3 short, data-grounded recommendations for the owner digest —
         turns a report into an advisory brief. Grounded the same way the
@@ -435,6 +497,11 @@ class OpenAIGenerationProvider:
         is the same anti-hallucination discipline as the rest of this
         module, applied to internal business-intelligence text instead of
         customer answers.
+
+        overdue_task_lines / recurring_feedback_lines fold the admin bot's
+        own signals (see app.py's admin_run_digest) into the SAME call —
+        no second LLM call, same pattern as adding shows_buying_intent to
+        the customer schema rather than a separate classifier.
         """
         # A hard numeric gate in code, not a prompt instruction: tested
         # against the real API, a thin/neutral period (e.g. one answered
@@ -448,29 +515,38 @@ class OpenAIGenerationProvider:
             or buying_intent_count > 0
             or new_leads_count > 0
             or len(recent_knowledge_gaps) >= 2
+            or bool(overdue_task_lines)
+            or bool(recurring_feedback_lines)
         )
         if not has_signal:
             return []
 
         gaps_text = "; ".join(recent_knowledge_gaps) if recent_knowledge_gaps else "(none)"
+        overdue_text = "; ".join(overdue_task_lines) if overdue_task_lines else "(none)"
+        feedback_text = "; ".join(recurring_feedback_lines) if recurring_feedback_lines else "(none)"
         data_summary = (
             f"- {total_questions} customer questions this period ({answered_count} answered, "
             f"{abstention_count} the assistant couldn't answer)\n"
             f"- {buying_intent_count} showed buying intent\n"
             f"- {dissatisfaction_count} showed real dissatisfaction/complaints\n"
             f"- {new_leads_count} new leads captured\n"
-            f"- Unanswered questions this period: {gaps_text}"
+            f"- Unanswered questions this period: {gaps_text}\n"
+            f"- Overdue employee tasks: {overdue_text}\n"
+            f"- Recurring employee feedback themes: {feedback_text}"
         )
         system_prompt = (
-            f"You are a business advisor summarizing {business_name}'s AI assistant activity "
-            "for the owner. Given ONLY the data below, write 1-3 short, specific, actionable "
-            "recommendations, each one sentence, each referencing the actual numbers or "
-            "questions given. Never invent facts, numbers, or customer questions that are not "
+            f"You are a business advisor summarizing {business_name}'s operations — both its "
+            "customer-facing AI assistant AND its internal team coordination — for the owner. "
+            "Given ONLY the data below, write 1-3 short, specific, actionable recommendations, "
+            "each one sentence, each referencing the actual numbers, questions, tasks, or "
+            "feedback themes given. Never invent facts, numbers, names, or details that are not "
             "in the data below, and never write generic advice that isn't tied to a specific "
-            "number or question below (e.g. never say things like \"promote your business more\" "
-            "or \"explore lead generation strategies\" — those aren't grounded in anything here). "
-            "If the same question appears more than once in the unanswered list, call out that "
-            "it's recurring demand, not just a single gap."
+            "item below (e.g. never say things like \"promote your business more\" or \"improve "
+            "team communication\" — those aren't grounded in anything here). If the same question "
+            "appears more than once in the unanswered list, call out that it's recurring demand, "
+            "not just a single gap. Overdue tasks and recurring feedback are at least as important "
+            "to surface as customer-facing signals — do not ignore them in favor of only sales/lead "
+            "recommendations when they're present in the data."
         )
         schema = {
             "type": "object",
@@ -503,6 +579,149 @@ class OpenAIGenerationProvider:
         # Fail closed toward an empty brief rather than breaking the whole
         # digest send over a best-effort summarization call.
         return []
+
+    def classify_feedback_sentiment(self, *, text: str) -> FeedbackClassification:
+        """Classifies an employee's plain-language message about a
+        process, concern, or complaint. A distinct pipeline from the
+        customer-facing RESPONSE_SCHEMA above (different audience,
+        different input, different signals) — follows the same "one
+        dedicated structured-output method per task" precedent as
+        classify_dissatisfaction/generate_action_brief rather than
+        overloading the customer-answer schema with unrelated fields.
+        `theme` is grounded in the fixed FEEDBACK_THEMES taxonomy so
+        results aggregate cleanly (see FeedbackStore.summarize_by_theme)."""
+        system_prompt = (
+            "An employee at a small business sent this message to report a concern, "
+            "complaint, or suggestion about how work is done. Classify it factually — "
+            "never invent detail that isn't in the message. "
+            f"theme must be exactly one of: {', '.join(FEEDBACK_THEMES)}. "
+            "urgency reflects how much this needs management attention soon, not how "
+            "upset the employee sounds. root_cause_hint and suggested_action must each "
+            "be one short sentence grounded only in what the message says — if the cause "
+            "or fix isn't clear from the message alone, say that plainly instead of guessing."
+        )
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "sentiment": {"type": "string", "enum": list(FEEDBACK_SENTIMENTS)},
+                "theme": {"type": "string", "enum": list(FEEDBACK_THEMES)},
+                "urgency": {"type": "string", "enum": list(FEEDBACK_URGENCIES)},
+                "root_cause_hint": {"type": "string"},
+                "suggested_action": {"type": "string"},
+            },
+            "required": ["sentiment", "theme", "urgency", "root_cause_hint", "suggested_action"],
+        }
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model_name,
+                    temperature=0.0,
+                    max_tokens=250,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {"name": "feedback_classification", "strict": True, "schema": schema},
+                    },
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": text},
+                    ],
+                )
+                content = response.choices[0].message.content
+                if not content:
+                    raise RuntimeError("OpenAI returned an empty feedback classification.")
+                return FeedbackClassification.model_validate(json.loads(content))
+            except Exception as exc:  # noqa: BLE001 - retry transient API errors
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(2**attempt)
+        # Fail closed toward a clearly-flagged, safe default rather than
+        # losing the employee's report entirely if classification fails —
+        # the raw text is still stored either way (see app.py's caller).
+        return FeedbackClassification(
+            sentiment="neutral", theme="other", urgency="medium",
+            root_cause_hint="Classification unavailable.", suggested_action="Review manually.",
+        )
+
+    def classify_employee_message(self, *, text: str, current_date_iso: str, employee_role: str) -> EmployeeCommandIntent:
+        """NL fallback for the admin bot — see the module-level note above
+        EMPLOYEE_INTENTS. Extracts slots for the SAME deterministic
+        handlers app.py already has (task assignment, status update,
+        feedback, report pull) rather than trying to act on its own —
+        this call decides intent, app.py's existing code still does the
+        actual work, so grounding/permission/tenant-isolation logic is
+        never duplicated or re-implemented here."""
+        system_prompt = (
+            "You are routing a WhatsApp message from an EMPLOYEE to their company's internal "
+            "business-operations assistant (not a customer-support bot). Classify the single "
+            "best intent and extract only what the message actually states — never invent a "
+            "name, date, or detail that isn't there.\n\n"
+            f"Today's date is {current_date_iso}. The sender's role is '{employee_role}'.\n\n"
+            "intent must be exactly one of: assign_task, task_status_update, feedback, "
+            "report_request, other.\n"
+            "- assign_task: the sender wants to assign work to a named colleague. Extract "
+            "task_title (what needs doing) and assignee_name (who). due_date_iso: only if a "
+            "date or relative date is mentioned (e.g. 'tomorrow', 'by friday', 'next monday'), "
+            "output a plain date string in the format YYYY-MM-DD (date only, no time, no extra "
+            "characters), resolved from today's date above. Otherwise output null.\n"
+            "- task_status_update: the sender is reporting progress on their OWN existing work "
+            "(e.g. 'finished the restock', 'stuck on the register issue'). Extract "
+            "task_reference (a short phrase identifying which task) and new_status as exactly "
+            "one of: start, done, blocked, cancel, approve, reject.\n"
+            "- feedback: a concern, complaint, or suggestion about how work/the business runs "
+            "that is NOT a status update on a specific assigned task. Extract feedback_text as "
+            "the concern itself, lightly cleaned up but not reworded in meaning.\n"
+            "- report_request: the sender is asking for a summary/status pull. Extract "
+            "report_type as exactly one of: today, tasks, overdue, feedback_themes, scorecard.\n"
+            "- other: greetings, unrelated chat, or anything not covered above.\n"
+            "Leave every field null except the ones the matched intent above says to extract."
+        )
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "intent": {"type": "string", "enum": list(EMPLOYEE_INTENTS)},
+                "task_title": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "assignee_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "due_date_iso": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "task_reference": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "new_status": {"anyOf": [{"type": "string", "enum": list(EMPLOYEE_STATUS_WORDS)}, {"type": "null"}]},
+                "feedback_text": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "report_type": {"anyOf": [{"type": "string", "enum": list(EMPLOYEE_REPORT_TYPES)}, {"type": "null"}]},
+            },
+            "required": [
+                "intent", "task_title", "assignee_name", "due_date_iso", "task_reference",
+                "new_status", "feedback_text", "report_type",
+            ],
+        }
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model_name,
+                    temperature=0.0,
+                    max_tokens=300,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {"name": "employee_command_intent", "strict": True, "schema": schema},
+                    },
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": text},
+                    ],
+                )
+                content = response.choices[0].message.content
+                if not content:
+                    raise RuntimeError("OpenAI returned an empty employee-command classification.")
+                return EmployeeCommandIntent.model_validate(json.loads(content))
+            except Exception as exc:  # noqa: BLE001 - retry transient API errors
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(2**attempt)
+        # Fail closed toward "other" — an unrecognized command gets the
+        # help text, never a guessed action on unclear input.
+        return EmployeeCommandIntent(intent="other")
 
 
 # ==============================================================================

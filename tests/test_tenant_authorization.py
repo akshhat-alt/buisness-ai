@@ -132,6 +132,14 @@ def test_staff_can_view_and_update_own_tasks_but_not_assign(registry):
         authorize(staff, TenantAction.MANAGE_EMPLOYEES, target_tenant_id="salon-a", registry=registry)
 
 
+def test_manager_can_view_feedback_but_staff_cannot(registry):
+    manager = Principal.manager("user_8", "salon-a")
+    authorize(manager, TenantAction.VIEW_FEEDBACK, target_tenant_id="salon-a", registry=registry)
+    staff = Principal.staff("user_9", "salon-a")
+    with pytest.raises(UnauthorizedError):
+        authorize(staff, TenantAction.VIEW_FEEDBACK, target_tenant_id="salon-a", registry=registry)
+
+
 def test_only_owner_can_manage_employees(registry):
     owner = Principal.owner("user_6", "salon-a")
     manager = Principal.manager("user_7", "salon-a")

@@ -54,6 +54,14 @@ class TenantConfig(BaseModel):
     # owner command ("what needs my attention today?"), not a customer
     # question — see app.py's webhook handler.
     owner_whatsapp_number: str | None = None
+    # Name of a pre-approved Meta message template (created by the tenant
+    # in their own Meta Business Manager — same bring-your-own shape as
+    # everything else here) used ONLY as a fallback when a proactive
+    # admin-bot notification (daily digest, urgent feedback alert) can't
+    # be sent as free-form text because nobody on the roster has messaged
+    # the business's line in the last 24h. None = no fallback; the
+    # notification is simply skipped on WhatsApp (email stays guaranteed).
+    admin_notify_template_name: str | None = None
     review_link: str | None = None  # e.g. a Google Business review URL, for review-request emails
     # Deposit/payment links (Razorpay) — same "bring your own credential"
     # shape as WhatsApp: the payment goes straight into the TENANT's own
@@ -107,6 +115,15 @@ class TenantAction(str, Enum):
     ASSIGN_TASK = "assign_task"
     VIEW_TASKS = "view_tasks"
     UPDATE_TASK_STATUS = "update_task_status"
+    # Employee feedback/sentiment — see feedback.py. Owner+manager only:
+    # aggregated peer feedback is more sensitive than task/lead data, and
+    # is deliberately NOT in STAFF_ACTIONS (submitting feedback over
+    # WhatsApp needs no permission check at all — anyone in the roster
+    # can send a message; VIEWING the aggregated result is the gated part).
+    VIEW_FEEDBACK = "view_feedback"
+    # Approving a workaround/SOP note for a recurring feedback theme is a
+    # policy action, owner-only like MANAGE_EMPLOYEES — see memory.py.
+    MANAGE_SOPS = "manage_sops"
 
 
 OWNER_ACTIONS = frozenset(
@@ -121,14 +138,16 @@ OWNER_ACTIONS = frozenset(
         TenantAction.ASSIGN_TASK,
         TenantAction.VIEW_TASKS,
         TenantAction.UPDATE_TASK_STATUS,
+        TenantAction.VIEW_FEEDBACK,
+        TenantAction.MANAGE_SOPS,
     }
 )
 
 # Day-to-day operating power (assign/approve tasks, everything a staff
 # member can do) without owner-only levers: can't touch the knowledge
-# base, assistant config, or the employee roster itself.
+# base, assistant config, the employee roster, or SOP policy itself.
 MANAGER_ACTIONS = OWNER_ACTIONS - frozenset(
-    {TenantAction.INGEST_KNOWLEDGE, TenantAction.MANAGE_ASSISTANT, TenantAction.MANAGE_EMPLOYEES}
+    {TenantAction.INGEST_KNOWLEDGE, TenantAction.MANAGE_ASSISTANT, TenantAction.MANAGE_EMPLOYEES, TenantAction.MANAGE_SOPS}
 )
 
 STAFF_ACTIONS = frozenset(

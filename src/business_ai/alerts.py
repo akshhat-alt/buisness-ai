@@ -43,6 +43,67 @@ def render_dissatisfaction_alert(
     return subject, html
 
 
+def render_urgent_feedback_alert(
+    *,
+    business_name: str,
+    employee_name: str,
+    theme_label: str,
+    raw_text: str,
+    suggested_action: str | None,
+    dashboard_url: str | None,
+) -> tuple[str, str]:
+    """For management (owner/manager): an employee's feedback was
+    classified as high-urgency (generation.classify_feedback_sentiment) —
+    sent immediately, same "don't wait for tomorrow's digest" reasoning
+    as the customer dissatisfaction alert, just for the team side of the
+    business instead of the customer side."""
+    subject = f"Needs attention: {theme_label} — {business_name}"
+    action_block = (
+        f"<p><strong>Suggested action:</strong><br>{escape(suggested_action)}</p>" if suggested_action else ""
+    )
+    dashboard_link = (
+        f'<p><a href="{escape(dashboard_url)}">Open your dashboard &rarr;</a></p>' if dashboard_url else ""
+    )
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px; color:#b91c1c;">Urgent employee feedback: {escape(theme_label)}</h2>
+      <p style="color:#666; margin-top:0;">Flagged as high-urgency right away, instead of waiting
+      for tomorrow's summary.</p>
+      <p><strong>{escape(employee_name)} reported:</strong><br>{escape(raw_text)}</p>
+      {action_block}
+      {dashboard_link}
+    </div>
+    """
+    return subject, html
+
+
+def render_task_escalation_alert(
+    *, business_name: str, overdue_lines: list[str], dashboard_url: str | None,
+) -> tuple[str, str]:
+    """For management: tasks that are badly overdue (see app.py's
+    TASK_ESCALATION_HOURS), not just overdue-since-yesterday. Unlike the
+    rest of this module, the trigger is detected by a periodic cron poll
+    (`/api/v1/admin/task-escalation/run`) rather than a single live
+    request — but the "don't wait for the next scheduled rollup" shape is
+    the same as every other alert here, just polled instead of event-
+    driven, since there's no task-side webhook to react to synchronously."""
+    subject = f"Overdue tasks need attention — {business_name}"
+    lines_html = "".join(f"<li>{escape(line)}</li>" for line in overdue_lines)
+    dashboard_link = (
+        f'<p><a href="{escape(dashboard_url)}">Open your dashboard &rarr;</a></p>' if dashboard_url else ""
+    )
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px; color:#b91c1c;">Tasks are significantly overdue</h2>
+      <p style="color:#666; margin-top:0;">These have been open past the point where a daily
+      summary is enough to notice them.</p>
+      <ul>{lines_html}</ul>
+      {dashboard_link}
+    </div>
+    """
+    return subject, html
+
+
 def render_new_tenant_signup_alert(
     *, business_name: str, owner_email: str, tenant_id: str, dashboard_url: str | None,
 ) -> tuple[str, str]:

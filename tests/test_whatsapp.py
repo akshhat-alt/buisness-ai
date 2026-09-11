@@ -27,6 +27,7 @@ class FakeWhatsAppClient:
 
     def __init__(self) -> None:
         self.sent: list[dict] = []
+        self.template_sent: list[dict] = []
         self.raise_reengagement = False
 
     def send_text(self, *, phone_number_id: str, access_token: str, to: str, body: str) -> dict:
@@ -36,6 +37,14 @@ class FakeWhatsAppClient:
             raise WhatsAppSendError("window closed", error_code=REENGAGEMENT_WINDOW_CLOSED_CODE)
         self.sent.append({"phone_number_id": phone_number_id, "access_token": access_token, "to": to, "body": body})
         return {"messages": [{"id": "wamid.fake"}]}
+
+    def send_template(
+        self, *, phone_number_id: str, access_token: str, to: str, template_name: str, language_code: str = "en"
+    ) -> dict:
+        self.template_sent.append(
+            {"phone_number_id": phone_number_id, "access_token": access_token, "to": to, "template_name": template_name}
+        )
+        return {"messages": [{"id": "wamid.fake-template"}]}
 
     def mark_read(self, **kwargs) -> None:
         pass
@@ -474,3 +483,22 @@ def test_embedded_signup_is_tenant_isolated(client_wa, services_wa):
         json={"code": "authcode123", "phone_number_id": "PNID_NEW"}, headers=headers_b,
     )
     assert r.status_code == 403
+
+
+# ------------------------------------------------------------------ send_template (outbound message templates)
+
+
+def test_send_template_requires_credentials():
+    from business_ai.whatsapp import WhatsAppClient, WhatsAppSendError
+
+    client = WhatsAppClient()
+    with pytest.raises(WhatsAppSendError):
+        client.send_template(phone_number_id="", access_token="", to="919876543210", template_name="daily_update")
+
+
+def test_send_template_requires_template_name():
+    from business_ai.whatsapp import WhatsAppClient, WhatsAppSendError
+
+    client = WhatsAppClient()
+    with pytest.raises(WhatsAppSendError):
+        client.send_template(phone_number_id="PNID_1", access_token="tok", to="919876543210", template_name="")

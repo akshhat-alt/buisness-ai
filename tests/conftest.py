@@ -8,7 +8,7 @@ import pytest
 
 from business_ai.app import Services, create_app
 from business_ai.config import load_settings
-from business_ai.generation import LLMResponseDraft
+from business_ai.generation import EmployeeCommandIntent, FeedbackClassification, LLMResponseDraft
 from business_ai.retrieval import HashEmbeddingProvider
 
 
@@ -20,6 +20,8 @@ class FakeGenerator:
     def __init__(
         self, *, status: str = "answered", answer_text: str = "This is a grounded answer.",
         dissatisfied_queries: frozenset[str] = frozenset(), action_brief_items: list[str] = (),
+        feedback_classifications: dict[str, FeedbackClassification] | None = None,
+        employee_command_intents: dict[str, EmployeeCommandIntent] | None = None,
     ) -> None:
         self.status = status
         self.answer_text = answer_text
@@ -28,6 +30,13 @@ class FakeGenerator:
         # without a real API call.
         self.dissatisfied_queries = dissatisfied_queries
         self.action_brief_items = list(action_brief_items)
+        # Exact-text -> classification overrides for classify_feedback_sentiment,
+        # same "deterministic fake, real-API-shaped" idiom as the other fakes here.
+        self.feedback_classifications = feedback_classifications or {}
+        # Exact-text -> intent overrides for classify_employee_message;
+        # default is "other" (help text), same fail-closed-to-safe shape
+        # as the real provider's own fallback.
+        self.employee_command_intents = employee_command_intents or {}
 
     def generate(self, *, system_prompt: str, user_prompt: str) -> LLMResponseDraft:
         match = re.search(r'evidence_passage id="([^"]+)"', user_prompt)
@@ -46,6 +55,17 @@ class FakeGenerator:
 
     def generate_action_brief(self, **kwargs) -> list[str]:
         return self.action_brief_items
+
+    def classify_feedback_sentiment(self, *, text: str) -> FeedbackClassification:
+        if text in self.feedback_classifications:
+            return self.feedback_classifications[text]
+        return FeedbackClassification(
+            sentiment="negative", theme="software_or_tools", urgency="medium",
+            root_cause_hint="Deterministic test default.", suggested_action="Deterministic test default.",
+        )
+
+    def classify_employee_message(self, *, text: str, current_date_iso: str, employee_role: str) -> EmployeeCommandIntent:
+        return self.employee_command_intents.get(text, EmployeeCommandIntent(intent="other"))
 
     def translate_to_english_for_retrieval(self, *, text: str) -> str:
         # Deterministic no-op in tests — the real translation call is

@@ -113,6 +113,32 @@ class WhatsAppClient:
         }
         return self._post(phone_number_id=phone_number_id, access_token=access_token, payload=payload)
 
+    def send_template(
+        self, *, phone_number_id: str, access_token: str, to: str, template_name: str, language_code: str = "en"
+    ) -> dict:
+        """Sends a pre-approved WhatsApp message template — the ONLY way
+        to reach someone outside Meta's 24h customer-service window
+        (see REENGAGEMENT_WINDOW_CLOSED_CODE). Deliberately minimal: no
+        component/variable support yet, so this can only send a static
+        template with no dynamic body text — a tenant's approved
+        template must be created accordingly (e.g. a fixed "you have a
+        new update from Business AI, check WhatsApp or your dashboard"
+        notice, not one that embeds the actual summary). Templating with
+        variables is real additional Meta-side setup complexity, deferred
+        until there's a concrete need for it."""
+        if not phone_number_id or not access_token:
+            raise WhatsAppSendError("This business has not connected a WhatsApp number yet.")
+        if not template_name:
+            raise WhatsAppSendError("No approved WhatsApp template is configured for this business.")
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "template",
+            "template": {"name": template_name, "language": {"code": language_code}},
+        }
+        return self._post(phone_number_id=phone_number_id, access_token=access_token, payload=payload)
+
     def mark_read(self, *, phone_number_id: str, access_token: str, message_id: str) -> None:
         """Best-effort read receipt — never worth failing the whole
         webhook turn over, so callers should swallow errors from this."""

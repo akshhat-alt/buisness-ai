@@ -12,11 +12,24 @@ from business_ai.leads import Lead
 from business_ai.tenant import TenantConfig
 
 
-def has_digest_content(new_leads: list[Lead], analytics: AnalyticsSummary) -> bool:
+def has_digest_content(
+    new_leads: list[Lead],
+    analytics: AnalyticsSummary,
+    *,
+    overdue_summary_lines: list[str] | None = None,
+    recurring_feedback_lines: list[str] | None = None,
+) -> bool:
     """Whether there's anything worth emailing about. A business with zero
     activity in the window shouldn't get an empty digest every single day —
-    that trains the owner to ignore it."""
-    return bool(new_leads) or analytics.total_questions > 0
+    that trains the owner to ignore it. Overdue tasks and recurring
+    feedback themes count as content too — a quiet lead day with a real
+    task backlog or a repeating employee complaint still deserves an email."""
+    return (
+        bool(new_leads)
+        or analytics.total_questions > 0
+        or bool(overdue_summary_lines)
+        or bool(recurring_feedback_lines)
+    )
 
 
 def render_owner_digest(
@@ -27,6 +40,8 @@ def render_owner_digest(
     window_hours: int,
     dashboard_url: str | None,
     action_items: list[str] | None = None,
+    overdue_summary_lines: list[str] | None = None,
+    recurring_feedback_lines: list[str] | None = None,
 ) -> tuple[str, str]:
     """Returns (subject, html_body). action_items is the optional LLM-
     generated advisory brief (see generation.generate_action_brief) — a
@@ -34,7 +49,13 @@ def render_owner_digest(
     or an empty list simply omits that section, so a digest still renders
     correctly without it (e.g. when email is configured but the caller
     chooses not to spend the extra LLM call, or the brief came back
-    empty because there was nothing meaningful to say)."""
+    empty because there was nothing meaningful to say).
+
+    overdue_summary_lines / recurring_feedback_lines are pre-rendered,
+    already-real-data strings assembled by the caller (app.py, which has
+    the TaskStore/EmployeeStore/FeedbackStore access this module
+    deliberately doesn't) — this module stays pure presentation, exactly
+    like the rest of its content."""
     period = "today" if window_hours <= 24 else f"the last {window_hours} hours"
     subject = f"{tenant.business_name}: {len(new_leads)} new lead(s), {analytics.total_questions} question(s) {period}"
 
@@ -62,6 +83,24 @@ def render_owner_digest(
       </div>
         """
 
+    health_section = ""
+    if overdue_summary_lines or recurring_feedback_lines:
+        overdue_html = (
+            "".join(f"<li>{escape(line)}</li>" for line in overdue_summary_lines)
+            if overdue_summary_lines else "<li style='color:#666;'>None — nice.</li>"
+        )
+        feedback_html = (
+            "".join(f"<li>{escape(line)}</li>" for line in recurring_feedback_lines)
+            if recurring_feedback_lines else "<li style='color:#666;'>None reported.</li>"
+        )
+        health_section = f"""
+      <h3>Team &amp; operations</h3>
+      <p style="color:#666; margin-top:-8px;">Overdue tasks</p>
+      <ul>{overdue_html}</ul>
+      <p style="color:#666; margin-bottom:-8px;">Recurring employee feedback</p>
+      <ul>{feedback_html}</ul>
+        """
+
     html = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <h2 style="margin-bottom: 4px;">{escape(tenant.business_name)} — {period}'s summary</h2>
@@ -77,6 +116,7 @@ def render_owner_digest(
       </table>
 
       {action_section}
+      {health_section}
 
       <h3>New leads</h3>
       <table style="width:100%; border-collapse:collapse;">
@@ -102,6 +142,8 @@ def render_owner_whatsapp_summary(
     open_gaps_count: int,
     window_label: str,
     action_items: list[str] | None = None,
+    overdue_summary_lines: list[str] | None = None,
+    recurring_feedback_lines: list[str] | None = None,
 ) -> str:
     """A short, plain-text version of the same digest content, for the
     owner's own WhatsApp — both the pushed daily summary and the pull
@@ -121,11 +163,22 @@ def render_owner_whatsapp_summary(
         lines.append(f"⚠️ {analytics.dissatisfaction_count} complaint(s) flagged")
     if open_gaps_count:
         lines.append(f"{open_gaps_count} knowledge gap(s) open")
+    if overdue_summary_lines:
+        lines.append("")
+        lines.append("⚠️ Overdue:")
+        lines.extend(f"• {line}" for line in overdue_summary_lines)
+    if recurring_feedback_lines:
+        lines.append("")
+        lines.append("📋 Recurring feedback:")
+        lines.extend(f"• {line}" for line in recurring_feedback_lines)
     if action_items:
         lines.append("")
         lines.append("What to do:")
         lines.extend(f"• {item}" for item in action_items[:3])
-    if not (new_leads or analytics.total_questions or open_gaps_count):
+    if not (
+        new_leads or analytics.total_questions or open_gaps_count
+        or overdue_summary_lines or recurring_feedback_lines
+    ):
         lines.append("")
         lines.append("All quiet — nothing needs you right now.")
     return "\n".join(lines)
