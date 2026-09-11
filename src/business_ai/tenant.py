@@ -102,6 +102,11 @@ class TenantAction(str, Enum):
     ACTIVATE_TENANT = "activate_tenant"
     SUSPEND_TENANT = "suspend_tenant"
     INSPECT_ALL_TENANTS = "inspect_all_tenants"
+    # Admin WhatsApp bot (employee coordination) — see employees.py/tasks.py.
+    MANAGE_EMPLOYEES = "manage_employees"
+    ASSIGN_TASK = "assign_task"
+    VIEW_TASKS = "view_tasks"
+    UPDATE_TASK_STATUS = "update_task_status"
 
 
 OWNER_ACTIONS = frozenset(
@@ -112,7 +117,18 @@ OWNER_ACTIONS = frozenset(
         TenantAction.VIEW_LEADS,
         TenantAction.VIEW_ANALYTICS,
         TenantAction.MANAGE_ASSISTANT,
+        TenantAction.MANAGE_EMPLOYEES,
+        TenantAction.ASSIGN_TASK,
+        TenantAction.VIEW_TASKS,
+        TenantAction.UPDATE_TASK_STATUS,
     }
+)
+
+# Day-to-day operating power (assign/approve tasks, everything a staff
+# member can do) without owner-only levers: can't touch the knowledge
+# base, assistant config, or the employee roster itself.
+MANAGER_ACTIONS = OWNER_ACTIONS - frozenset(
+    {TenantAction.INGEST_KNOWLEDGE, TenantAction.MANAGE_ASSISTANT, TenantAction.MANAGE_EMPLOYEES}
 )
 
 STAFF_ACTIONS = frozenset(
@@ -121,8 +137,21 @@ STAFF_ACTIONS = frozenset(
         TenantAction.VIEW_PUBLIC_INFO,
         TenantAction.VIEW_LEADS,
         TenantAction.VIEW_ANALYTICS,
+        TenantAction.VIEW_TASKS,
+        TenantAction.UPDATE_TASK_STATUS,
     }
 )
+
+# Fail-closed role -> allowed-actions lookup for authorize() below. An
+# explicit map, not an if/elif chain that falls through to a default: a
+# role string that doesn't appear here (a typo, a future role added to
+# auth.ROLES without being wired in here yet) gets the empty set, not
+# STAFF_ACTIONS by accident. Keep this in sync with auth.ROLES.
+ROLE_ACTIONS: dict[str, frozenset[TenantAction]] = {
+    "owner": OWNER_ACTIONS,
+    "manager": MANAGER_ACTIONS,
+    "staff": STAFF_ACTIONS,
+}
 
 # Actions a real, anonymous website visitor (a customer, not a platform
 # user) may call with no Bearer token at all. Deliberately a short list:
@@ -309,7 +338,9 @@ def authorize(
     if principal.role == "platform_admin":
         return config
 
-    allowed = OWNER_ACTIONS if principal.role == "owner" else STAFF_ACTIONS
+    # Explicit, fail-closed lookup: an unrecognized role gets zero
+    # actions, never a default fallthrough to STAFF_ACTIONS.
+    allowed = ROLE_ACTIONS.get(principal.role, frozenset())
     if action not in allowed:
         raise UnauthorizedError(f"Role '{principal.role}' is not authorized to perform '{action.value}'.")
 

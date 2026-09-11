@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from business_ai.config import KNOWN_INSECURE_SECRETS, Settings
 
-ROLES = frozenset({"platform_admin", "owner", "staff"})
+ROLES = frozenset({"platform_admin", "owner", "manager", "staff"})
 
 
 class AuthenticationError(Exception):
@@ -45,6 +45,10 @@ class Principal:
     @staticmethod
     def owner(principal_id: str, tenant_id: str) -> "Principal":
         return Principal(principal_id=principal_id, tenant_id=tenant_id, role="owner")
+
+    @staticmethod
+    def manager(principal_id: str, tenant_id: str) -> "Principal":
+        return Principal(principal_id=principal_id, tenant_id=tenant_id, role="manager")
 
     @staticmethod
     def staff(principal_id: str, tenant_id: str) -> "Principal":

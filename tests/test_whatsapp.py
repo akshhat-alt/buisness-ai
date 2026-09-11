@@ -310,7 +310,7 @@ def test_owner_message_gets_status_pull_not_customer_rag(client_wa, services_wa)
     _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
     client_wa.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "919999888877"}, headers=headers)
 
-    payload = _wa_payload(phone_number_id="PNID_1", wa_id="919999888877", message_id="wamid.owner1", text="hey, what's up")
+    payload = _wa_payload(phone_number_id="PNID_1", wa_id="919999888877", message_id="wamid.owner1", text="today")
     r = _signed_post(client_wa, payload)
     assert r.status_code == 200, r.text
 
@@ -325,9 +325,11 @@ def test_owner_message_gets_status_pull_not_customer_rag(client_wa, services_wa)
     assert leads == []
 
 
-def test_owner_command_ignores_message_content(client_wa, services_wa):
-    """No keyword parsing — any message from the owner's number triggers
-    the same status pull, since that number is for the owner, not customers."""
+def test_unrecognized_admin_command_gets_help_not_customer_rag(client_wa, services_wa):
+    """The admin bot now has a real command grammar (assign/tasks/done/
+    etc, see app.py's _handle_admin_bot_message) — unrecognized input
+    from a roster number gets a help message, not a silent status pull
+    and never the customer RAG pipeline."""
     headers, tenant_id = _signup(client_wa)
     _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
     client_wa.put(f"/api/tenant?tenant_id={tenant_id}", json={"owner_whatsapp_number": "919999888877"}, headers=headers)
@@ -336,7 +338,10 @@ def test_owner_command_ignores_message_content(client_wa, services_wa):
     r = _signed_post(client_wa, payload)
     assert r.status_code == 200, r.text
     assert len(services_wa.fake_whatsapp_client.sent) == 1
-    assert "📊" in services_wa.fake_whatsapp_client.sent[0]["body"]
+    assert "Commands:" in services_wa.fake_whatsapp_client.sent[0]["body"]
+
+    leads = client_wa.get(f"/api/leads?tenant_id={tenant_id}", headers=headers).json()["leads"]
+    assert leads == []
 
 
 def test_regular_customer_unaffected_when_owner_number_configured(client_wa, services_wa):

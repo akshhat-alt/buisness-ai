@@ -116,9 +116,12 @@ src/business_ai/
                   MetaEmbeddedSignupClient (one-click onboarding's OAuth
                   code exchange, gated behind WHATSAPP_APP_ID)
   payments.py     Razorpay payment-link client (deposit links)
+  employees.py    Admin WhatsApp bot: tenant-scoped employee roster/identity
+  tasks.py        Admin WhatsApp bot: task assignment, status, approvals
+  audit.py        Append-only audit log for admin-bot state changes
   app.py          FastAPI app factory: wires everything into HTTP routes
 static/           Vanilla HTML/CSS/JS frontend, no build step
-tests/            pytest suite (132 tests) — see README.md
+tests/            pytest suite (173 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,
@@ -147,8 +150,20 @@ already in the right places:
   same pattern as `shows_buying_intent`/`suggested_handoff` — no second
   LLM call, no new service.
 - **New tenant actions** (e.g. a future `MANAGE_INTEGRATIONS`): add to
-  `TenantAction`, assign to `OWNER_ACTIONS`/`STAFF_ACTIONS`/
-  `PUBLIC_ACTIONS` as appropriate — `authorize()` itself doesn't change.
+  `TenantAction`, assign to `OWNER_ACTIONS`/`MANAGER_ACTIONS`/
+  `STAFF_ACTIONS`/`PUBLIC_ACTIONS` via the `ROLE_ACTIONS` map as
+  appropriate — `authorize()` itself doesn't change, and an action left
+  off every role's set is simply unreachable by anyone but a
+  platform_admin, by construction (fail-closed, not fail-open).
+- **A second bot on the same number**: the admin WhatsApp bot
+  (`employees.py`/`tasks.py`) reuses the exact same webhook, signature
+  verification, and inbox-idempotency machinery as the customer bot —
+  the only new thing is `EmployeeStore.find_by_whatsapp`, checked before
+  the customer lead/RAG path, so an employee's message is routed to
+  `_handle_admin_bot_message` and a customer's isn't. Neither pipeline
+  forks the other's code; a future third audience (e.g. a supplier
+  channel) would follow the identical shape — resolve identity, branch,
+  never touch `_process_question`.
 - **Scaling past one instance**: `UsageLimiter` and the SQLite stores are
   the parts that would need to move to a shared backend (Postgres +
   Redis, mirroring Shri AI's distributed-mode design) — everything above

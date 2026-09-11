@@ -209,6 +209,40 @@ personally click "Activate."
   and the admin panel gained inline billing controls (send a link, mark
   paid) per tenant.
 
+## What V1.6 adds: the admin WhatsApp bot (Phase 0 — employee coordination)
+
+The first piece of a second, structurally distinct bot on the *same*
+WhatsApp number: everything above is for a business's *customers*; this
+is for the business's *owner, managers, and employees* to run the
+business itself. A message from a number on the tenant's employee
+roster is routed here instead of the customer RAG pipeline — no lead is
+created, no question quota is spent, and the customer-facing assistant
+is completely unaffected either way.
+
+- **Employee roster**: `POST/GET /api/employees`, `PUT
+  /api/employees/{id}` (owner-only — `MANAGE_EMPLOYEES`) manage a
+  tenant-scoped roster of WhatsApp numbers, each with a name and a role
+  (owner/manager/staff). A tenant's existing `owner_whatsapp_number` is
+  auto-registered into the roster on first use, so nothing breaks for a
+  tenant that predates this feature.
+- **New role: `manager`** — day-to-day operating power (assign/approve
+  tasks, view reports and tasks) without owner-only levers (knowledge
+  base, assistant config, billing, the roster itself). `authorize()`'s
+  role lookup was also hardened here: an unrecognized role now gets zero
+  actions (fail-closed), instead of silently falling back to staff-level
+  access.
+- **WhatsApp task commands** (deterministic keyword parsing, no LLM
+  cost): `assign <task> to <name> [by <date>]`, `start/done/blocked/
+  cancel <task id> [reason]`, `approve/reject <task id> [reason]`,
+  `reassign <task id> to <name>`, plus `today`/`status`, `tasks`, `my
+  tasks`, and `overdue` — the last of these names who owns each overdue
+  item, not just a count. A task marked `approval_required` (settable
+  via the API/store today; no WhatsApp grammar for it yet) routes
+  through an `awaiting_approval` state instead of closing immediately.
+- **Audit log**: every roster change and task assignment/approval/
+  rejection writes an immutable row (`AuditLogStore`) — who did what,
+  to what, and when.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -290,7 +324,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-132 tests covering the full HTTP lifecycle (signup → ingest → activate →
+173 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
 from the new FAQ entry), owner digest (sends only to active tenants with
@@ -320,7 +354,14 @@ is not part of the committed test suite since it costs real API money.
 V1.5 adds billing (link creation, manual paid-confirmation, the shared
 activation-blocker gate) and self-serve activation (knowledge + payment
 preconditions, tenant isolation, suspended/already-active rejection,
-graceful no-op when nobody's configured to be notified).
+graceful no-op when nobody's configured to be notified). V1.6 adds the
+admin bot's employee roster (tenant isolation, upsert-by-number,
+deactivation, owner-bootstrap), the fail-closed `authorize()` regression
+test and the new `manager` role's exact permission boundary, and the
+full WhatsApp task-command grammar (assignment + notification,
+role-gated status updates, the approval/reject round trip, reassignment,
+and the `today`/`tasks`/`my tasks`/`overdue` views scoped correctly by
+role) — all against the same fake-WhatsApp-client harness as V1.2's tests.
 
 ## Known limitations (v1, honestly stated)
 
@@ -403,3 +444,21 @@ graceful no-op when nobody's configured to be notified).
   ingested one thin page. This mirrors exactly what the admin's own
   activate button already allowed — self-service didn't lower the bar,
   it just removed the requirement that a human click it.
+- **The admin bot's task commands are deterministic keyword parsing, not
+  natural language.** "assign restock shelf 3 to Ravi by 2027-01-15T18:00"
+  works; "hey can Ravi handle the shelf thing sometime tomorrow" doesn't
+  yet — a later phase swaps the parser for an LLM intent classifier
+  without changing any of the underlying handlers. Due dates likewise
+  need a structured `YYYY-MM-DD[ HH:MM]`, not free text like "tomorrow."
+- **No dashboard UI for the roster or tasks yet** — `/api/employees` and
+  `/api/tasks` exist and are tested, but there's no admin-panel screen
+  for them today; management happens over WhatsApp or direct API calls.
+- **`approval_required` tasks can't be created via the WhatsApp grammar
+  yet** — only through the API/store directly. The `awaiting_approval`
+  → `approve`/`reject` round trip itself is fully wired and tested once
+  such a task exists.
+- **No proactive/scheduled admin-bot pushes yet** (a morning briefing, an
+  overdue-task nudge nobody asked for) — every reply today is triggered
+  by an inbound message, same 24-hour-window constraint as the rest of
+  this app's WhatsApp sends. Scheduled pushes need outbound message
+  templates, which aren't built (see above).

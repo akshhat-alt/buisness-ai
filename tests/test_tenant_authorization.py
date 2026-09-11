@@ -91,3 +91,50 @@ def test_staff_can_query_and_view(registry):
     staff = Principal.staff("user_3", "salon-a")
     for action in (TenantAction.QUERY_ASSISTANT, TenantAction.VIEW_LEADS, TenantAction.VIEW_ANALYTICS):
         authorize(staff, action, target_tenant_id="salon-a", registry=registry)
+
+
+def test_unrecognized_role_gets_no_access_not_staff_fallback(registry):
+    """Fail-closed regression test: authorize()'s role lookup used to be
+    `OWNER_ACTIONS if role == "owner" else STAFF_ACTIONS`, which silently
+    granted staff-level access to ANY unrecognized role string. It must
+    now deny everything for a role that isn't in ROLE_ACTIONS."""
+    from business_ai.auth import Principal as _Principal
+
+    bogus = _Principal(principal_id="user_9", tenant_id="salon-a", role="totally-not-a-real-role")
+    for action in (TenantAction.QUERY_ASSISTANT, TenantAction.VIEW_LEADS, TenantAction.VIEW_ANALYTICS):
+        with pytest.raises(UnauthorizedError):
+            authorize(bogus, action, target_tenant_id="salon-a", registry=registry)
+
+
+def test_manager_has_owner_powers_minus_knowledge_and_roster(registry):
+    manager = Principal.manager("user_4", "salon-a")
+    for action in (
+        TenantAction.QUERY_ASSISTANT,
+        TenantAction.VIEW_LEADS,
+        TenantAction.VIEW_ANALYTICS,
+        TenantAction.ASSIGN_TASK,
+        TenantAction.VIEW_TASKS,
+        TenantAction.UPDATE_TASK_STATUS,
+    ):
+        authorize(manager, action, target_tenant_id="salon-a", registry=registry)
+    for action in (TenantAction.INGEST_KNOWLEDGE, TenantAction.MANAGE_ASSISTANT, TenantAction.MANAGE_EMPLOYEES):
+        with pytest.raises(UnauthorizedError):
+            authorize(manager, action, target_tenant_id="salon-a", registry=registry)
+
+
+def test_staff_can_view_and_update_own_tasks_but_not_assign(registry):
+    staff = Principal.staff("user_5", "salon-a")
+    for action in (TenantAction.VIEW_TASKS, TenantAction.UPDATE_TASK_STATUS):
+        authorize(staff, action, target_tenant_id="salon-a", registry=registry)
+    with pytest.raises(UnauthorizedError):
+        authorize(staff, TenantAction.ASSIGN_TASK, target_tenant_id="salon-a", registry=registry)
+    with pytest.raises(UnauthorizedError):
+        authorize(staff, TenantAction.MANAGE_EMPLOYEES, target_tenant_id="salon-a", registry=registry)
+
+
+def test_only_owner_can_manage_employees(registry):
+    owner = Principal.owner("user_6", "salon-a")
+    manager = Principal.manager("user_7", "salon-a")
+    authorize(owner, TenantAction.MANAGE_EMPLOYEES, target_tenant_id="salon-a", registry=registry)
+    with pytest.raises(UnauthorizedError):
+        authorize(manager, TenantAction.MANAGE_EMPLOYEES, target_tenant_id="salon-a", registry=registry)
