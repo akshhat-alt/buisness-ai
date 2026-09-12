@@ -644,6 +644,48 @@ class OpenAIGenerationProvider:
             root_cause_hint="Classification unavailable.", suggested_action="Review manually.",
         )
 
+    def draft_sop_note(self, *, theme_label: str, recent_feedback_texts: list[str]) -> str:
+        """Drafts a short workaround/guidance note for the owner to
+        review and approve (see app.py's "suggest sop" command and
+        "approve sop" flow) — never auto-published. Same anti-
+        hallucination discipline as draft_faq_answer: grounded ONLY in
+        the actual employee-reported texts given, explicitly forbidden
+        from inventing a cause or fix the reports don't actually
+        support. If the reports don't clearly point to one, the draft
+        must say so plainly rather than guess."""
+        quotes = "\n".join(f'- "{t}"' for t in recent_feedback_texts[:5])
+        system_prompt = (
+            f"Employees have reported the following about the theme '{theme_label}'. Draft a short "
+            "(1-2 sentence) workaround or guidance note for the team, for the OWNER to review and "
+            "edit before approving — you are not deciding company policy, just proposing a starting "
+            "point. Base it ONLY on what these reports actually say. If they don't clearly point to "
+            "one specific cause or fix, say plainly that more information is needed rather than "
+            "inventing a plausible-sounding one. Respond with the draft text only — no preamble, "
+            "no markdown, no quotation marks around the whole thing."
+        )
+        user_content = f"Reports about '{theme_label}':\n{quotes}"
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model_name,
+                    temperature=0.3,
+                    max_tokens=200,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                )
+                content = response.choices[0].message.content
+                if not content or not content.strip():
+                    raise RuntimeError("OpenAI returned an empty SOP draft.")
+                return content.strip().strip('"').strip()
+            except Exception as exc:  # noqa: BLE001 - retry transient API errors
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(2**attempt)
+        raise RuntimeError("SOP draft generation failed after 3 attempts") from last_error
+
     def classify_employee_message(self, *, text: str, current_date_iso: str, employee_role: str) -> EmployeeCommandIntent:
         """NL fallback for the admin bot — see the module-level note above
         EMPLOYEE_INTENTS. Extracts slots for the SAME deterministic

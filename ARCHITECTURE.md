@@ -125,7 +125,7 @@ src/business_ai/
                   per recurring feedback theme
   app.py          FastAPI app factory: wires everything into HTTP routes
 static/           Vanilla HTML/CSS/JS frontend, no build step
-tests/            pytest suite (230 tests) — see README.md
+tests/            pytest suite (269 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

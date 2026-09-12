@@ -1006,3 +1006,300 @@ def test_nl_classification_failure_falls_back_to_help_not_crash(client_wa, servi
     services_wa.generator = lambda: BrokenGenerator()
     _send(client_wa, wa_id=RAVI_WA, text="something free-form here", message_id="wamid.nl9")
     assert "Commands:" in services_wa.fake_whatsapp_client.sent[-1]["body"]
+
+
+# ------------------------------------------------------------------ outcome confirmation (revenue/appointments)
+
+
+def test_whatsapp_mark_paid_records_confirmed_revenue(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000055555", phone="919000055555", name="Asha", source="whatsapp",
+    )
+    short_id = lead.lead_id[-6:]
+    _send(client_wa, wa_id=OWNER_WA, text=f"mark paid {short_id} 800", message_id="wamid.rev1")
+    ack = services_wa.fake_whatsapp_client.sent[-1]["body"]
+    assert "₹800" in ack and "Asha" in ack
+
+    updated = services_wa.lead_store.get(tenant_id, lead.lead_id)
+    assert updated.deposit_paid_amount_inr == 800
+    assert updated.deposit_paid_at is not None
+
+
+def test_whatsapp_mark_paid_falls_back_to_configured_deposit_amount(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    client_wa.put(f"/api/tenant?tenant_id={tenant_id}", json={"deposit_amount_inr": 300}, headers=headers)
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000044444", phone="919000044444", source="whatsapp",
+    )
+    short_id = lead.lead_id[-6:]
+    _send(client_wa, wa_id=OWNER_WA, text=f"mark paid {short_id}", message_id="wamid.rev2")
+    assert services_wa.lead_store.get(tenant_id, lead.lead_id).deposit_paid_amount_inr == 300
+
+
+def test_whatsapp_mark_paid_no_amount_no_config_asks_for_amount(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000033333", phone="919000033333", source="whatsapp",
+    )
+    short_id = lead.lead_id[-6:]
+    _send(client_wa, wa_id=OWNER_WA, text=f"mark paid {short_id}", message_id="wamid.rev3")
+    assert "no amount given" in services_wa.fake_whatsapp_client.sent[-1]["body"].lower()
+    assert services_wa.lead_store.get(tenant_id, lead.lead_id).deposit_paid_at is None
+
+
+def test_whatsapp_mark_outcome_variants(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000022222", phone="919000022222", source="whatsapp",
+    )
+    short_id = lead.lead_id[-6:]
+    _send(client_wa, wa_id=OWNER_WA, text=f"mark no-show {short_id}", message_id="wamid.rev4")
+    assert services_wa.lead_store.get(tenant_id, lead.lead_id).appointment_outcome == "no_show"
+
+    _send(client_wa, wa_id=OWNER_WA, text=f"mark completed {short_id}", message_id="wamid.rev5")
+    assert services_wa.lead_store.get(tenant_id, lead.lead_id).appointment_outcome == "completed"
+
+
+def test_mark_outcome_and_paid_are_audited(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000011122", phone="919000011122", source="whatsapp",
+    )
+    short_id = lead.lead_id[-6:]
+    _send(client_wa, wa_id=OWNER_WA, text=f"mark paid {short_id} 400", message_id="wamid.rev6")
+    _send(client_wa, wa_id=OWNER_WA, text=f"mark cancelled {short_id}", message_id="wamid.rev7")
+    actions = {e.action for e in services_wa.audit_log.list_for_tenant(tenant_id)}
+    assert "deposit_confirmed_paid" in actions
+    assert "appointment_outcome_recorded" in actions
+
+
+def test_deposit_paid_api_rbac_and_audit(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000099911", phone="919000099911", source="whatsapp",
+    )
+    r = client_wa.post(f"/api/leads/{lead.lead_id}/deposit-paid?tenant_id={tenant_id}", json={"amount_inr": 650}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["deposit_paid_amount_inr"] == 650
+
+    r2 = client_wa.post(
+        f"/api/leads/{lead.lead_id}/appointment-outcome?tenant_id={tenant_id}", json={"outcome": "completed"}, headers=headers,
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["appointment_outcome"] == "completed"
+
+    r3 = client_wa.post(
+        f"/api/leads/{lead.lead_id}/appointment-outcome?tenant_id={tenant_id}", json={"outcome": "bogus"}, headers=headers,
+    )
+    assert r3.status_code == 400
+
+
+def test_deposit_paid_api_is_tenant_isolated(client_wa, services_wa):
+    headers_a, tenant_a, ravi_a = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead_a = services_wa.lead_store.create(tenant_id=tenant_a, session_id="wa_919000088811", phone="919000088811")
+
+    headers_b, tenant_b = _signup(client_wa, business_name="Salon B", email="depb@example.com")
+    _activate_with_whatsapp(client_wa, headers_b, tenant_b, services_wa.settings.admin_secret, phone_number_id="PNID_DEPB")
+
+    r = client_wa.post(f"/api/leads/{lead_a.lead_id}/deposit-paid?tenant_id={tenant_b}", json={"amount_inr": 500}, headers=headers_b)
+    assert r.status_code == 404  # lead belongs to tenant A, not B
+
+
+# ------------------------------------------------------------------ missed opportunities + conversion/revenue insights
+
+
+def test_scorecard_shows_missed_opportunity(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000012345", phone="919000012345", name="Kiran", source="whatsapp",
+    )
+    services_wa.analytics_store.log_turn(
+        tenant_id=tenant_id, session_id="wa_919000012345", query="do you have this in blue?",
+        answer_status="answered", shows_buying_intent=True, suggested_handoff=False,
+        shows_dissatisfaction=False, channel="whatsapp",
+    )
+    _send(client_wa, wa_id=OWNER_WA, text="scorecard", message_id="wamid.mo1")
+    body = services_wa.fake_whatsapp_client.sent[-1]["body"]
+    assert "missed opportunity" in body.lower()
+    assert "Kiran" in body
+
+
+def test_missed_opportunity_excludes_leads_with_appointment(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000054321", phone="919000054321", name="Meera", source="whatsapp",
+    )
+    services_wa.analytics_store.log_turn(
+        tenant_id=tenant_id, session_id="wa_919000054321", query="can I book?", answer_status="answered",
+        shows_buying_intent=True, suggested_handoff=False, shows_dissatisfaction=False, channel="whatsapp",
+    )
+    services_wa.lead_store.set_appointment(tenant_id, lead.lead_id, "2027-01-01T10:00:00Z")
+
+    _send(client_wa, wa_id=OWNER_WA, text="scorecard", message_id="wamid.mo2")
+    body = services_wa.fake_whatsapp_client.sent[-1]["body"]
+    assert "missed opportunity" not in body.lower()
+
+
+def test_scorecard_shows_conversion_and_confirmed_revenue(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000067890", phone="919000067890", source="whatsapp",
+    )
+    services_wa.lead_store.mark_deposit_paid(tenant_id, lead.lead_id, 900)
+    services_wa.lead_store.create(tenant_id=tenant_id, session_id="wa_919000011111", phone="919000011111", source="whatsapp")
+
+    _send(client_wa, wa_id=OWNER_WA, text="scorecard", message_id="wamid.mo3")
+    body = services_wa.fake_whatsapp_client.sent[-1]["body"]
+    assert "Leads: 2" in body and "1 converted" in body and "(50%)" in body
+    assert "₹900" in body
+
+
+def test_business_health_api_includes_revenue_and_opportunity_fields(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    lead = services_wa.lead_store.create(tenant_id=tenant_id, session_id="wa_919000099001", phone="919000099001")
+    services_wa.lead_store.mark_deposit_paid(tenant_id, lead.lead_id, 1200)
+
+    r = client_wa.get(f"/api/business-health?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["confirmed_revenue_inr"] == 1200
+    assert data["converted_count"] == 1
+    assert data["leads_count"] == 1
+    assert data["conversion_rate_pct"] == 100
+
+
+# ------------------------------------------------------------------ business timeline
+
+
+def test_timeline_command_shows_task_and_revenue_events(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    _send(client_wa, wa_id=OWNER_WA, text="assign restock shelf 3 to Ravi", message_id="wamid.tl1")
+    short_id = client_wa.get(f"/api/tasks?tenant_id={tenant_id}", headers=headers).json()["tasks"][0]["task_id"][-6:]
+    _send(client_wa, wa_id=RAVI_WA, text=f"start {short_id}", message_id="wamid.tl2")
+    _send(client_wa, wa_id=RAVI_WA, text=f"done {short_id}", message_id="wamid.tl3")
+
+    lead = services_wa.lead_store.create(tenant_id=tenant_id, session_id="wa_919000077001", phone="919000077001")
+    lead_short = lead.lead_id[-6:]
+    _send(client_wa, wa_id=OWNER_WA, text=f"mark paid {lead_short} 700", message_id="wamid.tl3b")
+
+    _send(client_wa, wa_id=OWNER_WA, text="timeline", message_id="wamid.tl4")
+    body = services_wa.fake_whatsapp_client.sent[-1]["body"]
+    assert "assigned a task" in body
+    assert "started a task" in body
+    assert "completed a task" in body
+    assert "confirmed a deposit of ₹700" in body
+
+
+def test_timeline_requires_owner_or_manager(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    _send(client_wa, wa_id=RAVI_WA, text="timeline", message_id="wamid.tl5")
+    assert "only an owner or manager" in services_wa.fake_whatsapp_client.sent[-1]["body"].lower()
+
+
+def test_timeline_api_rbac_and_ordering(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    _send(client_wa, wa_id=OWNER_WA, text="assign restock shelf 3 to Ravi", message_id="wamid.tl6")
+    _send(client_wa, wa_id=OWNER_WA, text="assign close register to Ravi", message_id="wamid.tl7")
+
+    r = client_wa.get(f"/api/timeline?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    entries = r.json()["entries"]
+    # setup itself adds one "employee_added" entry — assert the two new
+    # assignments are present and ordered most-recent-first, not an exact count.
+    assign_entries = [e for e in entries if e["action"] == "task_assigned"]
+    assert len(assign_entries) == 2
+    assert entries[0]["created_at"] >= entries[-1]["created_at"]  # most recent first
+
+    from business_ai.auth import Principal, create_access_token
+
+    staff_token = create_access_token(Principal.staff("staff_5", tenant_id), services_wa.settings)
+    r2 = client_wa.get(f"/api/timeline?tenant_id={tenant_id}", headers={"Authorization": f"Bearer {staff_token}"})
+    assert r2.status_code == 403
+
+
+def test_timeline_is_tenant_isolated(client_wa, services_wa):
+    headers_a, tenant_a, ravi_a = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    _send(client_wa, wa_id=OWNER_WA, text="assign restock shelf 3 to Ravi", message_id="wamid.tl8")
+
+    headers_b, tenant_b = _signup(client_wa, business_name="Salon B", email="tlb@example.com")
+    _activate_with_whatsapp(client_wa, headers_b, tenant_b, services_wa.settings.admin_secret, phone_number_id="PNID_TLB")
+
+    r = client_wa.get(f"/api/timeline?tenant_id={tenant_b}", headers=headers_b)
+    assert r.json()["entries"] == []
+
+
+# ------------------------------------------------------------------ trend detection (window vs prior window)
+
+
+def _backdate_lead(services, tenant_id, lead_id, created_at_iso):
+    with services.lead_store._db() as conn:
+        conn.execute(
+            "UPDATE leads SET created_at = ? WHERE tenant_id = ? AND lead_id = ?", (created_at_iso, tenant_id, lead_id)
+        )
+        conn.commit()
+
+
+def test_business_health_trend_is_new_when_no_prior_period_data(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    services_wa.lead_store.create(tenant_id=tenant_id, session_id="wa_919000010002", phone="919000010002")
+
+    r = client_wa.get(f"/api/business-health?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["trends"]["leads"] == "▲ new"
+
+
+def test_business_health_trend_percentage_when_prior_period_has_data(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    prior_window_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 30 * 3600))  # 30h ago, in the prior 24-48h window
+
+    for i in range(2):
+        lead = services_wa.lead_store.create(tenant_id=tenant_id, session_id=f"wa_91900002000{i}", phone=f"91900002000{i}")
+        _backdate_lead(services_wa, tenant_id, lead.lead_id, prior_window_ts)
+    for i in range(4):
+        services_wa.lead_store.create(tenant_id=tenant_id, session_id=f"wa_91900003000{i}", phone=f"91900003000{i}")
+
+    r = client_wa.get(f"/api/business-health?tenant_id={tenant_id}", headers=headers)
+    data = r.json()
+    assert data["leads_count"] == 4
+    assert data["trends"]["leads"] == "▲ 100%"  # 4 vs 2 prior = +100%
+
+
+# ------------------------------------------------------------------ SOP draft assist (business memory)
+
+
+def test_suggest_sop_drafts_from_recent_reports(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    _send(client_wa, wa_id=RAVI_WA, text="feedback the register software crashed again", message_id="wamid.sg1")
+
+    _send(client_wa, wa_id=OWNER_WA, text="suggest sop software/tools", message_id="wamid.sg2")
+    body = services_wa.fake_whatsapp_client.sent[-1]["body"]
+    assert "Draft guidance" in body
+    assert "1 report(s)" in body  # FakeGenerator's deterministic draft echoes the report count
+    assert "approve sop software_or_tools:" in body
+
+
+def test_suggest_sop_requires_owner(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    manager_wa = "919876500099"
+    _add_employee(client_wa, headers, tenant_id, whatsapp_number=manager_wa, name="Meena", role="manager")
+    _send(client_wa, wa_id=manager_wa, text="suggest sop software/tools", message_id="wamid.sg3")
+    assert "only the owner" in services_wa.fake_whatsapp_client.sent[-1]["body"].lower()
+
+
+def test_suggest_sop_with_no_reports_yet(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    _send(client_wa, wa_id=OWNER_WA, text="suggest sop pay/compensation", message_id="wamid.sg4")
+    assert "no feedback reports found" in services_wa.fake_whatsapp_client.sent[-1]["body"].lower()
+
+
+def test_suggest_sop_generation_failure_is_graceful(client_wa, services_wa):
+    class BrokenGenerator(FakeGenerator):
+        def draft_sop_note(self, **kwargs):
+            raise RuntimeError("simulated outage")
+
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    _send(client_wa, wa_id=RAVI_WA, text="feedback the register software crashed again", message_id="wamid.sg5")
+    services_wa.generator = lambda: BrokenGenerator()
+    _send(client_wa, wa_id=OWNER_WA, text="suggest sop software/tools", message_id="wamid.sg6")
+    assert "couldn't generate a draft" in services_wa.fake_whatsapp_client.sent[-1]["body"].lower()

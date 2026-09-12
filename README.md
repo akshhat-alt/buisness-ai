@@ -352,6 +352,53 @@ than standing up parallel systems.
   forget, same honest "no webhook, no reconciliation" shape as every
   other one-way send in this app, never blocking task completion.
 
+## What V1.10 adds: business memory, timeline, and the lead-to-revenue loop
+
+Phase 3 (business memory/intelligence) + Phase 4 (lead/revenue journey)
+together — every piece below reads from stores that already existed
+(LeadStore, AnalyticsStore, AuditLogStore, FeedbackStore) rather than
+introducing a parallel ledger or event system. Live-verified end-to-end
+against a real running server: a real customer message classified for
+buying intent by the real OpenAI API, captured as a lead, flagged as a
+missed opportunity, confirmed paid over WhatsApp, and reflected correctly
+in both the scorecard and the timeline.
+
+- **Real, owner-confirmed revenue — never estimated, never synced.**
+  `Lead` gained `deposit_paid_at`/`deposit_paid_amount_inr` and
+  `appointment_outcome`/`appointment_outcome_at` — the same "request-
+  and-confirm, no webhook" honesty already used for platform billing,
+  now at the customer level. A deposit LINK being sent, or an
+  appointment being SET, still never counts as revenue on its own;
+  `mark paid <lead id> [<amount>]` and `mark completed/no-show/cancelled
+  <lead id>` (WhatsApp) or `POST /api/leads/{id}/deposit-paid` /
+  `.../appointment-outcome` (API) are the only actions that do.
+- **`lead_stage()`** (`leads.py`): a pure, deterministic function —
+  new → engaged → awaiting_payment → converted, or lost/reengaged —
+  derived entirely from fields already on the row. No LLM, no invented
+  status.
+- **Missed-opportunity detection**: `AnalyticsStore.
+  session_ids_with_buying_intent`, joined against LeadStore by
+  `session_id`, finds leads whose conversation showed real buying intent
+  but who never booked — a stronger, more specific signal than generic
+  re-engagement, surfaced by name in the scorecard and digest.
+- **Business scorecard, extended with real conversion/revenue figures**
+  and deterministic window-over-window trends (`▲/▼ N%` vs the equal-
+  length period immediately before — comparison, not prediction, no
+  LLM) for leads, task completions, conversions, revenue, and feedback
+  volume.
+- **Business timeline** (`timeline` command, `GET /api/timeline`): a
+  chronological read over the EXISTING audit log, not a new event
+  store — task lifecycle events that weren't previously audited
+  (start/blocked/cancel) were filled in so the timeline is actually
+  complete, but no new write-path was added anywhere.
+- **SOP draft assist** (`suggest sop <theme>`, owner-only): a new LLM
+  method, `generation.draft_sop_note`, drafts a short guidance note
+  grounded ONLY in the actual employee-reported texts for that theme —
+  never auto-approved, always a starting point for `approve sop` to
+  edit and confirm. Live-validated against the real API, including a
+  deliberately vague case (confirmed it says "more information is
+  needed" rather than inventing a specific cause).
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -433,7 +480,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-230 tests covering the full HTTP lifecycle (signup → ingest → activate →
+269 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
 from the new FAQ entry), owner digest (sends only to active tenants with
@@ -641,3 +688,17 @@ before the prompt/schema was finalized.
   other one-way send in this app.** The customer's reply (if any) isn't
   parsed or tracked anywhere — an owner sees it as a normal WhatsApp
   reply, not a structured "resolved: yes/no" signal.
+- **Revenue figures are exactly as complete as what's been manually
+  confirmed.** `confirmed_revenue_inr` only ever reflects `mark paid`/
+  `POST .../deposit-paid` calls — a business that hasn't been confirming
+  payments through Business AI will correctly show ₹0, not an estimate.
+  This is by design (no invented revenue), but it means the number is
+  only useful once confirmation becomes a habit.
+- **Trend percentages can be noisy at low volume.** "▲ 100%" from 1
+  lead to 2 is mathematically correct but not a meaningful trend at
+  that scale — the trend feature has no minimum-sample-size guard yet.
+- **`suggest sop` drafts skew conservative.** Live validation showed it
+  sometimes suggests "more information is needed" even when the reports
+  given point fairly clearly at a specific fix — a deliberate trade-off
+  (erring toward not inventing a fix over being maximally useful), not
+  a bug.

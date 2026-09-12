@@ -67,6 +67,9 @@ class FakeGenerator:
     def classify_employee_message(self, *, text: str, current_date_iso: str, employee_role: str) -> EmployeeCommandIntent:
         return self.employee_command_intents.get(text, EmployeeCommandIntent(intent="other"))
 
+    def draft_sop_note(self, *, theme_label: str, recent_feedback_texts: list[str]) -> str:
+        return f"[draft] Based on {len(recent_feedback_texts)} report(s) about {theme_label}, investigate and address the root cause."
+
     def translate_to_english_for_retrieval(self, *, text: str) -> str:
         # Deterministic no-op in tests — the real translation call is
         # exercised only in the live (non-CI) validation script, never

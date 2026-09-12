@@ -38,6 +38,44 @@ class Lead(BaseModel):
     reengaged_at: str | None = None  # missed-lead follow-up already sent
     winback_sent_at: str | None = None  # win-back nudge sent for the CURRENT appointment_at
     deposit_link_sent_at: str | None = None  # payment/deposit link already sent
+    # Owner-confirmed outcomes — same "request-and-confirm, no webhook"
+    # honesty as platform billing's mark-paid: a link/reminder being SENT
+    # is never treated as money received or a customer served. These are
+    # the only fields anything downstream (revenue totals, conversion
+    # rate, lead stage) may treat as "this actually happened."
+    deposit_paid_at: str | None = None
+    deposit_paid_amount_inr: int | None = None
+    appointment_outcome: str | None = None  # "completed" | "no_show" | "cancelled"
+    appointment_outcome_at: str | None = None
+
+
+def lead_stage(lead: Lead) -> str:
+    """Deterministic funnel stage derived ONLY from fields already on the
+    row — no LLM, no inference, no invented status. Order matters: later
+    checks win, since a lead can pass through several of these over time
+    (e.g. appointment set, then completed) and the row keeps every marker
+    rather than overwriting history.
+
+    new              -> just captured, nothing else has happened yet
+    engaged          -> an appointment has been set
+    awaiting_payment -> a deposit link was sent, not yet confirmed paid
+    converted        -> a deposit was confirmed paid OR the appointment
+                        was confirmed completed (the only two states
+                        anything downstream may call "revenue"/"won")
+    lost             -> the appointment was confirmed cancelled/no-show
+    reengaged        -> a missed-lead follow-up was sent, no booking yet
+    """
+    if lead.deposit_paid_at or lead.appointment_outcome == "completed":
+        return "converted"
+    if lead.appointment_outcome in ("no_show", "cancelled"):
+        return "lost"
+    if lead.deposit_link_sent_at:
+        return "awaiting_payment"
+    if lead.appointment_at:
+        return "engaged"
+    if lead.reengaged_at or lead.winback_sent_at:
+        return "reengaged"
+    return "new"
 
 
 class LeadStore:
@@ -84,11 +122,16 @@ class LeadStore:
             # same pattern already used in analytics.py.
             for column in (
                 "appointment_at", "reminder_sent_at", "reengaged_at", "winback_sent_at", "deposit_link_sent_at",
+                "deposit_paid_at", "appointment_outcome", "appointment_outcome_at",
             ):
                 try:
                     conn.execute(f"ALTER TABLE leads ADD COLUMN {column} TEXT")
                 except sqlite3.OperationalError:
                     pass  # column already exists
+            try:
+                conn.execute("ALTER TABLE leads ADD COLUMN deposit_paid_amount_inr INTEGER")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             conn.commit()
 
     def create(
@@ -204,6 +247,72 @@ class LeadStore:
 
     def mark_deposit_link_sent(self, tenant_id: str, lead_id: str) -> None:
         self._mark(tenant_id, lead_id, "deposit_link_sent_at")
+
+    def mark_deposit_paid(self, tenant_id: str, lead_id: str, amount_inr: int) -> Lead | None:
+        """Owner-confirmed, same "request-and-confirm, no webhook" shape
+        as platform billing's mark-paid — a deposit LINK being sent is
+        never treated as money received; this is the one action that is.
+        The amount is recorded as stated by the owner at confirmation
+        time (not assumed from the tenant's configured deposit_amount_inr,
+        which may have changed since the link was sent, or the owner may
+        be recording a different actual amount received)."""
+        if amount_inr <= 0:
+            raise ValueError("amount_inr must be positive.")
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with self._lock, self._db() as conn:
+            cur = conn.execute(
+                "UPDATE leads SET deposit_paid_at = ?, deposit_paid_amount_inr = ? WHERE tenant_id = ? AND lead_id = ?",
+                (now_iso, amount_inr, tenant_id, lead_id),
+            )
+            conn.commit()
+            if cur.rowcount == 0:
+                return None
+        return self.get(tenant_id, lead_id)
+
+    def record_appointment_outcome(self, tenant_id: str, lead_id: str, outcome: str) -> Lead | None:
+        if outcome not in ("completed", "no_show", "cancelled"):
+            raise ValueError(f"Invalid appointment outcome '{outcome}'.")
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with self._lock, self._db() as conn:
+            cur = conn.execute(
+                "UPDATE leads SET appointment_outcome = ?, appointment_outcome_at = ? WHERE tenant_id = ? AND lead_id = ?",
+                (outcome, now_iso, tenant_id, lead_id),
+            )
+            conn.commit()
+            if cur.rowcount == 0:
+                return None
+        return self.get(tenant_id, lead_id)
+
+    def sum_confirmed_revenue(self, tenant_id: str, *, since_iso: str | None = None) -> int:
+        """Sum of OWNER-CONFIRMED deposit payments only — never an
+        estimate, never a synced/live figure. Windowed by when the
+        payment was confirmed (deposit_paid_at), not when the lead was
+        created, so a window correctly reflects money confirmed in it."""
+        query = "SELECT COALESCE(SUM(deposit_paid_amount_inr), 0) as total FROM leads WHERE tenant_id = ? AND deposit_paid_at IS NOT NULL"
+        params: list[str] = [tenant_id]
+        if since_iso:
+            query += " AND deposit_paid_at >= ?"
+            params.append(since_iso)
+        with self._lock, self._db() as conn:
+            row = conn.execute(query, params).fetchone()
+            return int(row["total"]) if row else 0
+
+    def count_converted(self, tenant_id: str, *, since_iso: str | None = None) -> int:
+        """A lead counts as converted once EITHER a deposit was
+        confirmed paid or an appointment was confirmed completed —
+        deliberately OR, not AND, since not every business collects a
+        deposit for every booking."""
+        query = (
+            "SELECT COUNT(*) as c FROM leads WHERE tenant_id = ? AND "
+            "(deposit_paid_at IS NOT NULL OR appointment_outcome = 'completed')"
+        )
+        params: list[str] = [tenant_id]
+        if since_iso:
+            query += " AND (COALESCE(deposit_paid_at, '') >= ? OR COALESCE(appointment_outcome_at, '') >= ?)"
+            params.extend([since_iso, since_iso])
+        with self._lock, self._db() as conn:
+            row = conn.execute(query, params).fetchone()
+            return row["c"] if row else 0
 
     def list_for_reengagement(self, tenant_id: str, *, older_than_iso: str, newer_than_iso: str) -> list[Lead]:
         """Leads that already showed intent (they left contact info at

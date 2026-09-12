@@ -187,6 +187,21 @@ class AnalyticsStore:
             recent_knowledge_gaps=[r["query"] for r in gap_rows],
         )
 
+    def session_ids_with_buying_intent(self, tenant_id: str, *, since_iso: str | None = None) -> set[str]:
+        """Distinct sessions where at least one turn showed buying intent
+        — the join key app.py uses against LeadStore (Lead.session_id is
+        the same session_id logged here) to find leads who showed real
+        purchase interest but never got booked, i.e. a missed opportunity
+        rather than a generic re-engagement candidate."""
+        query = "SELECT DISTINCT session_id FROM turns WHERE tenant_id = ? AND shows_buying_intent = 1"
+        params: list[str] = [tenant_id]
+        if since_iso:
+            query += " AND created_at >= ?"
+            params.append(since_iso)
+        with self._lock, self._db() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return {r["session_id"] for r in rows}
+
     def list_open_gaps(self, tenant_id: str, *, limit: int = 20) -> list[KnowledgeGap]:
         """Unresolved knowledge gaps (most recent occurrence per question),
         for the dashboard's gap-closer UI — richer than the plain string

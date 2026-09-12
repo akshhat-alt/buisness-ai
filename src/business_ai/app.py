@@ -69,7 +69,7 @@ from business_ai.generation import (
     validate_llm_draft,
 )
 from business_ai.ingestion import IngestionError, SourceStore, extract_pdf_text, fetch_website_text, ingest_text
-from business_ai.leads import Lead, LeadStore
+from business_ai.leads import Lead, LeadStore, lead_stage
 from business_ai.payments import PaymentLinkError, RazorpayClient
 from business_ai.retrieval import OpenAIEmbeddingProvider, RetrievalEngine, VectorStore
 from business_ai.security import InvalidTenantIdError, UnsafeUrlError, validate_tenant_id
@@ -221,6 +221,14 @@ class AppointmentRequest(BaseModel):
     appointment_at: str = Field(min_length=1)  # ISO 8601 datetime, e.g. "2026-09-20T16:00:00"
 
 
+class DepositPaidRequest(BaseModel):
+    amount_inr: int | None = None  # defaults to the tenant's configured deposit_amount_inr if unset
+
+
+class AppointmentOutcomeRequest(BaseModel):
+    outcome: str  # "completed" | "no_show" | "cancelled"
+
+
 class EmbeddedSignupRequest(BaseModel):
     # Both handed to the frontend directly by Meta's Embedded Signup
     # popup callback — see MetaEmbeddedSignupClient's docstring.
@@ -347,6 +355,10 @@ _ADMIN_REASSIGN_RE = re.compile(r"^reassign\s+(\S+)\s+to\s+(.+)$", re.IGNORECASE
 _ADMIN_STATUS_VERBS = frozenset({"start", "done", "blocked", "cancel", "approve", "reject"})
 _ADMIN_FEEDBACK_RE = re.compile(r"^feedback\s+(.+)$", re.IGNORECASE | re.DOTALL)
 _ADMIN_SOP_RE = re.compile(r"^approve sop\s+(.+?)\s*:\s*(.+)$", re.IGNORECASE | re.DOTALL)
+_ADMIN_SUGGEST_SOP_RE = re.compile(r"^suggest sop\s+(.+)$", re.IGNORECASE)
+_ADMIN_MARK_PAID_RE = re.compile(r"^mark\s+paid\s+(\S+)(?:\s+(\d+))?$", re.IGNORECASE)
+_ADMIN_MARK_OUTCOME_RE = re.compile(r"^mark\s+(completed|no-show|no_show|cancelled|canceled)\s+(\S+)$", re.IGNORECASE)
+_OUTCOME_ALIASES = {"no-show": "no_show", "no_show": "no_show", "cancelled": "cancelled", "canceled": "cancelled", "completed": "completed"}
 
 _FEEDBACK_THEME_LABELS = {
     "equipment_or_supplies": "Equipment/supplies",
@@ -377,7 +389,12 @@ def _admin_bot_help_text() -> str:
         "• feedback themes — recurring issues (owner/manager)\n"
         "• scorecard / health — business snapshot (owner/manager)\n"
         "• approve sop <theme>: <note text> — save team guidance (owner)\n"
-        "\nOr just type naturally — I'll do my best to understand."
+        "• suggest sop <theme> — draft guidance from recent reports (owner)\n"
+        "• mark paid <lead id> [<amount>] — confirm a deposit received\n"
+        "• mark completed/no-show/cancelled <lead id> — record what happened\n"
+        "• timeline — recent activity (owner/manager)\n"
+        "\nOr just type naturally — I'll do my best to understand "
+        "(except money/outcome confirmations, which always need the exact commands above)."
     )
 
 
@@ -958,13 +975,55 @@ def create_app(services: Services | None = None) -> FastAPI:
         else:
             reply(f"Got it — logged, thanks. I'll flag it to management if it's part of a pattern.{sop_note}")
 
-    def _business_health_snapshot(tenant: TenantConfig, *, since_iso: str) -> dict:
+    def _missed_opportunity_leads(tenant_id: str, *, since_iso: str | None = None) -> list[Lead]:
+        """A lead whose conversation showed real buying intent
+        (AnalyticsStore, joined by session_id) but who never progressed
+        past "new"/"reengaged" — a stronger, more specific signal than
+        the generic re-engagement candidate list, since it's grounded in
+        an actual expressed interest, not just silence after first
+        contact."""
+        intent_sessions = svc.analytics_store.session_ids_with_buying_intent(tenant_id, since_iso=since_iso)
+        if not intent_sessions:
+            return []
+        leads = svc.lead_store.list_for_tenant(tenant_id, since_iso=since_iso, limit=1000)
+        return [l for l in leads if l.session_id in intent_sessions and lead_stage(l) in ("new", "reengaged")]
+
+    def _render_missed_opportunity_lines(leads: list[Lead]) -> list[str]:
+        return [f"{l.name or l.phone or l.email or l.lead_id[-6:]} — showed interest, no booking yet" for l in leads[:10]]
+
+    def _compute_trend(current: int, prior: int) -> str:
+        """Deterministic window-over-window comparison — no LLM, no
+        estimation. `prior` is the equal-length window immediately
+        before the current one, so "trend" always means "vs the same
+        span of time right before this one," never vs. an arbitrary
+        baseline."""
+        if prior == 0:
+            return "▲ new" if current > 0 else "→ flat"
+        pct = round(100 * (current - prior) / prior)
+        if pct > 0:
+            return f"▲ {pct}%"
+        if pct < 0:
+            return f"▼ {abs(pct)}%"
+        return "→ flat"
+
+    def _business_health_snapshot(tenant: TenantConfig, *, window_hours: int) -> dict:
         """One place computing the transparent, component-based health
         view used by both the on-demand `scorecard` command and
         `GET /api/business-health` — never a single opaque score, always
-        named numbers an owner can trace back to a real source."""
+        named numbers an owner can trace back to a real source. Also
+        computes deterministic window-over-window trends for the
+        headline numbers (see _compute_trend) — comparison, not
+        prediction."""
+        now = time.time()
+        since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - window_hours * 3600))
+        prior_since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 2 * window_hours * 3600))
+
         all_tasks = [t for t in svc.task_store.list_for_tenant(tenant.tenant_id) if t.created_at >= since_iso]
         done_tasks = [t for t in all_tasks if t.status == "done"]
+        prior_done_count = len([
+            t for t in svc.task_store.list_for_tenant(tenant.tenant_id)
+            if prior_since_iso <= t.created_at < since_iso and t.status == "done"
+        ])
         employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
         overdue_tasks = svc.task_store.list_overdue(tenant.tenant_id)
         analytics = svc.analytics_store.summary_for_tenant(tenant.tenant_id, since_iso=since_iso)
@@ -973,6 +1032,24 @@ def create_app(services: Services | None = None) -> FastAPI:
             if s.count >= RECURRING_FEEDBACK_THRESHOLD
         ]
         themes_with_sop = sum(1 for s in recurring_themes if svc.sop_store.get_for_theme(tenant.tenant_id, s.theme))
+        missed_opportunities = _missed_opportunity_leads(tenant.tenant_id, since_iso=since_iso)
+        leads_in_window = svc.lead_store.list_for_tenant(tenant.tenant_id, since_iso=since_iso, limit=1000)
+        leads_prior_count = len([
+            l for l in svc.lead_store.list_for_tenant(tenant.tenant_id, since_iso=prior_since_iso, limit=2000)
+            if l.created_at < since_iso
+        ])
+        converted_count = svc.lead_store.count_converted(tenant.tenant_id, since_iso=since_iso)
+        converted_prior_and_current = svc.lead_store.count_converted(tenant.tenant_id, since_iso=prior_since_iso)
+        converted_prior_only = converted_prior_and_current - converted_count
+        confirmed_revenue = svc.lead_store.sum_confirmed_revenue(tenant.tenant_id, since_iso=since_iso)
+        revenue_prior_and_current = svc.lead_store.sum_confirmed_revenue(tenant.tenant_id, since_iso=prior_since_iso)
+        revenue_prior_only = revenue_prior_and_current - confirmed_revenue
+        feedback_current_total = sum(s.count for s in svc.feedback_store.summarize_by_theme(tenant.tenant_id, since_iso=since_iso))
+        feedback_prior_and_current_total = sum(
+            s.count for s in svc.feedback_store.summarize_by_theme(tenant.tenant_id, since_iso=prior_since_iso)
+        )
+        feedback_prior_only = feedback_prior_and_current_total - feedback_current_total
+
         return {
             "tasks_assigned": len(all_tasks),
             "tasks_done": len(done_tasks),
@@ -985,14 +1062,28 @@ def create_app(services: Services | None = None) -> FastAPI:
             "questions_answered": analytics.answered_count,
             "dissatisfaction_count": analytics.dissatisfaction_count,
             "buying_intent_count": analytics.buying_intent_count,
+            "missed_opportunity_lines": _render_missed_opportunity_lines(missed_opportunities),
+            "missed_opportunity_count": len(missed_opportunities),
+            "leads_count": len(leads_in_window),
+            "converted_count": converted_count,
+            "conversion_rate_pct": round(100 * converted_count / len(leads_in_window)) if leads_in_window else 0,
+            "confirmed_revenue_inr": confirmed_revenue,
+            "trends": {
+                "leads": _compute_trend(len(leads_in_window), leads_prior_count),
+                "tasks_done": _compute_trend(len(done_tasks), prior_done_count),
+                "converted": _compute_trend(converted_count, converted_prior_only),
+                "revenue_inr": _compute_trend(confirmed_revenue, revenue_prior_only),
+                "feedback_volume": _compute_trend(feedback_current_total, feedback_prior_only),
+            },
         }
 
     def _render_business_health(snapshot: dict, *, window_label: str) -> str:
+        trends = snapshot["trends"]
         lines = [
             f"📈 Business health — {window_label}",
             "",
-            f"Tasks: {snapshot['tasks_done']}/{snapshot['tasks_assigned']} completed, "
-            f"{snapshot['tasks_overdue']} overdue",
+            f"Tasks: {snapshot['tasks_done']}/{snapshot['tasks_assigned']} completed "
+            f"({trends['tasks_done']} vs prior period), {snapshot['tasks_overdue']} overdue",
         ]
         lines.extend(f"  • {line}" for line in snapshot["overdue_lines"])
         lines.append(f"Customer questions: {snapshot['questions_asked']} ({snapshot['questions_answered']} answered)")
@@ -1000,14 +1091,59 @@ def create_app(services: Services | None = None) -> FastAPI:
             lines.append(f"⚠️ {snapshot['dissatisfaction_count']} customer complaint(s)")
         if snapshot["buying_intent_count"]:
             lines.append(f"{snapshot['buying_intent_count']} showed buying interest")
+        lines.append(
+            f"Leads: {snapshot['leads_count']} ({trends['leads']}), {snapshot['converted_count']} converted "
+            f"({trends['converted']}) ({snapshot['conversion_rate_pct']}%) — confirmed revenue "
+            f"₹{snapshot['confirmed_revenue_inr']} ({trends['revenue_inr']})"
+        )
+        if snapshot["missed_opportunity_lines"]:
+            noun = "opportunity" if snapshot["missed_opportunity_count"] == 1 else "opportunities"
+            lines.append(f"⚠️ {snapshot['missed_opportunity_count']} missed {noun}:")
+            lines.extend(f"  • {line}" for line in snapshot["missed_opportunity_lines"])
         if snapshot["recurring_feedback_lines"]:
             lines.append("")
-            lines.append("Recurring employee feedback:")
+            lines.append(f"Recurring employee feedback ({trends['feedback_volume']} in volume vs prior period):")
             lines.extend(f"  • {line}" for line in snapshot["recurring_feedback_lines"])
             lines.append(f"  ({snapshot['recurring_themes_with_sop']}/{snapshot['recurring_themes_total']} have approved guidance)")
         else:
             lines.append("No recurring employee issues.")
         return "\n".join(lines)
+
+    _TIMELINE_DESCRIPTIONS = {
+        "employee_added": "{actor} added an employee to the roster",
+        "role_changed": "{actor} changed an employee's role to {role}",
+        "employee_deactivated": "{actor} deactivated an employee",
+        "task_assigned": "{actor} assigned a task",
+        "task_reassigned": "{actor} reassigned a task",
+        "task_started": "{actor} started a task",
+        "task_done": "{actor} completed a task",
+        "task_blocked": "{actor} marked a task blocked",
+        "task_cancelled": "{actor} cancelled a task",
+        "task_approved": "{actor} approved a task",
+        "task_rejected": "{actor} sent a task back for rework",
+        "sop_approved": "{actor} approved team guidance for a theme",
+        "feedback_resolved": "{actor} marked a feedback item resolved",
+        "deposit_confirmed_paid": "{actor} confirmed a deposit of ₹{amount_inr}",
+        "appointment_outcome_recorded": "{actor} recorded an appointment as {outcome}",
+    }
+
+    def _render_timeline_line(entry, employees_by_id: dict[str, Employee]) -> str:
+        actor = "Someone"
+        if entry.actor_employee_id and entry.actor_employee_id in employees_by_id:
+            actor = employees_by_id[entry.actor_employee_id].name
+        elif entry.actor_employee_id is None:
+            actor = "The dashboard"
+        template = _TIMELINE_DESCRIPTIONS.get(entry.action, entry.action)
+        try:
+            description = template.format(actor=actor, **entry.metadata)
+        except (KeyError, IndexError):
+            description = template.format(actor=actor, role="?", amount_inr="?", outcome="?")
+        return f"{entry.created_at[:16].replace('T', ' ')} — {description}"
+
+    def _render_timeline(entries, employees_by_id: dict[str, Employee]) -> str:
+        if not entries:
+            return "No recorded activity yet."
+        return "🕒 Recent activity:\n" + "\n".join(_render_timeline_line(e, employees_by_id) for e in entries)
 
     def _daily_pulse_text(tenant: TenantConfig, employee: Employee) -> str:
         """Reuses the exact same summary as the daily digest; deliberately
@@ -1108,6 +1244,33 @@ def create_app(services: Services | None = None) -> FastAPI:
             reply(_render_feedback_theme_summary(tenant.tenant_id, svc.feedback_store.summarize_by_theme(tenant.tenant_id)))
             return True
 
+        suggest_sop_match = _ADMIN_SUGGEST_SOP_RE.match(raw)
+        if suggest_sop_match:
+            if employee.role != "owner":
+                reply("Only the owner can request a suggested guidance note.")
+                return True
+            theme_key = _resolve_theme_key(suggest_sop_match.group(1))
+            if theme_key is None:
+                reply(f'Couldn\'t match "{suggest_sop_match.group(1)}" to a feedback theme. Try "feedback themes" to see the list.')
+                return True
+            recent_texts = [f.raw_text for f in svc.feedback_store.list_for_tenant(tenant.tenant_id, theme=theme_key, limit=5)]
+            if not recent_texts:
+                reply(f'No feedback reports found yet for "{_FEEDBACK_THEME_LABELS.get(theme_key, theme_key)}".')
+                return True
+            try:
+                draft = svc.generator().draft_sop_note(
+                    theme_label=_FEEDBACK_THEME_LABELS.get(theme_key, theme_key), recent_feedback_texts=recent_texts,
+                )
+            except Exception as exc:  # noqa: BLE001 - a failed draft must not crash the command
+                logger.warning("SOP draft generation failed for tenant %s: %s", tenant.tenant_id, exc)
+                reply("Couldn't generate a draft right now — try again shortly, or write your own with \"approve sop\".")
+                return True
+            reply(
+                f'📝 Draft guidance for "{_FEEDBACK_THEME_LABELS.get(theme_key, theme_key)}":\n\n"{draft}"\n\n'
+                f'Edit as needed, then approve with:\napprove sop {theme_key}: {draft}'
+            )
+            return True
+
         sop_match = _ADMIN_SOP_RE.match(raw)
         if sop_match:
             if employee.role != "owner":
@@ -1129,16 +1292,61 @@ def create_app(services: Services | None = None) -> FastAPI:
             reply(f'✅ Saved guidance for "{_FEEDBACK_THEME_LABELS.get(theme_key, theme_key)}". Employees reporting this will now see it.')
             return True
 
+        mark_paid_match = _ADMIN_MARK_PAID_RE.match(raw)
+        if mark_paid_match:
+            lead_short_id, amount_text = mark_paid_match.group(1), mark_paid_match.group(2)
+            lead = _find_lead_by_short_id(tenant.tenant_id, lead_short_id)
+            if lead is None:
+                reply(f'Couldn\'t find a customer matching "{lead_short_id}".')
+                return True
+            amount = int(amount_text) if amount_text else tenant.deposit_amount_inr
+            if not amount:
+                reply("No amount given and no deposit amount configured. Try \"mark paid <id> <amount>\".")
+                return True
+            try:
+                svc.lead_store.mark_deposit_paid(tenant.tenant_id, lead.lead_id, amount)
+            except ValueError as exc:
+                reply(str(exc))
+                return True
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="deposit_confirmed_paid",
+                target_type="lead", target_id=lead.lead_id, metadata={"amount_inr": amount},
+            )
+            reply(f"✅ Recorded ₹{amount} received from {lead.name or lead.phone or lead.email}.")
+            return True
+
+        mark_outcome_match = _ADMIN_MARK_OUTCOME_RE.match(raw)
+        if mark_outcome_match:
+            outcome = _OUTCOME_ALIASES[mark_outcome_match.group(1).lower()]
+            lead_short_id = mark_outcome_match.group(2)
+            lead = _find_lead_by_short_id(tenant.tenant_id, lead_short_id)
+            if lead is None:
+                reply(f'Couldn\'t find a customer matching "{lead_short_id}".')
+                return True
+            svc.lead_store.record_appointment_outcome(tenant.tenant_id, lead.lead_id, outcome)
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="appointment_outcome_recorded",
+                target_type="lead", target_id=lead.lead_id, metadata={"outcome": outcome},
+            )
+            reply(f"✅ Recorded {lead.name or lead.phone or lead.email}'s appointment as {outcome.replace('_', ' ')}.")
+            return True
+
         if clean in ("scorecard", "health"):
             if not can_manage:
                 reply("Only an owner or manager can view the business scorecard.")
                 return True
-            since_iso = time.strftime(
-                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - svc.settings.digest_window_hours * 3600)
-            )
             window_label = "today" if svc.settings.digest_window_hours <= 24 else f"the last {svc.settings.digest_window_hours}h"
-            snapshot = _business_health_snapshot(tenant, since_iso=since_iso)
+            snapshot = _business_health_snapshot(tenant, window_hours=svc.settings.digest_window_hours)
             reply(_render_business_health(snapshot, window_label=window_label))
+            return True
+
+        if clean == "timeline":
+            if not can_manage:
+                reply("Only an owner or manager can view the activity timeline.")
+                return True
+            employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
+            entries = svc.audit_log.list_for_tenant(tenant.tenant_id, limit=20)
+            reply(_render_timeline(entries, employees_by_id))
             return True
 
         feedback_match = _ADMIN_FEEDBACK_RE.match(raw)
@@ -1233,6 +1441,10 @@ def create_app(services: Services | None = None) -> FastAPI:
 
             if verb == "start":
                 svc.task_store.update_status(tenant.tenant_id, task.task_id, "in_progress")
+                svc.audit_log.record(
+                    tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="task_started",
+                    target_type="task", target_id=task.task_id,
+                )
                 reply(f'▶️ Marked "{task.title}" as in progress.')
             elif verb == "done":
                 assigner = svc.employee_store.get(tenant.tenant_id, task.assigned_by_employee_id)
@@ -1247,15 +1459,27 @@ def create_app(services: Services | None = None) -> FastAPI:
                         )
                 else:
                     svc.task_store.update_status(tenant.tenant_id, task.task_id, "done")
+                    svc.audit_log.record(
+                        tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="task_done",
+                        target_type="task", target_id=task.task_id,
+                    )
                     reply(f'🎉 Marked "{task.title}" as done. Nice work.')
                     if assigner and assigner.employee_id != employee.employee_id:
                         _send_admin_bot_message(tenant, assigner.whatsapp_number, f'✅ {employee.name} finished "{task.title}".')
                     _maybe_verify_outcome_with_customer(tenant, task)
             elif verb == "blocked":
                 svc.task_store.update_status(tenant.tenant_id, task.task_id, "blocked", block_reason=reason)
+                svc.audit_log.record(
+                    tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="task_blocked",
+                    target_type="task", target_id=task.task_id, metadata={"reason": reason},
+                )
                 reply(f'🚧 Marked "{task.title}" as blocked' + (f": {reason}" if reason else "") + ".")
             elif verb == "cancel":
                 svc.task_store.update_status(tenant.tenant_id, task.task_id, "cancelled")
+                svc.audit_log.record(
+                    tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="task_cancelled",
+                    target_type="task", target_id=task.task_id,
+                )
                 reply(f'🗑️ Cancelled "{task.title}".')
             elif verb == "approve":
                 svc.task_store.approve(tenant.tenant_id, task.task_id, employee.employee_id)
@@ -1636,6 +1860,61 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=502, detail=f"Could not send the deposit link: {exc}") from exc
         svc.lead_store.mark_deposit_link_sent(tenant_id, lead_id)
         return {"sent_to": lead.email, "channel": "email", "payment_url": payment_url}
+
+    @app.post("/api/leads/{lead_id}/deposit-paid")
+    def mark_lead_deposit_paid(
+        lead_id: str, request: DepositPaidRequest, tenant_id: str, authorization: str | None = Header(default=None)
+    ) -> dict:
+        """Owner-confirmed only — the exact same request-and-confirm
+        shape as platform billing's mark-paid (app.py's admin_mark_paid),
+        just at the tenant-customer level. A deposit LINK being sent
+        never implies payment; this is the one action that does."""
+        principal = _resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.VIEW_LEADS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        amount = request.amount_inr if request.amount_inr is not None else tenant.deposit_amount_inr
+        if not amount:
+            raise HTTPException(status_code=400, detail="No amount given and no deposit amount configured for this business.")
+        try:
+            updated = svc.lead_store.mark_deposit_paid(tenant_id, lead_id, amount)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"No lead '{lead_id}' for this business.")
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="deposit_confirmed_paid",
+            target_type="lead", target_id=lead_id, metadata={"amount_inr": amount},
+        )
+        return updated.model_dump()
+
+    @app.post("/api/leads/{lead_id}/appointment-outcome")
+    def record_lead_appointment_outcome(
+        lead_id: str, request: AppointmentOutcomeRequest, tenant_id: str, authorization: str | None = Header(default=None)
+    ) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_LEADS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        try:
+            updated = svc.lead_store.record_appointment_outcome(tenant_id, lead_id, request.outcome)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"No lead '{lead_id}' for this business.")
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="appointment_outcome_recorded",
+            target_type="lead", target_id=lead_id, metadata={"outcome": request.outcome},
+        )
+        return updated.model_dump()
 
     # -------------------------------------------------------------- analytics
     @app.get("/api/analytics")
@@ -2063,10 +2342,23 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except TenantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        since_iso = time.strftime(
-            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - svc.settings.digest_window_hours * 3600)
-        )
-        return _business_health_snapshot(tenant, since_iso=since_iso)
+        return _business_health_snapshot(tenant, window_hours=svc.settings.digest_window_hours)
+
+    @app.get("/api/timeline")
+    def get_timeline(tenant_id: str, authorization: str | None = Header(default=None), limit: int = 50) -> dict:
+        """A read over the existing audit log, not a new event-store —
+        every entry here is something AuditLogStore already recorded for
+        an unrelated reason (permissions, dispute resolution); this
+        endpoint just renders it chronologically. Gated the same as
+        feedback/business-health: aggregated management insight."""
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_FEEDBACK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"entries": [e.model_dump() for e in svc.audit_log.list_for_tenant(tenant_id, limit=min(limit, 200))]}
 
     @app.get("/api/sops")
     def list_sops(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
