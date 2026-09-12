@@ -61,6 +61,16 @@
     .admin-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 4px; border-bottom: 1px solid var(--ba-border); }
     .admin-row:last-child { border-bottom: none; }
 
+    .sop-form-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    .stage-pill {
+      display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+      background: var(--ba-surface-sunken); color: var(--ba-ink-soft); border: 1px solid var(--ba-border);
+    }
+    .stage-pill.converted { background: var(--ba-primary-soft); color: var(--ba-primary); border-color: transparent; }
+    .stage-pill.lost { background: var(--ba-error-bg); color: #C24A38; border-color: transparent; }
+    .stage-pill.awaiting_payment, .stage-pill.engaged { background: var(--ba-warn-bg); color: #9A7517; border-color: transparent; }
+    .trend-tag { font-size: 0.75rem; color: var(--ba-muted); margin-left: 6px; }
+
     .mobile-tabbar { display: none; }
 
     @media (max-width: 900px) {
@@ -92,6 +102,8 @@
     <a href="#overview">Overview</a>
     <a href="#knowledge">Knowledge</a>
     <a href="#leads">Leads</a>
+    <a href="#team">Team &amp; Tasks</a>
+    <a href="#health">Business Health</a>
     <a href="#staff">Staff Assistant</a>
     <a href="#whatsapp">WhatsApp</a>
     <a href="#growth">Deposits</a>
@@ -103,6 +115,8 @@
       <a class="dash-nav-link" href="#overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> Overview</a>
       <a class="dash-nav-link" href="#knowledge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Knowledge</a>
       <a class="dash-nav-link" href="#leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg> Leads</a>
+      <a class="dash-nav-link" href="#team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Team &amp; Tasks</a>
+      <a class="dash-nav-link" href="#health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Business Health</a>
       <a class="dash-nav-link" href="#staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Staff Assistant</a>
       <a class="dash-nav-link" href="#whatsapp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> WhatsApp</a>
       <a class="dash-nav-link" href="#growth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Deposits</a>
@@ -175,9 +189,83 @@
           </div>
           <div class="ba-card" style="padding:0; overflow:hidden;">
             <table class="ba-table" id="leads-table" style="margin:0;">
-              <thead><tr><th>Channel</th><th>Name</th><th>Phone</th><th>Email</th><th>Message</th><th>Appointment</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Channel</th><th>Name</th><th>Stage</th><th>Phone</th><th>Email</th><th>Message</th><th>Appointment</th><th>Actions</th></tr></thead>
               <tbody></tbody>
             </table>
+          </div>
+        </section>
+
+        <section class="dash-section" id="team">
+          <div class="dash-section-head">
+            <h2>Team &amp; Tasks</h2>
+            <p class="ba-muted" style="margin:0;">Your employee roster and their work — day-to-day coordination happens over WhatsApp; this is the read-only overview plus quick add/assign.</p>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Employees</h3>
+            <table class="ba-table" id="employees-table"><thead><tr><th>Name</th><th>WhatsApp</th><th>Role</th><th>Status</th></tr></thead><tbody></tbody></table>
+            <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+              <input class="ba-input" id="new-emp-name" placeholder="Name" style="max-width:160px;">
+              <input class="ba-input" id="new-emp-whatsapp" placeholder="WhatsApp number, no +" style="max-width:180px;">
+              <select class="ba-input" id="new-emp-role" style="max-width:120px;">
+                <option value="staff">Staff</option>
+                <option value="manager">Manager</option>
+              </select>
+              <button class="ba-btn ba-btn-sm" onclick="addEmployee()">Add</button>
+            </div>
+            <div id="employee-status" class="ba-muted" style="margin-top:6px;"></div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Open Tasks</h3>
+            <table class="ba-table" id="tasks-table"><thead><tr><th>Task</th><th>Assigned to</th><th>Due</th><th>Status</th></tr></thead><tbody></tbody></table>
+            <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+              <input class="ba-input" id="new-task-title" placeholder="Task title" style="flex:1; min-width:160px;">
+              <select class="ba-input" id="new-task-assignee" style="max-width:160px;"></select>
+              <input class="ba-input" type="date" id="new-task-due" style="max-width:150px;">
+              <button class="ba-btn ba-btn-sm" onclick="addTask()">Assign</button>
+            </div>
+            <div id="task-status" class="ba-muted" style="margin-top:6px;"></div>
+          </div>
+        </section>
+
+        <section class="dash-section" id="health">
+          <div class="dash-section-head">
+            <h2>Business Health</h2>
+            <p class="ba-muted" style="margin:0;">One transparent snapshot — every number here traces back to something real: a confirmed payment, a completed task, a logged conversation. Never an estimate.</p>
+          </div>
+
+          <div class="ba-metric" id="health-metrics">
+            <div class="ba-metric-box"><div class="ba-metric-label">Tasks Completed</div><div class="ba-metric-val" id="h-tasks">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Leads</div><div class="ba-metric-val" id="h-leads">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Converted</div><div class="ba-metric-val" id="h-converted">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Confirmed Revenue</div><div class="ba-metric-val" id="h-revenue">—</div></div>
+          </div>
+
+          <div class="ba-card" id="health-overdue-card" style="display:none;">
+            <h3 style="margin-top:0;">⚠️ Overdue Tasks</h3>
+            <ul id="health-overdue-list" style="margin:0; padding-left:20px;"></ul>
+          </div>
+
+          <div class="ba-card" id="health-opportunity-card" style="display:none;">
+            <h3 style="margin-top:0;">⚠️ Missed Opportunities</h3>
+            <p class="ba-muted" style="margin-top:-6px;">Showed real buying interest in conversation, never booked.</p>
+            <ul id="health-opportunity-list" style="margin:0; padding-left:20px;"></ul>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Recurring Employee Feedback</h3>
+            <div id="health-feedback-list" class="ba-muted">No recurring issues yet.</div>
+            <div class="sop-form-row" id="sop-form" style="display:none;">
+              <input class="ba-input" id="sop-theme" placeholder="Theme key (e.g. software_or_tools)" style="max-width:220px;">
+              <input class="ba-input" id="sop-text" placeholder="Guidance note" style="flex:1; min-width:200px;">
+              <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="approveSop()">Save Guidance</button>
+            </div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Recent Activity</h3>
+            <ul id="health-timeline-list" style="margin:0; padding-left:20px;"></ul>
           </div>
         </section>
 
@@ -264,6 +352,18 @@
     // (and eventually exhaust) a single quota bucket across every staff
     // member for the life of the business.
     const staffSessionId = 'staff_' + Math.random().toString(36).slice(2, 10);
+
+    // Team/Business Health read from endpoints gated owner/manager-only
+    // (VIEW_FEEDBACK, MANAGE_EMPLOYEES, ASSIGN_TASK) — a staff dashboard
+    // login would just get a wall of 403s, so hide the nav entirely
+    // rather than show a broken section.
+    if (role !== 'owner') {
+      document.querySelectorAll('a[href="#team"], a[href="#health"]').forEach(el => el.remove());
+      const teamSection = document.getElementById('team');
+      const healthSection = document.getElementById('health');
+      if (teamSection) teamSection.remove();
+      if (healthSection) healthSection.remove();
+    }
 
     function escapeHtml(str) {
       if (!str) return '';
@@ -365,9 +465,13 @@
         leads = l.leads;
         document.getElementById('m-leads').innerText = leads.length;
         const canFollowUp = lead => lead.email || (lead.source === 'whatsapp' && lead.phone);
+        const stageLabels = { new: 'New', engaged: 'Engaged', awaiting_payment: 'Awaiting payment', converted: 'Converted', lost: 'Lost', reengaged: 'Re-engaged' };
         document.querySelector('#leads-table tbody').innerHTML = leads.length ? leads.map(lead => `
           <tr id="lead-${escapeHtml(lead.lead_id)}"><td>${lead.source === 'whatsapp' ? '📱 WhatsApp' : (lead.source === 'chat' ? '💬 Web' : escapeHtml(lead.source || '—'))}</td>
           <td>${escapeHtml(lead.name || '—')}<div class="ba-muted" style="font-size:.78rem;">${escapeHtml(lead.created_at)}</div></td>
+          <td><span class="stage-pill ${escapeHtml(lead.stage || 'new')}">${escapeHtml(stageLabels[lead.stage] || lead.stage || 'New')}</span>
+            ${lead.deposit_paid_amount_inr ? `<div class="ba-muted" style="font-size:.78rem;">₹${lead.deposit_paid_amount_inr} confirmed</div>` : ''}
+          </td>
           <td>${escapeHtml(lead.phone || '—')}</td>
           <td>${escapeHtml(lead.email || '—')}</td><td>${escapeHtml((lead.message || '').slice(0, 60))}</td>
           <td>${lead.appointment_at
@@ -380,11 +484,27 @@
           <td>
             ${canFollowUp(lead) ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="requestReview('${escapeHtml(lead.lead_id)}', this)">Request Review</button>` : ''}
             ${canFollowUp(lead) ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="sendDepositLink('${escapeHtml(lead.lead_id)}', this)">Send Deposit Link</button>` : ''}
+            ${lead.stage !== 'converted' && lead.stage !== 'lost' ? `
+              <div style="display:flex; gap:4px; margin-top:6px; align-items:center;">
+                <input class="ba-input" type="number" min="1" id="paid-amt-${escapeHtml(lead.lead_id)}" placeholder="₹" style="max-width:70px; font-size:.82rem;">
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markLeadPaid('${escapeHtml(lead.lead_id)}', this)">Mark Paid</button>
+              </div>` : ''}
+            ${lead.appointment_at && lead.stage !== 'converted' && lead.stage !== 'lost' ? `
+              <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'completed', this)">Completed</button>
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'no_show', this)">No-show</button>
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'cancelled', this)">Cancelled</button>
+              </div>` : ''}
           </td></tr>`).join('')
-          : `<tr><td colspan="7" class="ba-muted" style="text-align:center; padding:28px;">No leads yet — they'll show up here the moment a customer leaves their contact info, or messages you on WhatsApp.</td></tr>`;
+          : `<tr><td colspan="8" class="ba-muted" style="text-align:center; padding:28px;">No leads yet — they'll show up here the moment a customer leaves their contact info, or messages you on WhatsApp.</td></tr>`;
       }
 
       renderAttention({ gaps, leads, analytics });
+
+      if (role === 'owner') {
+        loadTeam();
+        loadHealth();
+      }
 
       const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (sRes.ok) {
@@ -710,6 +830,170 @@
         btn.disabled = false;
         btn.innerText = original;
       }
+    }
+
+    async function markLeadPaid(leadId, btn) {
+      const input = document.getElementById(`paid-amt-${leadId}`);
+      const amount = Number(input.value);
+      if (!amount || amount <= 0) { alert('Enter a valid amount first.'); return; }
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/deposit-paid?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ amount_inr: amount }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not record payment.');
+        loadDashboard();
+      } catch (e) { alert(e.message); btn.disabled = false; }
+    }
+
+    async function markAppointmentOutcome(leadId, outcome, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/appointment-outcome?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ outcome }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not record outcome.');
+        loadDashboard();
+      } catch (e) { alert(e.message); btn.disabled = false; }
+    }
+
+    let rosterCache = [];
+
+    async function loadTeam() {
+      const empRes = await fetch(`/api/employees?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (empRes.ok) {
+        const data = await empRes.json();
+        rosterCache = data.employees.filter(e => e.active);
+        document.querySelector('#employees-table tbody').innerHTML = data.employees.length ? data.employees.map(e => `
+          <tr><td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.whatsapp_number)}</td><td>${escapeHtml(e.role)}</td>
+          <td>${e.active ? '<span class="ba-badge ba-badge-primary">Active</span>' : '<span class="ba-badge ba-badge-neutral">Inactive</span>'}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="ba-muted" style="text-align:center; padding:20px;">No employees added yet.</td></tr>`;
+        document.getElementById('new-task-assignee').innerHTML = rosterCache.map(e => `<option value="${escapeHtml(e.employee_id)}">${escapeHtml(e.name)}</option>`).join('')
+          || '<option value="">Add an employee first</option>';
+      }
+
+      const taskRes = await fetch(`/api/tasks?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (taskRes.ok) {
+        const data = await taskRes.json();
+        const rosterById = Object.fromEntries(rosterCache.map(e => [e.employee_id, e.name]));
+        const openTasks = data.tasks.filter(t => !['done', 'cancelled'].includes(t.status));
+        document.querySelector('#tasks-table tbody').innerHTML = openTasks.length ? openTasks.map(t => `
+          <tr><td>${escapeHtml(t.title)}</td><td>${escapeHtml(rosterById[t.assigned_to_employee_id] || '—')}</td>
+          <td>${t.due_at ? escapeHtml(t.due_at.slice(0, 10)) : '—'}</td><td>${escapeHtml(t.status)}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="ba-muted" style="text-align:center; padding:20px;">No open tasks — assign one from here or over WhatsApp.</td></tr>`;
+      }
+    }
+
+    async function addEmployee() {
+      const name = document.getElementById('new-emp-name').value.trim();
+      const whatsapp = document.getElementById('new-emp-whatsapp').value.trim();
+      const role = document.getElementById('new-emp-role').value;
+      const statusEl = document.getElementById('employee-status');
+      if (!name || !whatsapp) { statusEl.innerText = 'Name and WhatsApp number are required.'; return; }
+      try {
+        const res = await fetch(`/api/employees?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ name, whatsapp_number: whatsapp, role }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not add employee.');
+        statusEl.innerText = `Added ${data.name}.`;
+        document.getElementById('new-emp-name').value = '';
+        document.getElementById('new-emp-whatsapp').value = '';
+        loadTeam();
+        loadHealth();
+      } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
+    }
+
+    async function addTask() {
+      const title = document.getElementById('new-task-title').value.trim();
+      const assignee = document.getElementById('new-task-assignee').value;
+      const due = document.getElementById('new-task-due').value;
+      const statusEl = document.getElementById('task-status');
+      if (!title || !assignee) { statusEl.innerText = 'A title and an assignee are required.'; return; }
+      try {
+        const res = await fetch(`/api/tasks?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ title, assigned_to_employee_id: assignee, due_at: due || null }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not create task.');
+        statusEl.innerText = `Assigned "${data.title}".`;
+        document.getElementById('new-task-title').value = '';
+        document.getElementById('new-task-due').value = '';
+        loadTeam();
+        loadHealth();
+      } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
+    }
+
+    async function loadHealth() {
+      const res = await fetch(`/api/business-health?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (res.ok) {
+        const h = await res.json();
+        const t = h.trends || {};
+        document.getElementById('h-tasks').innerHTML = `${h.tasks_done}/${h.tasks_assigned}<span class="trend-tag">${escapeHtml(t.tasks_done || '')}</span>`;
+        document.getElementById('h-leads').innerHTML = `${h.leads_count}<span class="trend-tag">${escapeHtml(t.leads || '')}</span>`;
+        document.getElementById('h-converted').innerHTML = `${h.converted_count} (${h.conversion_rate_pct}%)<span class="trend-tag">${escapeHtml(t.converted || '')}</span>`;
+        document.getElementById('h-revenue').innerHTML = `₹${h.confirmed_revenue_inr}<span class="trend-tag">${escapeHtml(t.revenue_inr || '')}</span>`;
+
+        const overdueCard = document.getElementById('health-overdue-card');
+        if (h.overdue_lines && h.overdue_lines.length) {
+          overdueCard.style.display = 'block';
+          document.getElementById('health-overdue-list').innerHTML = h.overdue_lines.map(l => `<li>${escapeHtml(l)}</li>`).join('');
+        } else { overdueCard.style.display = 'none'; }
+
+        const oppCard = document.getElementById('health-opportunity-card');
+        if (h.missed_opportunity_lines && h.missed_opportunity_lines.length) {
+          oppCard.style.display = 'block';
+          document.getElementById('health-opportunity-list').innerHTML = h.missed_opportunity_lines.map(l => `<li>${escapeHtml(l)}</li>`).join('');
+        } else { oppCard.style.display = 'none'; }
+
+        const fbEl = document.getElementById('health-feedback-list');
+        if (h.recurring_feedback_lines && h.recurring_feedback_lines.length) {
+          fbEl.innerHTML = `<ul style="margin:0; padding-left:20px;">${h.recurring_feedback_lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
+            <div class="ba-muted" style="margin-top:8px; font-size:.8125rem;">${h.recurring_themes_with_sop}/${h.recurring_themes_total} have approved guidance</div>`;
+          document.getElementById('sop-form').style.display = '';
+        } else {
+          fbEl.innerHTML = 'No recurring issues yet.';
+          document.getElementById('sop-form').style.display = 'none';
+        }
+      }
+
+      const tlRes = await fetch(`/api/timeline?tenant_id=${encodeURIComponent(tenantId)}&limit=15`, { headers: BizAuth.getAuthHeaders() });
+      if (tlRes.ok) {
+        const tl = await tlRes.json();
+        const actionLabels = {
+          employee_added: 'Employee added', role_changed: 'Role changed', employee_deactivated: 'Employee deactivated',
+          task_assigned: 'Task assigned', task_reassigned: 'Task reassigned', task_started: 'Task started',
+          task_done: 'Task completed', task_blocked: 'Task blocked', task_cancelled: 'Task cancelled',
+          task_approved: 'Task approved', task_rejected: 'Task sent back', sop_approved: 'Guidance approved',
+          feedback_resolved: 'Feedback resolved', deposit_confirmed_paid: 'Payment confirmed',
+          appointment_outcome_recorded: 'Appointment outcome recorded',
+        };
+        document.getElementById('health-timeline-list').innerHTML = tl.entries.length ? tl.entries.map(e => `
+          <li><span class="ba-muted" style="font-size:.8125rem;">${escapeHtml(e.created_at.slice(0, 16).replace('T', ' '))}</span> — ${escapeHtml(actionLabels[e.action] || e.action)}</li>`).join('')
+          : '<li class="ba-muted">No recorded activity yet.</li>';
+      }
+    }
+
+    async function approveSop() {
+      const theme = document.getElementById('sop-theme').value.trim();
+      const text = document.getElementById('sop-text').value.trim();
+      if (!theme || !text) return;
+      try {
+        const res = await fetch(`/api/sops?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ theme, text }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not save guidance.');
+        document.getElementById('sop-text').value = '';
+        loadHealth();
+      } catch (e) { alert(e.message); }
     }
 
     async function loadAdminPanel() {

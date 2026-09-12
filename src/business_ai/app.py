@@ -1701,7 +1701,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except TenantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return {"leads": [l.model_dump() for l in svc.lead_store.list_for_tenant(tenant_id)]}
+        return {"leads": [{**l.model_dump(), "stage": lead_stage(l)} for l in svc.lead_store.list_for_tenant(tenant_id)]}
 
     @app.post("/api/leads/{lead_id}/request-review")
     def request_review(lead_id: str, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:

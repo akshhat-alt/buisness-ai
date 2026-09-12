@@ -399,6 +399,26 @@ in both the scorecard and the timeline.
   deliberately vague case (confirmed it says "more information is
   needed" rather than inventing a specific cause).
 
+## What V1.11 adds: a dashboard for the admin bot (owner-only)
+
+Everything V1.6–V1.10 built was WhatsApp/API-only until now. New "Team &
+Tasks" and "Business Health" sections on the owner dashboard, reading the
+same endpoints the WhatsApp commands use — `GET /api/employees`,
+`/api/tasks`, `/api/business-health`, `/api/timeline`, plus `POST
+/api/employees`, `/api/tasks`, `/api/leads/{id}/deposit-paid`,
+`/api/leads/{id}/appointment-outcome`, and `/api/sops` for the small set
+of write actions exposed here (add employee, assign task, confirm a
+payment/outcome, save SOP guidance). No new backend logic — every number
+and action was already real. `GET /api/leads` now also returns each
+lead's `stage` (`leads.lead_stage()`), rendered as a pill with a "Mark
+Paid"/"Completed"/"No-show"/"Cancelled" action inline. Hidden entirely
+for non-owner dashboard logins, since the underlying endpoints are
+owner/manager-gated and a staff view would just be a wall of 403s.
+Live-verified in a real browser: added an employee, assigned a task, and
+confirmed a ₹250 payment — the lead's stage flipped to "Converted," the
+scorecard and timeline updated correctly, all in one session with zero
+console errors.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No

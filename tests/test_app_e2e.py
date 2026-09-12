@@ -62,6 +62,7 @@ def test_full_business_lifecycle(client, owner_session, admin_headers, activate_
 
     r = client.get(f"/api/leads?tenant_id={tenant_id}", headers=headers)
     assert len(r.json()["leads"]) == 1
+    assert r.json()["leads"][0]["stage"] == "new"  # deterministic funnel stage, see leads.lead_stage()
 
 
 def test_tenant_isolation_blocks_cross_business_access(client, owner_session):
