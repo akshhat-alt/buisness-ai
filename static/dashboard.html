@@ -108,6 +108,7 @@
     <a href="#business-map">Business Map</a>
     <a href="#automation">Automation</a>
     <a href="#evolution">Self-Evolution</a>
+    <a href="#business-intel">Business Intel</a>
     <a href="#staff">Staff Assistant</a>
     <a href="#whatsapp">WhatsApp</a>
     <a href="#growth">Deposits</a>
@@ -125,6 +126,7 @@
       <a class="dash-nav-link" href="#business-map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8.2 7.3 10 15.5M15.8 7.3 14 15.5M8.5 6h7"/></svg> Business Map</a>
       <a class="dash-nav-link" href="#automation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg> Automation</a>
       <a class="dash-nav-link" href="#evolution"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg> Self-Evolution</a>
+      <a class="dash-nav-link" href="#business-intel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg> Business Intel</a>
       <a class="dash-nav-link" href="#staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Staff Assistant</a>
       <a class="dash-nav-link" href="#whatsapp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> WhatsApp</a>
       <a class="dash-nav-link" href="#growth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Deposits</a>
@@ -136,6 +138,15 @@
         <h2 style="margin-top: 0;">Platform Admin — All Businesses</h2>
         <p class="ba-muted">New signups land here in "provisioning" until activated.</p>
         <div id="admin-tenants-list"></div>
+      </div>
+
+      <div id="admin-health-panel" class="ba-card" style="display: none;">
+        <h3 style="margin-top: 0;">System Health</h3>
+        <div id="admin-health-summary" class="ba-muted">Loading…</div>
+        <div style="margin-top:10px; display:flex; gap:8px;">
+          <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="loadSystemHealth()">Refresh</button>
+          <button class="ba-btn ba-btn-sm" onclick="triggerBackup()">Run Backup Now</button>
+        </div>
       </div>
 
       <div id="owner-panel">
@@ -425,6 +436,31 @@
           </div>
         </section>
 
+        <section class="dash-section" id="business-intel">
+          <div class="dash-section-head">
+            <h2>Business Intelligence</h2>
+            <p class="ba-muted" style="margin:0;">Financials (manual entries, logged via WhatsApp), a week-over-week scorecard, and a radar for concrete missed revenue — all pulled live, no page refresh needed.</p>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Financials <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— manual entries only</span></h3>
+            <div id="bi-financials-summary" class="ba-muted">Loading…</div>
+            <div style="margin-top:10px;">
+              <a class="ba-btn ba-btn-secondary ba-btn-sm" id="bi-financials-csv-link" href="#" target="_blank" rel="noopener">Download CSV</a>
+            </div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Weekly Scorecard</h3>
+            <table class="ba-table" id="bi-scorecard-table"><thead><tr><th>Metric</th><th>This week</th><th>Prior week</th></tr></thead><tbody></tbody></table>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">💰 Revenue Radar</h3>
+            <div id="bi-revenue-radar" class="ba-muted">Loading…</div>
+          </div>
+        </section>
+
         <section class="dash-section" id="staff">
           <div class="dash-section-head">
             <h2>Staff Assistant</h2>
@@ -514,8 +550,8 @@
     // login would just get a wall of 403s, so hide the nav entirely
     // rather than show a broken section.
     if (role !== 'owner') {
-      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#command-center"], a[href="#automation"], a[href="#business-map"], a[href="#evolution"]').forEach(el => el.remove());
-      ['team', 'health', 'command-center', 'automation', 'business-map', 'evolution'].forEach(id => {
+      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#command-center"], a[href="#automation"], a[href="#business-map"], a[href="#evolution"], a[href="#business-intel"]').forEach(el => el.remove());
+      ['team', 'health', 'command-center', 'automation', 'business-map', 'evolution', 'business-intel'].forEach(id => {
         const section = document.getElementById(id);
         if (section) section.remove();
       });
@@ -568,7 +604,9 @@
     async function loadDashboard() {
       if (role === 'platform_admin') {
         document.getElementById('admin-panel').style.display = 'block';
+        document.getElementById('admin-health-panel').style.display = 'block';
         loadAdminPanel();
+        loadSystemHealth();
         if (!tenantId) {
           document.getElementById('owner-panel').style.display = 'none';
           // The sidebar/mobile nav links target sections that live inside
@@ -665,6 +703,7 @@
         loadAutomationKillSwitch();
         loadAutomationRules().then(loadAutomationRuns);
         loadEvolution();
+        loadBusinessIntel();
       }
 
       const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -1494,6 +1533,51 @@
       loadEvolution();
     }
 
+    // ---------------------------------------------------------- Business Intelligence (Phases 12/13/15/16)
+
+    async function loadBusinessIntel() {
+      document.getElementById('bi-financials-csv-link').href = `/api/metrics/export.csv?tenant_id=${encodeURIComponent(tenantId)}`;
+
+      const [financialsRes, scorecardRes, radarRes] = await Promise.all([
+        fetch(`/api/metrics/summary?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/scorecard?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/revenue-radar?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+      ]);
+
+      const financialsEl = document.getElementById('bi-financials-summary');
+      if (financialsRes.ok) {
+        const data = await financialsRes.json();
+        financialsEl.innerHTML = data.summary.length
+          ? data.summary.map(s => `<div><b>${escapeHtml(s.metric_type.charAt(0).toUpperCase() + s.metric_type.slice(1))}:</b> ₹${s.total_inr} (${s.entry_count} entr${s.entry_count === 1 ? 'y' : 'ies'})</div>`).join('')
+          : 'No manual entries logged yet — try "log sale 1500 haircut" over WhatsApp.';
+      }
+
+      if (scorecardRes.ok) {
+        const sc = await scorecardRes.json();
+        const rows = [
+          ['Tasks completed', sc.this_week.tasks_completed, sc.last_week.tasks_completed],
+          ['Customer questions', sc.this_week.total_questions, sc.last_week.total_questions],
+          ['Dissatisfaction rate', `${sc.this_week.dissatisfaction_rate_pct}%`, `${sc.last_week.dissatisfaction_rate_pct}%`],
+          ['Sales (manual)', `₹${sc.this_week.sales_inr}`, `₹${sc.last_week.sales_inr}`],
+          ['Expenses (manual)', `₹${sc.this_week.expenses_inr}`, `₹${sc.last_week.expenses_inr}`],
+        ];
+        document.querySelector('#bi-scorecard-table tbody').innerHTML = rows.map(([label, thisV, lastV]) =>
+          `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(String(thisV))}</td><td class="ba-muted">${escapeHtml(String(lastV))}</td></tr>`
+        ).join('');
+      }
+
+      const radarEl = document.getElementById('bi-revenue-radar');
+      if (radarRes.ok) {
+        const radar = await radarRes.json();
+        const parts = [];
+        if (radar.missed_buying_intent_leads.length) parts.push(`<div>• ${radar.missed_buying_intent_leads.length} lead(s) showed buying interest but never booked/paid.</div>`);
+        if (radar.unpaid_deposits.length) parts.push(`<div>• ${radar.unpaid_deposits.length} deposit link(s) sent and still unpaid.</div>`);
+        if (radar.no_show_appointments.length) parts.push(`<div>• ${radar.no_show_appointments.length} appointment(s) marked no-show.</div>`);
+        if (radar.total_estimated_leakage_inr) parts.push(`<div>Estimated unpaid deposits: ~₹${radar.total_estimated_leakage_inr}.</div>`);
+        radarEl.innerHTML = parts.length ? parts.join('') : `Nothing leaking in the last ${radar.window_days} days — nice.`;
+      }
+    }
+
     async function loadAdminPanel() {
       const res = await fetch('/api/v1/admin/tenants', { headers: BizAuth.getAuthHeaders() });
       if (!res.ok) return;
@@ -1525,6 +1609,32 @@
             ${t.billing_status === 'invoiced' ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="adminMarkPaid('${t.tenant_id}')">Mark Paid</button>` : ''}
           </div>` : ''}
         </div>`).join('');
+    }
+
+    async function loadSystemHealth() {
+      const el = document.getElementById('admin-health-summary');
+      const res = await fetch('/api/v1/admin/health/detailed', { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) { el.textContent = 'Could not load system health.'; return; }
+      const h = await res.json();
+      const storeLines = Object.entries(h.stores).map(([name, status]) =>
+        `<span>${status === 'ok' ? '✓' : '✗'} ${escapeHtml(name)}</span>`
+      ).join(' &nbsp; ');
+      const backupLine = h.last_backup
+        ? `Last backup: ${escapeHtml(h.last_backup.modified_at)} (${(h.last_backup.size_bytes / 1024).toFixed(0)} KB)`
+        : 'No backups yet — click "Run Backup Now".';
+      el.innerHTML = `
+        <div style="margin-bottom:6px;">${storeLines} &nbsp; <span>${h.vector_store === 'ok' ? '✓' : '✗'} vector store</span></div>
+        <div>${backupLine}</div>
+        ${h.disk ? `<div class="ba-muted" style="font-size:0.8125rem;">Disk free: ${(h.disk.free_bytes / 1e9).toFixed(1)} GB of ${(h.disk.total_bytes / 1e9).toFixed(1)} GB</div>` : ''}
+      `;
+    }
+
+    async function triggerBackup() {
+      const res = await fetch('/api/v1/admin/backup/run', { method: 'POST', headers: BizAuth.getAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) { alert('Backup failed: ' + (data.detail || 'unknown error')); return; }
+      alert(`Backup created: ${data.archive_path}`);
+      loadSystemHealth();
     }
 
     async function adminActivate(id) {

@@ -86,6 +86,7 @@ from business_ai.routers.leads_routes import register_leads
 from business_ai.routers.metrics_routes import register_metrics
 from business_ai.routers.ops_routes import register_ops
 from business_ai.routers.revenue_radar_routes import register_revenue_radar
+from business_ai.routers.scorecard_routes import register_scorecard
 from business_ai.routers.static_pages import register_static_pages
 from business_ai.routers.team_routes import register_team
 from business_ai.routers.tenant_settings_routes import register_tenant_settings
@@ -245,6 +246,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     register_metrics(app, svc, ctx)
     register_ops(app, svc, ctx)
     register_revenue_radar(app, svc, ctx)
+    register_scorecard(app, svc, ctx)
     register_automation(app, svc, ctx)
     register_webhooks(app, svc, ctx)
     register_admin(app, svc, ctx)

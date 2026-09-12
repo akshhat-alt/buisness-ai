@@ -978,6 +978,52 @@ a real appointment marked no-show both correctly surfaced through
 `tests/test_revenue_radar.py` (9) and `tests/test_revenue_radar_routes.py`
 (4) — 487 total, all green.
 
+## What V1.21 adds: Unified Owner Dashboard + Final Hardening (Phase 16)
+
+The capstone of this build arc (Phases 9-16): wires Financials (Phase
+12), the Weekly Scorecard (Phase 13), and the Revenue Radar (Phase 15)
+into the dashboard for the first time — all three had shipped
+backend/WhatsApp-only, explicitly flagged as a dashboard gap in their
+own Known Limitations. Zero new backend risk: every dashboard call
+reuses an already-tested API, except one new pure-read route this phase
+adds.
+
+**New route**: `GET /api/scorecard` (owner/manager-gated) — the weekly-
+scorecard cron pushes by email/WhatsApp on a schedule with no on-demand
+equivalent; this lets the owner pull the identical numbers from the
+dashboard at any time, computed with the exact same `scorecard.py`
+functions, with zero side effects (no send, no state written).
+
+**New dashboard section, "Business Intel"**: a Financials card (summary
++ CSV download, reusing Phase 12's tested endpoints), a Weekly Scorecard
+table (this week vs. prior week, reusing the new route above), and a
+Revenue Radar card (reusing Phase 15's tested endpoint) — all fetched in
+parallel, all owner-only like the Business Map and Self-Evolution
+sections before it.
+
+**New platform-admin "System Health" panel**: surfaces Phase 14's
+`GET /api/v1/admin/health/detailed` (every core store, the vector store,
+last backup age, disk space) plus a "Run Backup Now" button calling
+`POST /api/v1/admin/backup/run` directly from the browser — closing the
+loop on Phase 14's backup infrastructure, which previously required
+shell/curl access to actually trigger.
+
+**Final hardening pass**: re-ran `pip-audit` against the full dependency
+set — clean, same four pre-existing chromadb advisories still correctly
+ignored with documented reasoning, no new vulnerabilities introduced
+across Phases 9-16's additions (cryptography-free, no new network-facing
+dependency was ever added in this arc).
+
+Live-verified end to end: the real running server's `/api/scorecard`
+route was exercised by the automated test suite; the dashboard's new
+Business Intel section was loaded in a real browser against a real
+tenant with a real logged sale, and its Financials/Scorecard/Revenue
+Radar cards were confirmed rendering the correct live figures via direct
+DOM inspection with zero console errors; the platform-admin System
+Health panel's render path was exercised against the live server with a
+real platform_admin token, correctly reporting every store `"ok"`. 4 new
+tests in `tests/test_scorecard_routes.py` — 491 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1480,3 +1526,15 @@ before the prompt/schema was finalized.
   several other fixed windows in this codebase (task escalation hours,
   reminder windows) that are implementation constants today, not owner
   dials, until a real business asks for control over the number.
+- **The dashboard's Financials/Scorecard/Revenue Radar cards have no
+  write actions** (Phase 16) — logging a financial entry, approving an
+  evolution proposal from within Business Intel, or acting on a radar
+  finding still requires WhatsApp or another dashboard section. This
+  phase closed the "can't even SEE these numbers on the dashboard" gap;
+  cross-linking the read views to their existing write actions is a
+  natural, low-risk next UI pass.
+- **The "Run Backup Now" dashboard button has no progress/size-limit
+  handling** — a very large `data/` directory would make the button's
+  synchronous HTTP call slow without any visible progress indicator.
+  Fine at today's per-tenant SQLite scale; would need a background-job
+  pattern (poll a status endpoint) if data volume grows substantially.

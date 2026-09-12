@@ -193,8 +193,10 @@ src/business_ai/
                   cron endpoints), metrics_routes (Phase 12: financial
                   summary/CSV export), ops_routes (Phase 14: backup
                   trigger/list, detailed health, data integrity),
-                  revenue_radar_routes (Phase 15) — see app.py's
-                  create_app() for wiring
+                  revenue_radar_routes (Phase 15), scorecard_routes
+                  (Phase 16: on-demand read of scorecard.py's data,
+                  zero side effects) — see app.py's create_app() for
+                  wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -205,7 +207,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (487 tests) — see README.md
+tests/            pytest suite (491 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,
