@@ -488,6 +488,90 @@ rule genuinely failing (no WhatsApp configured for the smoke tenant) and
 the create-task rule genuinely succeeding, both visible with the right
 status pill.
 
+## What V1.13 adds: self-serve onboarding (Phase 8)
+
+A guided setup wizard (`static/onboarding.html`, served at `/onboarding` —
+new signups land here instead of the full dashboard) walking a new owner
+through seven steps, each backed by the same APIs the full dashboard
+already used: Plan & Payment, Connect WhatsApp, Add Knowledge, Add Your
+Team, Set Up Automation, Test Your Assistant, Activate. Steps navigate
+freely (no fake "locked until you finish step N" gating that doesn't
+reflect a real backend constraint) — the two genuine constraints
+(knowledge required, payment required if priced) are enforced for real
+by the existing `_activation_blocker`, and the wizard's own Activate step
+just calls it honestly rather than re-implementing the check.
+
+**Self-serve plan & payment** (`GET /api/platform/plan`,
+`POST /api/tenant/billing/checkout`, `POST /api/webhooks/razorpay`): the
+platform subscription price is a single operator-configured value
+(`PLATFORM_SUBSCRIPTION_PRICE_INR`) — never invented by this app — and
+unset means the payment step is skipped entirely, identical to every
+tenant's behavior before this feature existed. When set, the owner
+generates their own real Razorpay payment link (at the configured price
+ONLY — a caller can never smuggle in their own amount) instead of
+waiting on an admin to send one. New: a real, HMAC-signature-verified
+Razorpay webhook (`verify_razorpay_webhook_signature`, same shape as the
+existing WhatsApp webhook verifier) auto-confirms `billing_status=paid`
+the moment Razorpay reports a payment link paid, correlated back to the
+tenant via a `reference_id` now set on every platform billing link
+(self-serve AND admin-sent). This turns "one-click activation" into a
+real end-to-end capability for a paying customer — no admin in the loop
+required — while the admin `mark-paid` fallback still works unchanged
+for any deployment that hasn't configured the webhook secret (fails
+closed: no secret configured means every webhook call is rejected, never
+silently trusted).
+
+**WhatsApp Embedded Signup — the frontend, finally.** The backend
+(`MetaEmbeddedSignupClient`, the code-exchange route) was built and
+tested since V1.4 but had no UI. The wizard now loads Meta's JS SDK,
+launches `FB.login` with a `config_id` (new `WHATSAPP_CONFIG_ID` setting,
+required alongside `WHATSAPP_APP_ID` for the capability flag to report
+`available: true`), listens for the `WA_EMBEDDED_SIGNUP` `postMessage`
+Meta's popup sends back with the new `phone_number_id`, and completes
+the connection via the existing endpoint. Falls back to the manual
+Phone-Number-ID/access-token fields (unchanged) whenever the capability
+flag is `false` — never shows a button that would fail on click.
+
+**Pre-launch AI test — a real architectural fix, not just a UI page.**
+Live-verifying the wizard's "Test Your Assistant" step surfaced a real
+bug: `authorize()`'s lifecycle gate blocked `QUERY_ASSISTANT` for
+anything but an ACTIVE tenant, including the tenant's own owner — so a
+brand-new signup literally could not test their own assistant before
+activating. Fixed with one narrow, deliberate exception in
+`tenant.py::authorize()`: the tenant's own owner/manager (never staff,
+never a different tenant, never an anonymous caller) may query their own
+assistant while PROVISIONING — and *never* while SUSPENDED, since that
+status means something is deliberately wrong. This is the one non-UI
+backend change this phase's live verification forced — found and fixed
+before calling the feature done, exactly the discipline this project
+holds itself to.
+
+**Admin provisioning/control**: `GET /api/v1/admin/tenants` now returns
+an `onboarding` block per tenant (knowledge sources, WhatsApp connected,
+employee count, automation rule count) computed from existing stores —
+no new state — so the admin panel can show a stuck self-serve signup's
+real progress at a glance instead of just status/billing badges.
+
+Live-verified end to end against a real running server and a real
+browser session: signed up a fresh tenant, generated a self-serve
+checkout link, confirmed payment via an actually-HMAC-signed webhook
+POST (not a mocked call), watched the UI transition to "Payment received"
+in real time, added a real knowledge source (real fetch + real OpenAI
+embedding), added a real employee, created a real automation rule, asked
+the real, not-yet-activated assistant a real question (triggering the
+authorize() fix above), and self-activated — landing on the real
+dashboard with the test question correctly surfaced as an open knowledge
+gap. Separately confirmed the fail-closed path: with a price configured
+but no real Razorpay credentials, "Pay Now" surfaces "Payment isn't
+configured on this deployment yet" rather than a broken button or a
+fake success state. 25 new tests across
+`tests/test_billing_and_activation.py` (self-serve checkout, webhook
+signature verification, idempotent redelivery, unknown-tenant/unpaid/
+irrelevant-event handling), `tests/test_tenant_authorization.py` (the
+provisioning-preview exception's exact boundaries), `tests/test_whatsapp.py`
+(the extended capability flag), and `tests/test_admin_bot.py` (the
+onboarding-progress view).
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -569,7 +653,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-291 tests covering the full HTTP lifecycle (signup → ingest → activate →
+315 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
 from the new FAQ entry), owner digest (sends only to active tenants with
@@ -820,3 +904,34 @@ before the prompt/schema was finalized.
   generic compared to the digest email's `generate_action_brief`, which
   still does the richer, LLM-written version on its own once-a-day
   schedule.
+- **WhatsApp Embedded Signup's actual Meta popup flow could not be
+  live-verified end to end** — this deployment has no real
+  `WHATSAPP_APP_ID`/`WHATSAPP_CONFIG_ID`/approved Meta Tech Provider
+  registration. The frontend code (SDK load, `FB.login` call, the
+  `WA_EMBEDDED_SIGNUP` message listener, the capability-flag gating that
+  falls back to the manual fields) is real and reviewed against Meta's
+  documented contract, and the server-side code-exchange it calls into
+  has been tested since V1.4, but the popup interaction itself needs a
+  real Meta App to confirm.
+- **One platform subscription price, not multiple plans/tiers.**
+  `PLATFORM_SUBSCRIPTION_PRICE_INR` is a single configurable number, not
+  an invented set of named tiers with different features — a deliberate
+  choice to avoid fabricating a pricing model that's a real business
+  decision, not this app's to invent. Multiple tiers, if ever wanted, are
+  a natural additive extension of the same mechanism.
+- **The Razorpay webhook only understands `payment_link.paid`.** Other
+  Razorpay event types (refunds, disputes, `payment.failed`) are neither
+  handled nor expected — Business AI's own billing has no refund/dispute
+  flow yet, so there's nothing for those events to update.
+- **The self-serve checkout link has no expiry/retry UI.** If a Razorpay
+  payment link goes unpaid, the owner can click "Pay Now" again to
+  generate a fresh one, but there's no reminder, no automatic re-send,
+  and no visibility into a specific failed payment attempt beyond the
+  tenant's own Razorpay account.
+- **The onboarding wizard's step navigation has no server-side
+  "resume where you left off."** Which step is showing is pure
+  client-side state (not persisted), by design — every real constraint
+  (knowledge required, payment required if priced) is enforced by the
+  actual backend regardless of which step the wizard happens to be
+  showing, so there was nothing to gain from inventing server-tracked
+  wizard progress on top of state that already exists for real reasons.

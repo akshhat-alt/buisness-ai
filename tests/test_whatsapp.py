@@ -402,13 +402,27 @@ class FakeMetaEmbeddedSignupClient:
 def test_embedded_signup_status_unavailable_without_app_id(client_wa, services_wa):
     r = client_wa.get("/api/tenant/whatsapp/embedded-signup-status")
     assert r.status_code == 200, r.text
-    assert r.json() == {"available": False}  # services_wa never sets whatsapp_app_id
+    # services_wa never sets whatsapp_app_id/config_id.
+    assert r.json() == {"available": False, "app_id": None, "config_id": None, "api_version": services_wa.settings.whatsapp_api_version}
 
 
-def test_embedded_signup_status_available_when_configured(client_wa, services_wa):
+def test_embedded_signup_status_unavailable_with_only_app_id(client_wa, services_wa):
+    """app_id alone isn't enough — config_id is also required for the JS
+    SDK's FB.login call to actually launch the right signup flow."""
     services_wa.settings = dataclasses.replace(services_wa.settings, whatsapp_app_id="fake-app-id")
     r = client_wa.get("/api/tenant/whatsapp/embedded-signup-status")
-    assert r.json() == {"available": True}
+    assert r.json()["available"] is False
+
+
+def test_embedded_signup_status_available_when_fully_configured(client_wa, services_wa):
+    services_wa.settings = dataclasses.replace(
+        services_wa.settings, whatsapp_app_id="fake-app-id", whatsapp_config_id="fake-config-id",
+    )
+    r = client_wa.get("/api/tenant/whatsapp/embedded-signup-status")
+    assert r.json() == {
+        "available": True, "app_id": "fake-app-id", "config_id": "fake-config-id",
+        "api_version": services_wa.settings.whatsapp_api_version,
+    }
 
 
 def test_embedded_signup_rejected_when_not_configured(client_wa, services_wa):

@@ -71,6 +71,13 @@ class Settings:
     # option, which is the correct default until Business AI is an
     # approved Meta Tech Provider.
     whatsapp_app_id: str | None
+    # WhatsApp Business Login "Configuration ID" — created in the Meta
+    # App dashboard under WhatsApp -> Embedded Signup, identifies WHICH
+    # signup flow/permissions to launch. Also a public, non-secret
+    # identifier (passed to Meta's own JS SDK client-side), but distinct
+    # from whatsapp_app_id — both are required together for the "Connect
+    # WhatsApp" button to actually work.
+    whatsapp_config_id: str | None
 
     # Owner daily digest email (optional — digest send is skipped, not
     # fatal, if these aren't set; this is an add-on, not core auth)
@@ -91,6 +98,19 @@ class Settings:
     # can't be sent yet; tenants without a price set are unaffected.
     platform_razorpay_key_id: str | None
     platform_razorpay_key_secret: str | None
+    # Verifies X-Razorpay-Signature on POST /api/webhooks/razorpay (set in
+    # the Razorpay dashboard's Webhooks screen to the same value). Unset =
+    # the webhook route fails closed (rejects every event) and platform
+    # payments fall back to the existing admin mark-paid confirmation —
+    # never silently trusts an unverifiable "paid" claim.
+    platform_razorpay_webhook_secret: str | None
+    # Self-serve subscription price shown to a NEW owner during onboarding
+    # (Phase 8) — an operator-configured business decision, not invented
+    # by this app. Unset = the self-serve plan/payment step is skipped
+    # entirely and a tenant activates exactly as it does today (free,
+    # unpriced) — fully backward compatible with every tenant onboarded
+    # before this setting existed.
+    platform_subscription_price_inr: int | None
 
     # Customer win-back: platform-wide default "lapsed" threshold, used
     # when a tenant hasn't set their own TenantConfig.winback_after_days.
@@ -133,11 +153,14 @@ def load_settings() -> Settings:
         whatsapp_verify_token=(os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip() or None,
         whatsapp_api_version=os.getenv("WHATSAPP_API_VERSION", "v21.0").strip() or "v21.0",
         whatsapp_app_id=(os.getenv("WHATSAPP_APP_ID") or "").strip() or None,
+        whatsapp_config_id=(os.getenv("WHATSAPP_CONFIG_ID") or "").strip() or None,
         resend_api_key=(os.getenv("RESEND_API_KEY") or "").strip() or None,
         digest_from_email=(os.getenv("DIGEST_FROM_EMAIL") or "").strip() or None,
         platform_admin_email=(os.getenv("PLATFORM_ADMIN_EMAIL") or "").strip() or None,
         platform_razorpay_key_id=(os.getenv("PLATFORM_RAZORPAY_KEY_ID") or "").strip() or None,
         platform_razorpay_key_secret=(os.getenv("PLATFORM_RAZORPAY_KEY_SECRET") or "").strip() or None,
+        platform_razorpay_webhook_secret=(os.getenv("PLATFORM_RAZORPAY_WEBHOOK_SECRET") or "").strip() or None,
+        platform_subscription_price_inr=(_int_env("PLATFORM_SUBSCRIPTION_PRICE_INR", 0) or None),
         digest_window_hours=_int_env("DIGEST_WINDOW_HOURS", 24),
         public_base_url=(os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None,
         winback_default_days=_int_env("WINBACK_DEFAULT_DAYS", 45),

@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Set Up Your Assistant — Business AI</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .wiz-shell { max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; }
+    .wiz-steps { display: flex; gap: 6px; margin-bottom: 28px; overflow-x: auto; padding-bottom: 4px; }
+    .wiz-step-pill {
+      flex-shrink: 0; display: flex; align-items: center; gap: 7px; padding: 7px 13px;
+      border-radius: var(--ba-radius-full); border: 1px solid var(--ba-border); background: var(--ba-surface);
+      font-size: 0.8125rem; font-weight: 600; color: var(--ba-ink-soft); cursor: pointer; user-select: none;
+      transition: border-color 0.15s ease, color 0.15s ease;
+    }
+    .wiz-step-pill:hover { border-color: var(--ba-primary); }
+    .wiz-step-pill.current { border-color: var(--ba-primary); color: var(--ba-primary); background: var(--ba-primary-soft); }
+    .wiz-step-pill .num {
+      width: 18px; height: 18px; border-radius: 50%; background: var(--ba-surface-sunken); color: var(--ba-ink-soft);
+      font-size: 0.6875rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .wiz-step-pill.done .num { background: var(--ba-primary); color: #fff; }
+    .wiz-step-pill.current .num { background: var(--ba-primary); color: #fff; }
+    .wiz-panel { display: none; }
+    .wiz-panel.active { display: block; animation: ba-fade-in 0.2s ease; }
+    .wiz-nav-row { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; gap: 10px; }
+    .wiz-optional-tag {
+      font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+      color: var(--ba-muted); background: var(--ba-surface-sunken); padding: 2px 8px; border-radius: var(--ba-radius-full);
+      margin-left: 8px; vertical-align: middle;
+    }
+    .wiz-chat-thread { max-height: 320px; }
+  </style>
+</head>
+<body>
+  <nav class="ba-navbar">
+    <a href="/" class="ba-brand">
+      <span class="ba-brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#06110D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4 3v-3H6a2 2 0 0 1-2-2Z"/></svg></span>
+      Business AI
+    </a>
+    <div style="display:flex; gap:16px; align-items:center;">
+      <a href="/dashboard" class="ba-navlink">Skip to full dashboard &rarr;</a>
+      <a href="#" data-signout class="ba-navlink">Sign Out</a>
+    </div>
+  </nav>
+
+  <div class="wiz-shell">
+    <div class="ba-card-title-row" style="margin-bottom:20px;">
+      <div>
+        <h1 style="margin-bottom:2px;">Let's set up your assistant</h1>
+        <p class="ba-muted" style="margin:0;">Seven quick steps. Skip anything optional and come back later from the full dashboard.</p>
+      </div>
+    </div>
+
+    <div class="wiz-steps" id="wiz-steps"></div>
+
+    <!-- Step 1: Plan & Payment -->
+    <section class="wiz-panel" data-step="0">
+      <div class="ba-card">
+        <h3 style="margin-top:0;">Plan &amp; Payment</h3>
+        <div id="plan-loading" class="ba-muted">Checking your plan...</div>
+        <div id="plan-free" style="display:none;">
+          <p class="ba-muted" style="margin-top:0;">This account doesn't require payment to activate. You're all set here.</p>
+        </div>
+        <div id="plan-paid" style="display:none;">
+          <div class="ba-alert ba-alert-info"><div>✓ Payment received — thank you.</div></div>
+        </div>
+        <div id="plan-unpaid" style="display:none;">
+          <p class="ba-muted" style="margin-top:0;">Your subscription is <strong id="plan-price">—</strong>. Pay securely with Razorpay — you'll come right back here.</p>
+          <button class="ba-btn" onclick="startCheckout()">Pay Now</button>
+          <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="refreshPaymentStatus()" style="margin-left:8px;">I've paid — check now</button>
+          <div id="checkout-status" class="ba-muted" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      <div class="wiz-nav-row"><span></span><button class="ba-btn ba-btn-sm" onclick="goToStep(1)">Continue</button></div>
+    </section>
+
+    <!-- Step 2: Connect WhatsApp -->
+    <section class="wiz-panel" data-step="1">
+      <div class="ba-card">
+        <h3 style="margin-top:0;">Connect WhatsApp <span class="wiz-optional-tag">Optional</span></h3>
+        <p class="ba-muted" style="margin-top:0;">Let customers message your assistant directly on WhatsApp. You can always do this later from Settings.</p>
+        <div id="wa-embedded-box" style="display:none; margin-bottom:14px;">
+          <button class="ba-btn" id="wa-connect-btn" onclick="launchWhatsAppEmbeddedSignup()">Connect WhatsApp</button>
+        </div>
+        <div id="wa-connected-box" style="display:none;">
+          <div class="ba-alert ba-alert-info"><div>✓ WhatsApp connected.</div></div>
+        </div>
+        <div id="wa-manual-box">
+          <p class="ba-muted" style="margin-top:0; font-size:0.8125rem;">Manual setup: add your Phone Number ID and access token from <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers</a>.</p>
+          <div class="ba-field"><label class="ba-label">WhatsApp Phone Number ID</label><input class="ba-input" id="wiz-wa-phone-id" placeholder="e.g. 109876543210987"></div>
+          <div class="ba-field"><label class="ba-label">WhatsApp Access Token</label><input class="ba-input" type="password" id="wiz-wa-token" placeholder="Permanent access token from Meta"></div>
+          <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="saveManualWhatsapp()">Save Connection</button>
+          <div id="wiz-wa-status" class="ba-muted" style="margin-top:8px;"></div>
+        </div>
+      </div>
+      <div class="wiz-nav-row"><button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(0)">Back</button><button class="ba-btn ba-btn-sm" onclick="goToStep(2)">Continue</button></div>
+    </section>
+
+    <!-- Step 3: Add Knowledge -->
+    <section class="wiz-panel" data-step="2">
+      <div class="ba-card">
+        <h3 style="margin-top:0;">Add Knowledge <span class="wiz-optional-tag" style="background:var(--ba-warn-bg); color:var(--ba-warn-text);">Required to activate</span></h3>
+        <p class="ba-muted" style="margin-top:0;">Your assistant only answers from what you give it here — add your website, or upload a PDF/FAQ.</p>
+        <div class="ba-field">
+          <label class="ba-label">Your website</label>
+          <div style="display:flex; gap:8px;">
+            <input class="ba-input" id="wiz-website-url" placeholder="https://yourbusiness.com">
+            <button class="ba-btn" onclick="wizIngestWebsite()">Add</button>
+          </div>
+        </div>
+        <div class="ba-field" style="margin-bottom:6px;">
+          <label class="ba-label">Or upload a PDF / text file</label>
+          <input type="file" id="wiz-upload-file" accept=".pdf,.txt,.md">
+          <button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:8px;" onclick="wizUploadFile()">Upload</button>
+        </div>
+        <div id="wiz-knowledge-status" class="ba-muted"></div>
+        <div id="wiz-sources-list" style="margin-top:12px;"></div>
+      </div>
+      <div class="wiz-nav-row"><button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(1)">Back</button><button class="ba-btn ba-btn-sm" onclick="goToStep(3)">Continue</button></div>
+    </section>
+
+    <!-- Step 4: Team -->
+    <section class="wiz-panel" data-step="3">
+      <div class="ba-card">
+        <h3 style="margin-top:0;">Add Your Team <span class="wiz-optional-tag">Optional</span></h3>
+        <p class="ba-muted" style="margin-top:0;">Add employees who'll coordinate tasks with you over WhatsApp. You can always add more later from Team &amp; Tasks.</p>
+        <table class="ba-table" id="wiz-employees-table"><thead><tr><th>Name</th><th>WhatsApp</th><th>Role</th></tr></thead><tbody></tbody></table>
+        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+          <input class="ba-input" id="wiz-emp-name" placeholder="Name" style="max-width:160px;">
+          <input class="ba-input" id="wiz-emp-whatsapp" placeholder="WhatsApp number, no +" style="max-width:180px;">
+          <select class="ba-input" id="wiz-emp-role" style="max-width:120px;">
+            <option value="staff">Staff</option>
+            <option value="manager">Manager</option>
+          </select>
+          <button class="ba-btn ba-btn-sm" onclick="wizAddEmployee()">Add</button>
+        </div>
+        <div id="wiz-employee-status" class="ba-muted" style="margin-top:6px;"></div>
+      </div>
+      <div class="wiz-nav-row"><button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(2)">Back</button><button class="ba-btn ba-btn-sm" onclick="goToStep(4)">Continue</button></div>
+    </section>
+
+    <!-- Step 5: Automation -->
+    <section class="wiz-panel" data-step="4">
+      <div class="ba-card">
+        <h3 style="margin-top:0;">Set Up Automation <span class="wiz-optional-tag">Optional</span></h3>
+        <p class="ba-muted" style="margin-top:0;">Have Business AI watch for problems and act on your behalf — notify you, or create a follow-up task. Add more later from Automation.</p>
+        <table class="ba-table" id="wiz-rules-table"><thead><tr><th>Name</th><th>Trigger</th><th>Action</th></tr></thead><tbody></tbody></table>
+        <div style="margin-top:14px; display:flex; flex-direction:column; gap:8px; max-width:480px;">
+          <input class="ba-input" id="wiz-rule-name" placeholder="Rule name (e.g. Chase overdue tasks)">
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <select class="ba-input" id="wiz-rule-trigger" style="flex:1; min-width:200px;">
+              <option value="task_overdue">Task overdue by at least (hours)</option>
+              <option value="negative_feedback_unresolved">Feedback unresolved for at least (hours)</option>
+              <option value="recurring_feedback_theme">Feedback theme repeated at least (count)</option>
+              <option value="deposit_unpaid_after_appointment">Deposit unpaid after appointment (hours)</option>
+            </select>
+            <input class="ba-input" type="number" min="1" id="wiz-rule-threshold" style="max-width:100px;" value="24">
+          </div>
+          <select class="ba-input" id="wiz-rule-action">
+            <option value="notify_owner">Notify me on WhatsApp</option>
+            <option value="create_task">Create a follow-up task</option>
+          </select>
+          <button class="ba-btn ba-btn-sm" onclick="wizAddRule()" style="align-self:flex-start;">Create Rule</button>
+        </div>
+        <div id="wiz-rule-status" class="ba-muted" style="margin-top:6px;"></div>
+      </div>
+      <div class="wiz-nav-row"><button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(3)">Back</button><button class="ba-btn ba-btn-sm" onclick="goToStep(5)">Continue</button></div>
+    </section>
+
+    <!-- Step 6: Test -->
+    <section class="wiz-panel" data-step="5">
+      <div class="ba-card">
+        <h3 style="margin-top:0;">Test Your Assistant</h3>
+        <p class="ba-muted" style="margin-top:0;">Ask it something a real customer might ask — this is the real assistant, answering from what you've added so far.</p>
+        <div id="wiz-chat-thread" class="ba-chat-thread wiz-chat-thread"></div>
+        <form id="wiz-chat-form" class="ba-chat-input-row" onsubmit="wizSendTestMessage(event)">
+          <input class="ba-input" id="wiz-chat-input" placeholder="Type a question..." autocomplete="off">
+          <button class="ba-btn" type="submit" id="wiz-chat-send">Send</button>
+        </form>
+      </div>
+      <div class="wiz-nav-row"><button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(4)">Back</button><button class="ba-btn ba-btn-sm" onclick="goToStep(6)">Continue</button></div>
+    </section>
+
+    <!-- Step 7: Activate -->
+    <section class="wiz-panel" data-step="6">
+      <div class="ba-card">
+        <h3 style="margin-top:0;">Activate</h3>
+        <div id="activate-loading" class="ba-muted">Checking your account...</div>
+        <div id="activate-already" style="display:none;">
+          <div class="ba-alert ba-alert-info"><div>✓ Your assistant is already live.</div></div>
+          <a href="/dashboard" class="ba-btn" style="margin-top:10px;">Go to Dashboard &rarr;</a>
+        </div>
+        <div id="activate-ready" style="display:none;">
+          <p class="ba-muted" style="margin-top:0;">Everything checks out. Activate your assistant — it'll go live immediately.</p>
+          <button class="ba-btn" onclick="wizActivate()">Activate Now</button>
+        </div>
+        <div id="activate-blocked" style="display:none;">
+          <div class="ba-alert ba-alert-warn"><div id="activate-blocked-reason"></div></div>
+        </div>
+        <div id="activate-result" class="ba-muted" style="margin-top:10px;"></div>
+      </div>
+      <div class="wiz-nav-row"><button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(5)">Back</button><span></span></div>
+    </section>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script>
+    if (!BizAuth.requireAuth('/login')) { /* redirecting */ }
+    const tenantId = BizAuth.getTenantId();
+    const role = BizAuth.getRole();
+    if (role && role !== 'owner') {
+      // Every step here needs owner-only actions (MANAGE_ASSISTANT/
+      // INGEST_KNOWLEDGE/MANAGE_EMPLOYEES) — a non-owner login would just
+      // hit a wall of 403s, so send them straight to the dashboard views
+      // that actually work for their role.
+      window.location.href = '/dashboard';
+    }
+
+    const STEP_LABELS = ['Plan', 'WhatsApp', 'Knowledge', 'Team', 'Automation', 'Test', 'Activate'];
+    let currentStep = 0;
+    let chatSessionId = null;
+    let waEmbeddedConfig = null;
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+    }
+
+    function renderStepPills() {
+      document.getElementById('wiz-steps').innerHTML = STEP_LABELS.map((label, i) => `
+        <div class="wiz-step-pill ${i === currentStep ? 'current' : ''}" onclick="goToStep(${i})">
+          <span class="num">${i + 1}</span>${escapeHtml(label)}
+        </div>`).join('');
+    }
+
+    function goToStep(i) {
+      currentStep = i;
+      document.querySelectorAll('.wiz-panel').forEach(p => p.classList.toggle('active', Number(p.dataset.step) === i));
+      renderStepPills();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (i === 6) loadActivateStep();
+    }
+
+    // ---------------------------------------------------------- Step 1: Plan & Payment
+
+    async function loadPlanStep() {
+      const [planRes, tenantRes] = await Promise.all([
+        fetch('/api/platform/plan'),
+        fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+      ]);
+      document.getElementById('plan-loading').style.display = 'none';
+      if (!planRes.ok || !tenantRes.ok) return;
+      const plan = await planRes.json();
+      const tenant = await tenantRes.json();
+
+      if (!plan.price_inr) {
+        document.getElementById('plan-free').style.display = 'block';
+        return;
+      }
+      if (tenant.billing_status === 'paid') {
+        document.getElementById('plan-paid').style.display = 'block';
+        return;
+      }
+      document.getElementById('plan-unpaid').style.display = 'block';
+      document.getElementById('plan-price').textContent = `₹${plan.price_inr}`;
+    }
+
+    async function startCheckout() {
+      const statusEl = document.getElementById('checkout-status');
+      statusEl.textContent = 'Creating a secure payment link...';
+      try {
+        const res = await fetch(`/api/tenant/billing/checkout?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not start checkout.');
+        if (data.payment_url) {
+          window.open(data.payment_url, '_blank', 'noopener');
+          statusEl.textContent = 'Complete payment in the new tab, then come back and click "I\'ve paid — check now".';
+        } else {
+          statusEl.textContent = 'Already paid.';
+          loadPlanStep();
+        }
+      } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    async function refreshPaymentStatus() {
+      const statusEl = document.getElementById('checkout-status');
+      statusEl.textContent = 'Checking...';
+      const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      const tenant = await res.json();
+      if (tenant.billing_status === 'paid') {
+        document.getElementById('plan-unpaid').style.display = 'none';
+        document.getElementById('plan-paid').style.display = 'block';
+      } else {
+        statusEl.textContent = 'Not confirmed yet — payment can take a minute to process. Try again shortly.';
+      }
+    }
+
+    // ---------------------------------------------------------- Step 2: WhatsApp
+
+    async function loadWhatsappStep() {
+      const [statusRes, tenantRes] = await Promise.all([
+        fetch('/api/tenant/whatsapp/embedded-signup-status'),
+        fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+      ]);
+      const status = await statusRes.json();
+      const tenant = await tenantRes.json();
+
+      if (tenant.whatsapp_phone_number_id) {
+        document.getElementById('wa-connected-box').style.display = 'block';
+        document.getElementById('wa-manual-box').style.display = 'none';
+        return;
+      }
+      if (status.available) {
+        waEmbeddedConfig = status;
+        document.getElementById('wa-embedded-box').style.display = 'block';
+        loadMetaSdk(status.app_id);
+      }
+    }
+
+    function loadMetaSdk(appId) {
+      if (window.FB) { window.FB.init({ appId, autoLogAppEvents: true, xfbml: false, version: 'v21.0' }); return; }
+      window.fbAsyncInit = function () {
+        window.FB.init({ appId, autoLogAppEvents: true, xfbml: false, version: 'v21.0' });
+      };
+      const script = document.createElement('script');
+      script.src = 'https://connect.facebook.net/en_US/sdk.js';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
+
+    let waSignupPhoneNumberId = null;
+    window.addEventListener('message', (event) => {
+      if (!event.origin.endsWith('facebook.com')) return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH' && data.data) {
+          waSignupPhoneNumberId = data.data.phone_number_id || null;
+        }
+      } catch (e) { /* not a JSON message we care about */ }
+    });
+
+    function launchWhatsAppEmbeddedSignup() {
+      if (!window.FB || !waEmbeddedConfig) { alert('WhatsApp connection is still loading — try again in a moment.'); return; }
+      window.FB.login((response) => {
+        const code = response && response.authResponse && response.authResponse.code;
+        if (!code || !waSignupPhoneNumberId) {
+          document.getElementById('wiz-wa-status').textContent = 'WhatsApp connection was not completed.';
+          return;
+        }
+        completeEmbeddedSignup(code, waSignupPhoneNumberId);
+      }, {
+        config_id: waEmbeddedConfig.config_id, response_type: 'code', override_default_response_type: true,
+        extras: { setup: {}, featureType: '', sessionInfoVersion: '2' },
+      });
+    }
+
+    async function completeEmbeddedSignup(code, phoneNumberId) {
+      try {
+        const res = await fetch(`/api/tenant/whatsapp/embedded-signup?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ code, phone_number_id: phoneNumberId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not connect WhatsApp.');
+        loadWhatsappStep();
+      } catch (e) { alert(e.message); }
+    }
+
+    async function saveManualWhatsapp() {
+      const statusEl = document.getElementById('wiz-wa-status');
+      const phoneId = document.getElementById('wiz-wa-phone-id').value.trim();
+      const token = document.getElementById('wiz-wa-token').value.trim();
+      if (!phoneId || !token) { statusEl.textContent = 'Both fields are required.'; return; }
+      try {
+        const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ whatsapp_phone_number_id: phoneId, whatsapp_access_token: token }),
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Could not save.');
+        loadWhatsappStep();
+      } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    // ---------------------------------------------------------- Step 3: Knowledge
+
+    async function loadKnowledgeStep() {
+      const res = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      document.getElementById('wiz-sources-list').innerHTML = data.sources.length
+        ? `<div class="ba-muted">${data.sources.length} source(s) added: ${data.sources.map(s => escapeHtml(s.label || s.source_type)).join(', ')}</div>`
+        : '<div class="ba-muted">No sources added yet.</div>';
+    }
+
+    async function wizIngestWebsite() {
+      const url = document.getElementById('wiz-website-url').value.trim();
+      if (!url) return;
+      const statusEl = document.getElementById('wiz-knowledge-status');
+      statusEl.textContent = 'Fetching and indexing...';
+      try {
+        const res = await fetch(`/api/knowledge/website?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ url }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not add this page.');
+        statusEl.textContent = `Added — ${data.chunks_indexed} section(s) indexed.`;
+        document.getElementById('wiz-website-url').value = '';
+        loadKnowledgeStep();
+      } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    async function wizUploadFile() {
+      const fileInput = document.getElementById('wiz-upload-file');
+      const file = fileInput.files[0];
+      if (!file) return;
+      const statusEl = document.getElementById('wiz-knowledge-status');
+      statusEl.textContent = 'Uploading...';
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(`/api/knowledge/upload?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders(), body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Upload failed.');
+        statusEl.textContent = `Added — ${data.chunks_indexed} section(s) indexed.`;
+        fileInput.value = '';
+        loadKnowledgeStep();
+      } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    // ---------------------------------------------------------- Step 4: Team
+
+    async function loadTeamStep() {
+      const res = await fetch(`/api/employees?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      document.querySelector('#wiz-employees-table tbody').innerHTML = data.employees.length
+        ? data.employees.map(e => `<tr><td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.whatsapp_number)}</td><td>${escapeHtml(e.role)}</td></tr>`).join('')
+        : '<tr><td colspan="3" class="ba-muted">No team members added yet.</td></tr>';
+    }
+
+    async function wizAddEmployee() {
+      const statusEl = document.getElementById('wiz-employee-status');
+      const name = document.getElementById('wiz-emp-name').value.trim();
+      const whatsapp = document.getElementById('wiz-emp-whatsapp').value.trim();
+      const roleVal = document.getElementById('wiz-emp-role').value;
+      if (!name || !whatsapp) { statusEl.textContent = 'Name and WhatsApp number are required.'; return; }
+      try {
+        const res = await fetch(`/api/employees?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ name, whatsapp_number: whatsapp, role: roleVal }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not add employee.');
+        document.getElementById('wiz-emp-name').value = '';
+        document.getElementById('wiz-emp-whatsapp').value = '';
+        statusEl.textContent = '';
+        loadTeamStep();
+      } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    // ---------------------------------------------------------- Step 5: Automation
+
+    const WIZ_TRIGGER_PARAM_KEY = {
+      task_overdue: 'hours', negative_feedback_unresolved: 'hours',
+      recurring_feedback_theme: 'min_count', deposit_unpaid_after_appointment: 'hours',
+    };
+    const WIZ_TRIGGER_LABELS = {
+      task_overdue: 'Task overdue', negative_feedback_unresolved: 'Feedback unresolved',
+      recurring_feedback_theme: 'Recurring feedback', deposit_unpaid_after_appointment: 'Deposit unpaid',
+    };
+    const WIZ_ACTION_LABELS = { notify_owner: 'Notify owner (WhatsApp)', create_task: 'Create follow-up task' };
+
+    async function loadAutomationStep() {
+      const res = await fetch(`/api/automation/rules?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      document.querySelector('#wiz-rules-table tbody').innerHTML = data.rules.length
+        ? data.rules.map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(WIZ_TRIGGER_LABELS[r.trigger_type] || r.trigger_type)}</td><td>${escapeHtml(WIZ_ACTION_LABELS[r.action_type] || r.action_type)}</td></tr>`).join('')
+        : '<tr><td colspan="3" class="ba-muted">No automation rules yet.</td></tr>';
+    }
+
+    async function wizAddRule() {
+      const statusEl = document.getElementById('wiz-rule-status');
+      const name = document.getElementById('wiz-rule-name').value.trim();
+      const triggerType = document.getElementById('wiz-rule-trigger').value;
+      const threshold = Number(document.getElementById('wiz-rule-threshold').value);
+      const actionType = document.getElementById('wiz-rule-action').value;
+      if (!name || !threshold || threshold <= 0) { statusEl.textContent = 'Enter a rule name and a positive threshold.'; return; }
+      const paramKey = WIZ_TRIGGER_PARAM_KEY[triggerType];
+      try {
+        const res = await fetch(`/api/automation/rules?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ name, trigger_type: triggerType, trigger_params: { [paramKey]: threshold }, action_type: actionType, action_params: {} }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not create rule.');
+        document.getElementById('wiz-rule-name').value = '';
+        statusEl.textContent = '';
+        loadAutomationStep();
+      } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    // ---------------------------------------------------------- Step 6: Test
+
+    async function wizSendTestMessage(e) {
+      e.preventDefault();
+      const input = document.getElementById('wiz-chat-input');
+      const query = input.value.trim();
+      if (!query) return;
+      const thread = document.getElementById('wiz-chat-thread');
+      const btn = document.getElementById('wiz-chat-send');
+      thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-user">${escapeHtml(query)}</div>`);
+      input.value = '';
+      btn.disabled = true;
+      thread.scrollTop = thread.scrollHeight;
+      const typingId = 'typing-' + Date.now();
+      thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant" id="${typingId}"><div class="ba-typing"><span></span><span></span><span></span></div></div>`);
+
+      try {
+        const res = await fetch(`/api/ask?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ query, session_id: chatSessionId }),
+        });
+        const data = await res.json();
+        document.getElementById(typingId).remove();
+        if (!res.ok) {
+          const detail = data.detail;
+          const msg = typeof detail === 'object' ? (detail.error || 'Something went wrong.') : (detail || 'Something went wrong.');
+          thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">${escapeHtml(msg)}</div>`);
+          return;
+        }
+        chatSessionId = data.session_id;
+        const text = data.status === 'answered' ? data.answer_text : data.abstention_reason;
+        thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">${escapeHtml(text)}</div>`);
+      } catch (err) {
+        document.getElementById(typingId).remove();
+        thread.insertAdjacentHTML('beforeend', `<div class="ba-msg-assistant">Connection error: ${escapeHtml(err.message)}</div>`);
+      } finally {
+        btn.disabled = false;
+        thread.scrollTop = thread.scrollHeight;
+      }
+    }
+
+    // ---------------------------------------------------------- Step 7: Activate
+
+    async function loadActivateStep() {
+      document.getElementById('activate-loading').style.display = 'block';
+      document.getElementById('activate-already').style.display = 'none';
+      document.getElementById('activate-ready').style.display = 'none';
+      document.getElementById('activate-blocked').style.display = 'none';
+
+      const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      const tenant = await res.json();
+      document.getElementById('activate-loading').style.display = 'none';
+
+      if (tenant.status === 'active') {
+        document.getElementById('activate-already').style.display = 'block';
+        return;
+      }
+
+      const sourcesRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      const sources = await sourcesRes.json();
+      const reasons = [];
+      if (!sources.sources || sources.sources.length === 0) reasons.push('Add at least one knowledge source (Step 3).');
+      if (tenant.subscription_price_inr && tenant.billing_status !== 'paid') reasons.push('Complete payment (Step 1).');
+
+      if (reasons.length) {
+        document.getElementById('activate-blocked').style.display = 'block';
+        document.getElementById('activate-blocked-reason').textContent = reasons.join(' ');
+      } else {
+        document.getElementById('activate-ready').style.display = 'block';
+      }
+    }
+
+    async function wizActivate() {
+      const resultEl = document.getElementById('activate-result');
+      resultEl.textContent = 'Activating...';
+      try {
+        const res = await fetch(`/api/tenant/activate?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not activate yet.');
+        resultEl.textContent = '🎉 Your assistant is live!';
+        setTimeout(() => { window.location.href = '/dashboard'; }, 1200);
+      } catch (e) { resultEl.textContent = e.message; }
+    }
+
+    // ---------------------------------------------------------- init
+
+    renderStepPills();
+    goToStep(0);
+    loadPlanStep();
+    loadWhatsappStep();
+    loadKnowledgeStep();
+    loadTeamStep();
+    loadAutomationStep();
+  </script>
+</body>
+</html>

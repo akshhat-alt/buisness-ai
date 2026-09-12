@@ -13,6 +13,9 @@ by both paths via app.py's _activation_blocker.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import hmac
+import json
 
 import pytest
 
@@ -278,3 +281,261 @@ def test_self_activation_notice_skipped_gracefully_when_admin_email_unset(client
 
     r = client.post(f"/api/tenant/activate?tenant_id={tenant_id}", headers=headers)
     assert r.status_code == 200, r.text
+
+
+# ============================================================== Phase 8: self-serve plan/payment
+
+
+def test_platform_plan_reports_no_price_by_default(client_billing, services_billing):
+    r = client_billing.get("/api/platform/plan")
+    assert r.status_code == 200, r.text
+    assert r.json()["price_inr"] is None
+
+
+def test_platform_plan_reports_configured_price(client_billing, services_billing):
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=1499)
+    r = client_billing.get("/api/platform/plan")
+    assert r.status_code == 200, r.text
+    assert r.json()["price_inr"] == 1499
+
+
+def test_checkout_rejected_when_no_price_configured(client_billing, services_billing):
+    """Backward compatible: a deployment that hasn't set a self-serve
+    price simply doesn't offer this step — no invented pricing."""
+    headers, tenant_id = _signup(client_billing)
+    r = client_billing.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 400
+    assert "payment" in r.json()["detail"].lower()
+    assert services_billing.fake_razorpay_client.calls == []
+
+
+def test_checkout_rejected_when_platform_razorpay_not_configured(client_billing, services_billing):
+    services_billing.settings = dataclasses.replace(
+        services_billing.settings, platform_subscription_price_inr=999,
+        platform_razorpay_key_id=None, platform_razorpay_key_secret=None,
+    )
+    headers, tenant_id = _signup(client_billing)
+    r = client_billing.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 400
+    assert "payment" in r.json()["detail"].lower()
+
+
+def test_checkout_generates_real_link_with_tenant_reference_id(client_billing, services_billing):
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=999)
+    headers, tenant_id = _signup(client_billing)
+
+    r = client_billing.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["payment_url"] == "https://rzp.io/i/fake-subscription-link"
+    assert data["billing_status"] == "invoiced"
+
+    call = services_billing.fake_razorpay_client.calls[0]
+    assert call["amount_inr"] == 999
+    assert call["reference_id"] == tenant_id
+
+    tenant = client_billing.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
+    assert tenant["subscription_price_inr"] == 999
+    assert tenant["billing_status"] == "invoiced"
+
+
+def test_checkout_owner_cannot_set_their_own_price(client_billing, services_billing):
+    """Even if a caller tries to smuggle an amount in, checkout always
+    uses the operator-configured platform price."""
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=999)
+    headers, tenant_id = _signup(client_billing)
+
+    r = client_billing.post(
+        f"/api/tenant/billing/checkout?tenant_id={tenant_id}", json={"amount_inr": 1}, headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert services_billing.fake_razorpay_client.calls[0]["amount_inr"] == 999
+
+
+def test_checkout_is_owner_gated_and_tenant_isolated(client_billing, services_billing):
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=999)
+    headers_a, tenant_a = _signup(client_billing, business_name="Salon A", email="a2@example.com")
+    headers_b, tenant_b = _signup(client_billing, business_name="Salon B", email="b2@example.com")
+
+    r = client_billing.post(f"/api/tenant/billing/checkout?tenant_id={tenant_a}", headers=headers_b)
+    assert r.status_code == 403
+
+
+def test_checkout_short_circuits_when_already_paid(client_billing, services_billing):
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=999)
+    headers, tenant_id = _signup(client_billing)
+    admin_headers = _admin_headers(client_billing, services_billing.settings)
+    client_billing.post(f"/api/v1/admin/tenants/{tenant_id}/mark-paid", json={}, headers=admin_headers)
+
+    r = client_billing.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"payment_url": None, "billing_status": "paid"}
+    assert services_billing.fake_razorpay_client.calls == []
+
+
+def test_checkout_surfaces_razorpay_error(client_billing, services_billing):
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=999)
+    services_billing.fake_razorpay_client.raise_error = PaymentLinkError("Razorpay API error 401: invalid key")
+    headers, tenant_id = _signup(client_billing)
+
+    r = client_billing.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 502
+    assert "invalid key" in r.json()["detail"]
+
+
+# ============================================================== Phase 8: Razorpay webhook auto-confirmation
+
+
+WEBHOOK_SECRET = "test-razorpay-webhook-secret"
+
+
+def _razorpay_webhook_payload(*, tenant_id: str, status: str = "paid", amount_paise: int = 99900) -> dict:
+    return {
+        "entity": "event",
+        "account_id": "acc_test",
+        "event": "payment_link.paid",
+        "contains": ["payment_link", "payment"],
+        "payload": {
+            "payment_link": {
+                "entity": {
+                    "id": "plink_test123",
+                    "reference_id": tenant_id,
+                    "amount": amount_paise,
+                    "amount_paid": amount_paise,
+                    "status": status,
+                }
+            },
+        },
+        "created_at": 1234567890,
+    }
+
+
+def _signed_webhook_post(client, payload: dict, *, secret: str = WEBHOOK_SECRET):
+    raw_body = json.dumps(payload).encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    return client.post(
+        "/api/webhooks/razorpay", content=raw_body,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": signature},
+    )
+
+
+@pytest.fixture()
+def services_webhook(services_billing):
+    services_billing.settings = dataclasses.replace(
+        services_billing.settings, platform_subscription_price_inr=999,
+        platform_razorpay_webhook_secret=WEBHOOK_SECRET,
+    )
+    return services_billing
+
+
+@pytest.fixture()
+def client_webhook(services_webhook):
+    from fastapi.testclient import TestClient
+
+    return TestClient(create_app(services_webhook))
+
+
+def test_webhook_auto_confirms_payment_and_writes_audit_entry(client_webhook, services_webhook):
+    headers, tenant_id = _signup(client_webhook)
+    client_webhook.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+
+    r = _signed_webhook_post(client_webhook, _razorpay_webhook_payload(tenant_id=tenant_id))
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "ok"
+
+    tenant = client_webhook.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
+    assert tenant["billing_status"] == "paid"
+    assert tenant["billing_paid_at"] is not None
+
+    audit = services_webhook.audit_log.list_for_tenant(tenant_id, action="platform_payment_confirmed")
+    assert len(audit) == 1
+    assert audit[0].metadata["amount_inr"] == 999
+
+
+def test_webhook_activation_now_genuinely_one_click(client_webhook, services_webhook):
+    """The point of the webhook: knowledge + checkout + a real payment
+    event is enough to self-activate, with zero admin involvement."""
+    headers, tenant_id = _signup(client_webhook)
+    _add_knowledge(client_webhook, headers, tenant_id)
+    client_webhook.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+    _signed_webhook_post(client_webhook, _razorpay_webhook_payload(tenant_id=tenant_id))
+
+    r = client_webhook.post(f"/api/tenant/activate?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "active"
+
+
+def test_webhook_rejects_invalid_signature(client_webhook, services_webhook):
+    headers, tenant_id = _signup(client_webhook)
+    r = _signed_webhook_post(client_webhook, _razorpay_webhook_payload(tenant_id=tenant_id), secret="wrong-secret")
+    assert r.status_code == 401
+
+    tenant = client_webhook.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
+    assert tenant["billing_status"] == "unbilled"
+
+
+def test_webhook_fails_closed_when_secret_not_configured(client_billing, services_billing):
+    """No PLATFORM_RAZORPAY_WEBHOOK_SECRET configured at all — every event
+    is rejected outright rather than trusted on a missing check."""
+    headers, tenant_id = _signup(client_billing)
+    raw_body = json.dumps(_razorpay_webhook_payload(tenant_id=tenant_id)).encode("utf-8")
+    signature = hmac.new(b"whatever", raw_body, hashlib.sha256).hexdigest()
+    r = client_billing.post(
+        "/api/webhooks/razorpay", content=raw_body,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": signature},
+    )
+    assert r.status_code == 401
+
+
+def test_webhook_ignores_irrelevant_event_type(client_webhook, services_webhook):
+    headers, tenant_id = _signup(client_webhook)
+    payload = _razorpay_webhook_payload(tenant_id=tenant_id)
+    payload["event"] = "payment_link.expired"
+    r = _signed_webhook_post(client_webhook, payload)
+    assert r.status_code == 200, r.text
+    assert r.json()["reason"] == "irrelevant_event"
+
+    tenant = client_webhook.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
+    assert tenant["billing_status"] == "unbilled"
+
+
+def test_webhook_ignores_unknown_tenant_reference(client_webhook, services_webhook):
+    r = _signed_webhook_post(client_webhook, _razorpay_webhook_payload(tenant_id="no-such-tenant"))
+    assert r.status_code == 200, r.text
+    assert r.json()["reason"] == "unknown_tenant"
+
+
+def test_webhook_redelivery_is_idempotent(client_webhook, services_webhook):
+    headers, tenant_id = _signup(client_webhook)
+    client_webhook.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+
+    _signed_webhook_post(client_webhook, _razorpay_webhook_payload(tenant_id=tenant_id))
+    r2 = _signed_webhook_post(client_webhook, _razorpay_webhook_payload(tenant_id=tenant_id))
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["reason"] == "already_paid"
+
+    audit = services_webhook.audit_log.list_for_tenant(tenant_id, action="platform_payment_confirmed")
+    assert len(audit) == 1  # not duplicated on redelivery
+
+
+def test_webhook_ignores_unpaid_status(client_webhook, services_webhook):
+    headers, tenant_id = _signup(client_webhook)
+    client_webhook.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+
+    r = _signed_webhook_post(client_webhook, _razorpay_webhook_payload(tenant_id=tenant_id, status="created"))
+    assert r.status_code == 200, r.text
+    assert r.json()["reason"] == "no_matching_tenant_or_not_paid"
+
+    tenant = client_webhook.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
+    assert tenant["billing_status"] == "invoiced"
+
+
+def test_admin_billing_link_now_carries_reference_id(client_billing, services_billing):
+    """Retrofit check: an admin-sent billing link is now ALSO correlatable
+    by the webhook, not just self-serve checkout links."""
+    headers, tenant_id = _signup(client_billing)
+    admin_headers = _admin_headers(client_billing, services_billing.settings)
+    client_billing.post(f"/api/v1/admin/tenants/{tenant_id}/billing-link", json={"amount_inr": 999}, headers=admin_headers)
+
+    call = services_billing.fake_razorpay_client.calls[0]
+    assert call["reference_id"] == tenant_id

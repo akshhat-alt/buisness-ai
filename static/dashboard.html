@@ -614,6 +614,7 @@
               <strong>Your assistant isn't live yet.</strong> Add at least one knowledge source below, then activate it yourself — no need to wait on anyone.
               ${priceNote}
             </div>
+            <a href="/onboarding" class="ba-btn ba-btn-secondary ba-btn-sm">Continue Setup</a>
             <button class="ba-btn ba-btn-sm" onclick="selfActivate()">Activate Now</button>
           </div>`;
       } else if (t.status === 'suspended') {
@@ -1258,6 +1259,12 @@
             </div>
           </div>
           ${t.status !== 'active' ? `
+          <div class="ba-muted" style="font-size:0.8125rem; display:flex; gap:14px; flex-wrap:wrap;">
+            <span>${t.onboarding.knowledge_sources > 0 ? '✓' : '○'} Knowledge (${t.onboarding.knowledge_sources})</span>
+            <span>${t.onboarding.whatsapp_connected ? '✓' : '○'} WhatsApp</span>
+            <span>${t.onboarding.employees > 0 ? '✓' : '○'} Team (${t.onboarding.employees})</span>
+            <span>${t.onboarding.automation_rules > 0 ? '✓' : '○'} Automation (${t.onboarding.automation_rules})</span>
+          </div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <input class="ba-input" type="number" min="1" placeholder="₹ amount" id="price-${t.tenant_id}" style="max-width:120px; padding:6px 10px; font-size:0.8125rem;">
             <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="adminSendBillingLink('${t.tenant_id}')">Send Billing Link</button>

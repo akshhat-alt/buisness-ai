@@ -751,6 +751,40 @@ def _admin_headers(client, services):
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+# ------------------------------------------------------------------ admin onboarding-progress view (Phase 8)
+
+
+def test_admin_tenant_list_includes_onboarding_progress(client_wa, services_wa):
+    """The admin panel's Phase 8 addition: enough per-tenant signal to
+    see where a stuck self-serve signup actually is, without opening
+    their dashboard — reusing existing stores, no new state."""
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    admin_headers = _admin_headers(client_wa, services_wa)
+
+    r = client_wa.get("/api/v1/admin/tenants", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    row = next(t for t in r.json()["tenants"] if t["tenant_id"] == tenant_id)
+    onboarding = row["onboarding"]
+    assert onboarding["whatsapp_connected"] is True  # _activate_with_whatsapp already connected PNID_1
+    assert onboarding["employees"] == 2  # owner (bootstrapped) + Ravi
+    assert onboarding["knowledge_sources"] == 1  # _activate_with_whatsapp ingests example.com
+    assert onboarding["automation_rules"] == 0
+
+    services_wa.automation_rule_store.create(
+        tenant_id=tenant_id, name="Notify on overdue", trigger_type="task_overdue", trigger_params={"hours": 24},
+        action_type="notify_owner", action_params={},
+    )
+    r2 = client_wa.get("/api/v1/admin/tenants", headers=admin_headers)
+    row2 = next(t for t in r2.json()["tenants"] if t["tenant_id"] == tenant_id)
+    assert row2["onboarding"]["automation_rules"] == 1
+
+
+def test_admin_tenant_list_requires_platform_admin(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    r = client_wa.get("/api/v1/admin/tenants", headers=headers)
+    assert r.status_code == 403
+
+
 def test_task_escalation_alerts_and_dedupes(client_wa, services_wa):
     headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
     services_wa.task_store.create(

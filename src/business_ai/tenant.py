@@ -366,8 +366,24 @@ def authorize(
     # ACTIVE. Platform admins bypass this only for lifecycle-management
     # actions themselves (activate/suspend/inspect), never for querying a
     # non-active tenant's assistant.
+    #
+    # One narrow, deliberate exception (Phase 8 onboarding): the tenant's
+    # OWN owner/manager may preview/test their assistant while still
+    # PROVISIONING, so "test before you activate" is a real capability
+    # instead of a silent 400. This is never true for SUSPENDED (that
+    # status means something is deliberately wrong, never exempted) and
+    # never true for an anonymous caller or a different tenant's
+    # principal — a real customer still never sees a non-live assistant.
     if action in CUSTOMER_FACING_ACTIONS and config.status != TenantStatus.ACTIVE:
-        raise UnauthorizedError(f"Business is {config.status.value}, not active. This action is disabled.")
+        is_own_provisioning_preview = (
+            config.status == TenantStatus.PROVISIONING
+            and principal is not None
+            and principal.is_authenticated
+            and principal.tenant_id == target_tenant_id
+            and principal.role in ("owner", "manager")
+        )
+        if not is_own_provisioning_preview:
+            raise UnauthorizedError(f"Business is {config.status.value}, not active. This action is disabled.")
 
     if principal is None or not principal.is_authenticated:
         if action in PUBLIC_ACTIONS:

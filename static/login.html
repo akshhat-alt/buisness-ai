@@ -170,7 +170,10 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Sign up failed.');
         BizAuth.setSession(data.access_token, data.tenant_id, data.role);
-        window.location.href = '/dashboard';
+        // New owners land on the guided setup wizard, not the full
+        // dashboard — everything there is still reachable via "Skip to
+        // full dashboard" for anyone who prefers it.
+        window.location.href = '/onboarding';
       } catch (err) {
         showAlert(err.message);
         btn.disabled = false;

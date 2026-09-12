@@ -80,7 +80,7 @@ from business_ai.generation import (
 )
 from business_ai.ingestion import IngestionError, SourceStore, extract_pdf_text, fetch_website_text, ingest_text
 from business_ai.leads import Lead, LeadStore, lead_stage
-from business_ai.payments import PaymentLinkError, RazorpayClient
+from business_ai.payments import PaymentLinkError, RazorpayClient, verify_razorpay_webhook_signature
 from business_ai.retrieval import OpenAIEmbeddingProvider, RetrievalEngine, VectorStore
 from business_ai.security import InvalidTenantIdError, UnsafeUrlError, validate_tenant_id
 from business_ai.tasks import Task, TaskStore
@@ -2374,8 +2374,17 @@ def create_app(services: Services | None = None) -> FastAPI:
         one-click flow can even be offered on this deployment yet. The
         dashboard uses this to decide whether to show that button at
         all, rather than showing it and failing on click — this is a
-        platform-wide capability flag, not tenant data."""
-        return {"available": bool(svc.settings.whatsapp_app_id and svc.settings.whatsapp_app_secret)}
+        platform-wide capability flag, not tenant data. app_id/config_id
+        are both public, non-secret identifiers Meta's own JS SDK needs
+        client-side (never the app SECRET, which never leaves the
+        server) — see MetaEmbeddedSignupClient's docstring."""
+        available = bool(svc.settings.whatsapp_app_id and svc.settings.whatsapp_app_secret and svc.settings.whatsapp_config_id)
+        return {
+            "available": available,
+            "app_id": svc.settings.whatsapp_app_id if available else None,
+            "config_id": svc.settings.whatsapp_config_id if available else None,
+            "api_version": svc.settings.whatsapp_api_version,
+        }
 
     @app.post("/api/tenant/whatsapp/embedded-signup")
     def connect_whatsapp_embedded_signup(
@@ -2852,7 +2861,20 @@ def create_app(services: Services | None = None) -> FastAPI:
         principal = _require(authorization)
         if principal.role != "platform_admin":
             raise HTTPException(status_code=403, detail="Platform admin only.")
-        return {"tenants": [t.model_dump() for t in svc.tenant_registry.list_all()]}
+        tenants = []
+        for t in svc.tenant_registry.list_all():
+            data = t.model_dump()
+            # Onboarding-progress checklist (Phase 8) — lets an admin see
+            # exactly where a stuck signup is without opening their
+            # dashboard, reusing existing per-tenant stores; no new state.
+            data["onboarding"] = {
+                "knowledge_sources": len(svc.source_store.list_for_tenant(t.tenant_id)),
+                "whatsapp_connected": bool(t.whatsapp_phone_number_id),
+                "employees": len(svc.employee_store.list_for_tenant(t.tenant_id)),
+                "automation_rules": len(svc.automation_rule_store.list_for_tenant(t.tenant_id)),
+            }
+            tenants.append(data)
+        return {"tenants": tenants}
 
     @app.post("/api/v1/admin/tenants/{target_tenant_id}/activate")
     def admin_activate(target_tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
@@ -2902,6 +2924,113 @@ def create_app(services: Services | None = None) -> FastAPI:
         _notify_admin_of_self_activation(updated)
         return updated.model_dump()
 
+    @app.get("/api/platform/plan")
+    def get_platform_plan() -> dict:
+        """Public, read-only capability flag — the self-serve subscription
+        price for this deployment, if the operator has configured one.
+        Same shape as GET /api/tenant/whatsapp/embedded-signup-status: the
+        onboarding wizard uses this to decide whether to show a payment
+        step at all, rather than showing one and failing on click. None
+        means this deployment doesn't charge for onboarding yet — every
+        tenant activates for free, exactly like before this endpoint
+        existed."""
+        return {"price_inr": svc.settings.platform_subscription_price_inr}
+
+    @app.post("/api/tenant/billing/checkout")
+    def self_serve_billing_checkout(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Lets the OWNER generate their own platform-subscription payment
+        link — the self-serve equivalent of an admin's billing-link
+        action, at the operator-configured price ONLY (never a caller-
+        supplied amount, so an owner can never set their own price).
+        Confirmation comes from the Razorpay webhook below when
+        PLATFORM_RAZORPAY_WEBHOOK_SECRET is configured; otherwise an
+        admin still confirms manually via mark-paid, unaffected by this
+        endpoint's existence."""
+        principal = _resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.MANAGE_ASSISTANT, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        price = svc.settings.platform_subscription_price_inr
+        if not price:
+            raise HTTPException(status_code=400, detail="This deployment doesn't require payment to activate.")
+        if tenant.billing_status == "paid":
+            return {"payment_url": None, "billing_status": "paid"}
+        if not (svc.settings.platform_razorpay_key_id and svc.settings.platform_razorpay_key_secret):
+            raise HTTPException(status_code=400, detail="Payment isn't configured on this deployment yet — contact support.")
+
+        try:
+            payment_url = svc.razorpay_client().create_payment_link(
+                key_id=svc.settings.platform_razorpay_key_id, key_secret=svc.settings.platform_razorpay_key_secret,
+                amount_inr=price, description=f"Business AI subscription — {tenant.business_name}",
+                customer_name=tenant.business_name, reference_id=tenant_id,
+            )
+        except PaymentLinkError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not create payment link: {exc}") from exc
+
+        updated = svc.tenant_registry.update_config(
+            tenant_id, subscription_price_inr=price, billing_status="invoiced",
+            billing_link_sent_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        )
+        return {"payment_url": payment_url, "billing_status": updated.billing_status}
+
+    @app.post("/api/webhooks/razorpay")
+    async def receive_razorpay_webhook(req: Request) -> dict:
+        """Auto-confirms a platform subscription payment the moment
+        Razorpay reports it paid — HMAC-signature-verified, same
+        fail-closed pattern as the WhatsApp webhook above. Always returns
+        200 for a validly-signed request even when a specific event can't
+        be matched to a tenant (an unrelated event type, or a payment
+        link this app didn't create) — Razorpay interprets non-200 as
+        "retry this", and retry-storming ourselves over a benign mismatch
+        would only make things worse. An invalid signature is the one
+        case rejected outright. Idempotent: redelivery of an
+        already-applied event is a safe no-op."""
+        raw_body = await req.body()
+        signature = req.headers.get("x-razorpay-signature")
+        if not svc.settings.platform_razorpay_webhook_secret or not verify_razorpay_webhook_signature(
+            raw_body=raw_body, signature_header=signature, webhook_secret=svc.settings.platform_razorpay_webhook_secret
+        ):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature.")
+
+        import json
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            return {"status": "ignored", "reason": "invalid_json"}
+
+        if payload.get("event") != "payment_link.paid":
+            return {"status": "ignored", "reason": "irrelevant_event"}
+
+        link_entity = payload.get("payload", {}).get("payment_link", {}).get("entity", {})
+        target_tenant_id = link_entity.get("reference_id")
+        if not target_tenant_id or link_entity.get("status") != "paid":
+            return {"status": "ignored", "reason": "no_matching_tenant_or_not_paid"}
+
+        try:
+            tenant = svc.tenant_registry.get_config(target_tenant_id)
+        except TenantNotFoundError:
+            logger.warning("Razorpay webhook referenced unknown tenant_id %s", target_tenant_id)
+            return {"status": "ignored", "reason": "unknown_tenant"}
+
+        if tenant.billing_status == "paid":
+            return {"status": "ok", "reason": "already_paid"}
+
+        amount_paise = link_entity.get("amount_paid") or link_entity.get("amount") or 0
+        updated = svc.tenant_registry.update_config(
+            target_tenant_id, billing_status="paid", billing_paid_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        )
+        svc.audit_log.record(
+            tenant_id=target_tenant_id, actor_employee_id=None, action="platform_payment_confirmed",
+            target_type="tenant", target_id=target_tenant_id, metadata={"amount_inr": amount_paise // 100},
+        )
+        logger.info("Platform subscription payment auto-confirmed for tenant %s", target_tenant_id)
+        return {"status": "ok", "billing_status": updated.billing_status}
+
     @app.post("/api/v1/admin/tenants/{target_tenant_id}/billing-link")
     def admin_send_billing_link(
         target_tenant_id: str, request: BillingLinkRequest, authorization: str | None = Header(default=None)
@@ -2928,7 +3057,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             payment_url = svc.razorpay_client().create_payment_link(
                 key_id=svc.settings.platform_razorpay_key_id, key_secret=svc.settings.platform_razorpay_key_secret,
                 amount_inr=request.amount_inr, description=f"Business AI subscription — {tenant.business_name}",
-                customer_name=tenant.business_name,
+                customer_name=tenant.business_name, reference_id=target_tenant_id,
             )
         except PaymentLinkError as exc:
             raise HTTPException(status_code=502, detail=f"Could not create payment link: {exc}") from exc
@@ -3230,6 +3359,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         ("/", "index.html"), ("/login", "login.html"), ("/login.html", "login.html"),
         ("/chat", "chat.html"), ("/chat.html", "chat.html"),
         ("/dashboard", "dashboard.html"), ("/dashboard.html", "dashboard.html"),
+        ("/onboarding", "onboarding.html"), ("/onboarding.html", "onboarding.html"),
         ("/404", "404.html"), ("/404.html", "404.html"),
     ):
         def _make_handler(fname: str):

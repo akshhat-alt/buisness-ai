@@ -64,10 +64,49 @@ def test_platform_admin_can_act_on_any_tenant(registry):
     assert config.tenant_id == "salon-b"
 
 
-def test_query_assistant_requires_active_status(registry):
-    owner_b = Principal.owner("user_2", "salon-b")  # salon-b is PROVISIONING
+def test_anonymous_and_cross_tenant_queries_still_blocked_while_provisioning(registry):
+    """salon-b is PROVISIONING: a real customer (no principal) or a
+    principal from a DIFFERENT tenant must still be rejected — only the
+    tenant's own owner/manager gets the Phase 8 preview exception below."""
     with pytest.raises(UnauthorizedError):
-        authorize(owner_b, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-b", registry=registry)
+        authorize(None, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-b", registry=registry)
+    owner_a = Principal.owner("user_1", "salon-a")
+    with pytest.raises(UnauthorizedError):
+        authorize(owner_a, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-b", registry=registry)
+
+
+def test_owner_and_manager_can_preview_their_own_provisioning_assistant(registry):
+    """Phase 8: the whole point of a "test before you activate" onboarding
+    step — the tenant's own owner/manager may query their own assistant
+    while still PROVISIONING, so the wizard's test step is a real
+    capability rather than a silent 400."""
+    owner_b = Principal.owner("user_2", "salon-b")
+    config = authorize(owner_b, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-b", registry=registry)
+    assert config.tenant_id == "salon-b"
+
+    manager_b = Principal.manager("user_4", "salon-b")
+    config = authorize(manager_b, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-b", registry=registry)
+    assert config.tenant_id == "salon-b"
+
+
+def test_staff_cannot_preview_a_provisioning_assistant(registry):
+    """Scoped narrowly to owner/manager — staff logins aren't part of the
+    onboarding flow, so the exception doesn't extend to them."""
+    staff_b = Principal.staff("user_5", "salon-b")
+    with pytest.raises(UnauthorizedError):
+        authorize(staff_b, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-b", registry=registry)
+
+
+def test_suspended_tenant_owner_cannot_preview(registry):
+    """SUSPENDED is never exempted, even for the tenant's own owner —
+    that status means something is deliberately wrong."""
+    registry.register(
+        TenantConfig(tenant_id="salon-c", business_name="Salon C", owner_email="c@x.com", status=TenantStatus.SUSPENDED),
+        override_existing=True,
+    )
+    owner_c = Principal.owner("user_6", "salon-c")
+    with pytest.raises(UnauthorizedError):
+        authorize(owner_c, TenantAction.QUERY_ASSISTANT, target_tenant_id="salon-c", registry=registry)
 
 
 def test_owner_dashboard_actions_work_while_provisioning(registry):

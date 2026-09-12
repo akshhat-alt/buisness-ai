@@ -51,7 +51,12 @@ Every tenant-scoped route calls this one function. It enforces, in order:
 1. **Lifecycle gating**: `PUBLIC_ACTIONS` (currently `QUERY_ASSISTANT` and
    `VIEW_PUBLIC_INFO`) require the tenant to be `ACTIVE`. This is checked
    *before* the principal check, because a suspended/provisioning
-   business's assistant must never answer regardless of who's asking.
+   business's assistant must never answer regardless of who's asking —
+   with one narrow, deliberate exception (Phase 8): the tenant's OWN
+   owner/manager may query their own assistant while `PROVISIONING`
+   (never `SUSPENDED`), so the onboarding wizard's "test before you
+   activate" step is real rather than a silent 403. An anonymous caller
+   or a different tenant's principal is never exempted.
 2. **Anonymous access, deliberately narrow**: `PUBLIC_ACTIONS` are the
    *only* actions allowed with `principal=None`. This is what makes the
    customer-facing chat widget work with zero login — a real customer
@@ -128,8 +133,10 @@ src/business_ai/
                   history (AutomationRunStore) — evaluated by app.py's
                   admin/automation/run cron endpoint, never a scheduler
   app.py          FastAPI app factory: wires everything into HTTP routes
-static/           Vanilla HTML/CSS/JS frontend, no build step
-tests/            pytest suite (291 tests) — see README.md
+static/           Vanilla HTML/CSS/JS frontend, no build step — includes
+                  onboarding.html (Phase 8's guided setup wizard, served
+                  at /onboarding, the new-signup landing page)
+tests/            pytest suite (315 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

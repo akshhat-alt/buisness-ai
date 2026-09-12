@@ -22,12 +22,17 @@ def test_full_business_lifecycle(client, owner_session, admin_headers, activate_
     r = client.get(f"/api/analytics?tenant_id={tenant_id}", headers=headers)
     assert r.status_code == 200, r.text
 
-    # But no one — owner or anonymous customer — can query the assistant
-    # before activation.
-    r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "hello"}, headers=headers)
-    assert r.status_code == 403, r.text
+    # An anonymous customer still can't query before activation — the
+    # public-facing widget never shows a non-live assistant.
     r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "hello"})
     assert r.status_code == 403, r.text
+
+    # But the OWNER themselves can preview/test their own not-yet-live
+    # assistant (Phase 8's "test before you activate" onboarding step) —
+    # a real, grounded answer, not a fake success state.
+    r = client.post(f"/api/ask?tenant_id={tenant_id}", json={"query": "what is this domain for"}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "answered"
 
     activate_tenant(tenant_id)
 
@@ -54,8 +59,9 @@ def test_full_business_lifecycle(client, owner_session, admin_headers, activate_
 
     r = client.get(f"/api/analytics?tenant_id={tenant_id}", headers=headers)
     analytics = r.json()
-    assert analytics["total_questions"] == 2
-    assert analytics["answered_count"] == 2
+    # 3 = the pre-activation owner preview + the two post-activation queries.
+    assert analytics["total_questions"] == 3
+    assert analytics["answered_count"] == 3
 
     r = client.post(f"/api/leads?tenant_id={tenant_id}", json={"session_id": "sess_x", "phone": "9876543210", "name": "Test Customer"})
     assert r.status_code == 200, r.text
