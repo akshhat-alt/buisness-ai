@@ -165,6 +165,9 @@ src/business_ai/
                   assembly + render over tasks/analytics/metrics/
                   feedback/dependency-risk, no new store (same shape
                   as digest.py, weekly lens instead of rolling window)
+  ops.py          Phase 14: backup/restore (tar.gz snapshot of data/)
+                  and the read-only data-integrity scanner — no new
+                  store, pure filesystem + read-only cross-store checks
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -185,8 +188,9 @@ src/business_ai/
                   (Phase 11: proposal review/approve/reject, version
                   history/rollback, kill switch, and the two evolution
                   cron endpoints), metrics_routes (Phase 12: financial
-                  summary/CSV export) — see app.py's create_app() for
-                  wiring
+                  summary/CSV export), ops_routes (Phase 14: backup
+                  trigger/list, detailed health, data integrity) — see
+                  app.py's create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -194,8 +198,10 @@ static/           Vanilla HTML/CSS/JS frontend, no build step — includes
                   onboarding.html (Phase 8's guided setup wizard, served
                   at /onboarding, the new-signup landing page)
 scripts/          rotate_secrets.py — one-time secret encryption /
-                  key-rotation tool for secrets_vault.py (Phase 9)
-tests/            pytest suite (456 tests) — see README.md
+                  key-rotation tool for secrets_vault.py (Phase 9);
+                  backup_data.py / restore_data.py — data/ snapshot +
+                  restore CLI wrapping ops.py (Phase 14)
+tests/            pytest suite (474 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

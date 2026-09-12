@@ -84,6 +84,7 @@ from business_ai.routers.insights_routes import register_insights
 from business_ai.routers.knowledge_routes import register_knowledge
 from business_ai.routers.leads_routes import register_leads
 from business_ai.routers.metrics_routes import register_metrics
+from business_ai.routers.ops_routes import register_ops
 from business_ai.routers.static_pages import register_static_pages
 from business_ai.routers.team_routes import register_team
 from business_ai.routers.tenant_settings_routes import register_tenant_settings
@@ -98,6 +99,11 @@ class Services:
     def __init__(self, settings: Settings, data_root: Path = DATA_ROOT) -> None:
         self.settings = settings
         self.data_root = data_root
+        # Sibling of data_root, not data_root.parent — keeps backups
+        # scoped to THIS specific data directory (correct under a custom
+        # data_root, e.g. in tests) and outside data_root itself, so a
+        # backup never recursively contains earlier backups.
+        self.backup_dir = data_root.parent / f"{data_root.name}_backups"
         self.user_store = UserStore(data_root / "users.db")
         self.tenant_registry = TenantRegistry(data_root / "tenants.db", secret_encryption_key=settings.secret_encryption_key)
         self.usage_limiter = UsageLimiter(data_root / "usage.db", settings)
@@ -236,6 +242,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     register_dependency(app, svc, ctx)
     register_evolution(app, svc, ctx)
     register_metrics(app, svc, ctx)
+    register_ops(app, svc, ctx)
     register_automation(app, svc, ctx)
     register_webhooks(app, svc, ctx)
     register_admin(app, svc, ctx)

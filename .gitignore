@@ -29,10 +29,12 @@ uv.lock
 
 # Data (per-tenant runtime data, never committed)
 data/
+data_backups/
 *.db
 *.sqlite3
 *.db-wal
 *.db-shm
+*.tar.gz
 
 # Test artifacts
 .pytest_cache/

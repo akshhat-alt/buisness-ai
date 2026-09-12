@@ -890,6 +890,55 @@ entries were logged and the very next cron run correctly included and
 sent that tenant's scorecard. 10 new tests across `tests/test_scorecard.py`
 (6) and `tests/test_scorecard_cron.py` (4) — 456 total, all green.
 
+## What V1.19 adds: Production Readiness — Backup, Restore & Data Integrity (Phase 14)
+
+Business AI runs as SQLite + local Chroma on a single instance (see
+ARCHITECTURE.md's "Scaling past one instance"); until this phase, a lost
+or corrupted Railway volume had zero recovery path. `ops.py` closes that
+gap with the smallest correct mechanism: a plain tar.gz snapshot of the
+whole `data/` directory, not a clever incremental format.
+
+**Backup**: `POST /api/v1/admin/backup/run` (platform_admin, same
+external-cron convention as every other admin `/run` endpoint) snapshots
+every tenant's SQLite files plus the Chroma vector store into one
+timestamped archive under `data_backups/` (a sibling of `data/`, never
+inside it — a backup must never recursively contain earlier backups).
+`GET /api/v1/admin/backup/list` lists what exists. The same mechanism is
+also a standalone script, `scripts/backup_data.py`, for a platform that
+would rather cron a shell command than hit an HTTP endpoint.
+
+**Restore**: `scripts/restore_data.py --archive ... --confirm` — refuses
+to run without `--confirm`, and moves the CURRENT data directory aside
+(never deletes it) before extracting, so a restore from the wrong
+archive is itself trivially reversible. Deliberately a script, not an
+HTTP route — restoring is the one operation here that should require
+someone with real shell access to the instance, not a bearer token.
+
+**Detailed health**: `GET /api/v1/admin/health/detailed` extends the
+bare `/healthz` liveness probe with real operational visibility — every
+core SQLite store actually opens and answers a trivial query, the
+vector store is reachable, disk space, and the most recent backup's age
+— the kind of thing an on-call rotation actually wants to see, not just
+"the process is up."
+
+**Data integrity**: `GET /api/v1/admin/data-integrity` is a read-only
+scan for orphaned cross-store references — a task assigned to an
+employee row that no longer exists, or team guidance authored by one —
+that would otherwise fail silently (e.g. a task quietly rendering
+"(unassigned)" forever, never surfacing that something is actually
+wrong). Never mutates anything; a pure report.
+
+Live-verified end to end against a real running server holding real
+accumulated data from every prior phase's smoke testing: the detailed
+health check reported every store `"ok"` and the vector store reachable;
+the integrity scan checked all 18 real tenants and found zero issues; a
+real backup was triggered over HTTP, appeared in the list endpoint and
+in the health check's `last_backup`; and `scripts/restore_data.py` was
+run against that real archive, correctly restoring the exact tenant
+count into a separate location, with the pre-restore directory
+preserved, not deleted. 18 new tests across `tests/test_ops.py` (10) and
+`tests/test_ops_routes.py` (8) — 474 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1362,3 +1411,22 @@ before the prompt/schema was finalized.
   `updated_at` bumped past the done-marking event, though `status`
   itself never leaves `"done"` from a normal workflow, so this is a
   narrow edge case, not a routine miscount.
+- **Backups are local to the instance's own disk** (Phase 14) —
+  `data_backups/` lives on the same Railway volume as `data/` itself, so
+  a full volume loss takes the backups with it. This is real recovery
+  from application-level corruption/mistakes (a bad migration, an
+  accidental delete), not disaster recovery from infrastructure loss —
+  that needs off-instance storage (S3 or similar), a deliberately
+  separate, later decision rather than something to bolt on without a
+  real object-storage credential to test against.
+- **No scheduled/automatic backups** — `POST /api/v1/admin/backup/run`
+  and `scripts/backup_data.py` both require something external to
+  trigger them (a cron, a manual run); there's no in-process scheduler,
+  consistent with every other `/run` endpoint's own documented
+  reasoning (see ARCHITECTURE.md).
+- **The data-integrity scanner checks tasks and SOP notes only** —
+  employee/lead/task cross-references specifically, the ones most likely
+  to silently degrade a rendered view. It doesn't yet check every
+  possible cross-store reference in the codebase (e.g. automation rules
+  referencing a deleted employee); extending it is additive, following
+  the same pattern.
