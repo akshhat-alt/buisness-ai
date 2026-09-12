@@ -22,6 +22,8 @@ from typing import Any, Generator
 from pydantic import BaseModel, Field
 
 from business_ai.auth import Principal
+from business_ai.secrets_vault import decrypt_secret, encrypt_secret
+from business_ai.storage import SqliteStore
 
 
 class TenantStatus(str, Enum):
@@ -217,28 +219,21 @@ PUBLIC_ACTIONS = frozenset({TenantAction.QUERY_ASSISTANT, TenantAction.VIEW_PUBL
 CUSTOMER_FACING_ACTIONS = PUBLIC_ACTIONS
 
 
-class TenantRegistry:
+class TenantRegistry(SqliteStore):
     """Thread-safe SQLite store for tenant (business) configuration."""
 
-    def __init__(self, db_path: Path | str = "data/tenants.db") -> None:
-        self.db_path = Path(db_path).resolve()
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
+    def __init__(self, db_path: Path | str = "data/tenants.db", *, secret_encryption_key: str | None = None) -> None:
+        super().__init__(db_path)
+        # Phase 9: encrypts whatsapp_access_token/razorpay_key_secret at
+        # rest — see secrets_vault.py. None (the default, and every call
+        # site until Services wires the real setting through) means
+        # those fields stay plaintext, exactly as before this existed.
+        self._secret_encryption_key = secret_encryption_key
         self._init_db()
-
-    @contextmanager
-    def _db(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
 
     def _init_db(self) -> None:
         with self._lock, self._db() as conn:
-            conn.execute("PRAGMA journal_mode=WAL;")
-            conn.execute("PRAGMA busy_timeout=10000;")
+            self._apply_default_pragmas(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tenants (
@@ -250,6 +245,14 @@ class TenantRegistry:
             conn.commit()
 
     def register(self, config: TenantConfig, *, override_existing: bool = False) -> TenantConfig:
+        # Encrypt onto a COPY for storage — never mutate the plaintext
+        # object the caller holds and may keep using after this call.
+        stored = config.model_copy(
+            update={
+                "whatsapp_access_token": encrypt_secret(config.whatsapp_access_token, key=self._secret_encryption_key),
+                "razorpay_key_secret": encrypt_secret(config.razorpay_key_secret, key=self._secret_encryption_key),
+            }
+        )
         with self._lock, self._db() as conn:
             existing = conn.execute(
                 "SELECT tenant_id FROM tenants WHERE tenant_id = ?", (config.tenant_id,)
@@ -259,13 +262,19 @@ class TenantRegistry:
             conn.execute(
                 "INSERT INTO tenants (tenant_id, config_json) VALUES (?, ?) "
                 "ON CONFLICT(tenant_id) DO UPDATE SET config_json = excluded.config_json",
-                (config.tenant_id, config.model_dump_json()),
+                (stored.tenant_id, stored.model_dump_json()),
             )
             conn.commit()
         return config
 
     def _row_to_config(self, row: sqlite3.Row) -> TenantConfig:
-        return TenantConfig.model_validate_json(row["config_json"])
+        config = TenantConfig.model_validate_json(row["config_json"])
+        return config.model_copy(
+            update={
+                "whatsapp_access_token": decrypt_secret(config.whatsapp_access_token, key=self._secret_encryption_key),
+                "razorpay_key_secret": decrypt_secret(config.razorpay_key_secret, key=self._secret_encryption_key),
+            }
+        )
 
     def get_config(self, tenant_id: str | None) -> TenantConfig:
         if not tenant_id:
@@ -324,6 +333,14 @@ class TenantRegistry:
         with self._lock, self._db() as conn:
             row = conn.execute("SELECT 1 FROM tenants WHERE tenant_id = ?", (tenant_id,)).fetchone()
             return row is not None
+
+    def delete(self, tenant_id: str) -> bool:
+        """Phase 9 tenant data deletion: removes the tenant's own config
+        row. Returns whether a row actually existed to delete."""
+        with self._lock, self._db() as conn:
+            cur = conn.execute("DELETE FROM tenants WHERE tenant_id = ?", (tenant_id,))
+            conn.commit()
+            return cur.rowcount > 0
 
 
 _REGISTRIES: dict[Path, TenantRegistry] = {}

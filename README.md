@@ -572,6 +572,105 @@ provisioning-preview exception's exact boundaries), `tests/test_whatsapp.py`
 (the extended capability flag), and `tests/test_admin_bot.py` (the
 onboarding-progress view).
 
+## What V1.14 adds: platform foundation, observability & security (Phase 9)
+
+A pure-foundation phase — no owner-facing feature, every existing
+behavior preserved and regression-tested — that the next several phases
+(dependency intelligence, self-evolution, financial truth, multi-
+location) all needed to build on safely.
+
+**`app.py` split into domain routers.** The single 3,376-line file that
+had accumulated every route across 8 phases is now an orchestrator: it
+builds `Services`, the FastAPI app and its middleware, one shared
+`RouteContext`, and calls `register_*(app, svc, ctx)` from 13 new modules
+under `src/business_ai/routers/` (auth, customer chat, the admin
+WhatsApp bot + core grounded-answer/business-health/automation-firing
+engine, leads, knowledge, tenant settings, team, feedback, automation,
+insights, webhooks, platform admin, static pages). Every route's
+behavior is byte-for-byte identical — this was a mechanical extraction,
+not a rewrite — verified by the full 315-test suite passing unchanged
+plus a live multi-router smoke pass. Shared cross-cutting helpers
+(auth resolution, `_process_question`, business-health snapshotting,
+automation firing) live in `routers/admin_bot.py` and are exposed to
+every other router via `ctx` (`routing_context.py`) — a plain attribute
+bag, not FastAPI's dependency-injection machinery, chosen specifically
+because it required touching each route's *body* not its *signature*,
+the lowest-risk way to split 100+ closures across files without
+rewriting how each one is called.
+
+**Structured logging + request tracing** (`observability.py`): every log
+line anywhere in the app — a route handler, a helper three calls deep in
+the admin bot — is one JSON object carrying the SAME `request_id` for a
+request's whole lifetime, via a contextvar `RequestContextMiddleware`
+sets once per request. The response echoes the id back
+(`X-Request-ID`), and one structured access-log line (method, path,
+status, duration, tenant_id) is emitted per request. Deliberately not a
+full OpenTelemetry/APM integration — that's real infrastructure (a
+collector, an exporter) this phase doesn't need to justify yet; this is
+the free, dependency-light half of observability.
+
+**WhatsApp/Razorpay secrets encrypted at rest** (`secrets_vault.py`):
+Fernet-encrypted, keyed by a new `SECRET_ENCRYPTION_KEY` setting.
+Backward compatible by construction — unset, every tenant's secrets stay
+plaintext exactly as before this existed (`validate_environment` flags
+this as a warning, deliberately NEVER an error that would block startup,
+unlike JWT_SECRET_KEY/ADMIN_SECRET). Migration is lazy (a tenant's
+secrets get encrypted the next time their config is written) plus a
+one-time tool, `scripts/rotate_secrets.py`, that also doubles as key-
+rotation support (`--old-key`/`--new-key`, dry-run by default).
+
+**A shared SQLite storage abstraction** (`storage.py`): the exact eight
+lines of connection-management boilerplate 13 different stores had each
+independently hand-rolled (thread lock, WAL pragma, busy timeout,
+`sqlite3.Row` factory) are now one `SqliteStore` base class every store
+inherits — zero behavior change (same SQLite, same pragmas, same
+locking), verified by the full suite. `usage_limiter.py` deliberately
+does NOT use it — it tunes a shorter timeout and skips the busy-timeout
+pragma as a real, intentional hot-path difference this extraction must
+never quietly erase.
+
+**Tenant data export/deletion** (`tenant_data.py`,
+`GET /api/tenant/export` / `POST /api/tenant/delete`): every tenant-
+scoped record across every store, as one JSON export (connection secrets
+redacted — they're credentials, not the owner's data); deletion is real,
+irreversible, and gated by typing the business's current name exactly
+(the same confirmation bar every serious platform holds a destructive
+action to), removing rows from all 13 SQLite stores plus the vector
+index plus the tenant's own config row last.
+
+**IP + tenant rate limiting** (`rate_limiting.py`): a broad, in-memory,
+fixed-window abuse guard layered in FRONT of the existing per-(tenant,
+session) question quota — which structurally cannot notice one IP
+minting new sessions to dodge its own limit, or cap a tenant's TOTAL
+request volume across every session at once. Defaults are deliberately
+generous (120/min per IP, 300/min per tenant — a real dashboard page
+load alone fires a dozen-plus calls) since this is an abuse guard, not a
+tight quota.
+
+**Security/dependency scanning**: a new `pip-audit` CI job
+(`.github/workflows/security.yml`, weekly + every push/PR) scans
+`requirements.txt` against the PyPA/OSV advisory databases. Found and
+fixed real vulnerabilities in `pypdf` (5.9 → 6.16, clean) and the new
+`cryptography` dependency (→ 50.x, clean) as part of this phase. Four
+`chromadb` advisories remain, explicitly ignored with documented
+reasoning in the workflow file: all four are in chromadb's HTTP *server*
+mode (unauthenticated API access, RBAC bypass) — this app only ever uses
+`chromadb.PersistentClient`, an in-process client with no network
+listener, so none of the four are reachable in how this app actually
+uses the dependency.
+
+Live-verified end to end against a real running server: connected a real
+WhatsApp token through a tenant with `SECRET_ENCRYPTION_KEY` set,
+confirmed the on-disk row contains no plaintext (only `enc:v1:...`),
+confirmed `GET /api/tenant` still returns the correct decrypted plaintext
+to an authorized owner, confirmed `GET /api/tenant/export` redacts it,
+and confirmed every response carries a working `X-Request-ID` with a
+matching structured JSON log line. 47 new tests across
+`tests/test_observability.py`, `tests/test_secrets_vault.py`,
+`tests/test_storage.py`, `tests/test_tenant_data_export_and_delete.py`,
+`tests/test_rate_limiting.py`, and `tests/test_config_validation.py` —
+361 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -653,7 +752,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-315 tests covering the full HTTP lifecycle (signup → ingest → activate →
+361 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
 from the new FAQ entry), owner digest (sends only to active tenants with
@@ -935,3 +1034,30 @@ before the prompt/schema was finalized.
   actual backend regardless of which step the wizard happens to be
   showing, so there was nothing to gain from inventing server-tracked
   wizard progress on top of state that already exists for real reasons.
+- **Rate limiting is in-memory and per-process.** `rate_limiting.py`'s
+  IP/tenant counters reset on restart and aren't shared across multiple
+  app instances — correct at today's single-instance scale (see
+  ARCHITECTURE.md's "Scaling past one instance"), but would need a
+  shared backend (Redis, most likely) the day this app runs more than
+  one process at once, same trigger point as the SQLite storage layer.
+- **Four `chromadb` advisories are explicitly ignored in CI**
+  (`.github/workflows/security.yml`), not fixed — they're all in
+  chromadb's HTTP server mode (unauthenticated API access, RBAC bypass),
+  and this app only ever uses `chromadb.PersistentClient` (in-process, no
+  network listener), so none are reachable in how this app actually uses
+  the dependency. Re-audit this reasoning if retrieval.py ever moves to
+  a networked chromadb deployment.
+- **`SECRET_ENCRYPTION_KEY` migration is lazy by default.** A tenant's
+  WhatsApp/Razorpay secrets are only encrypted the next time their config
+  is written, unless an operator explicitly runs
+  `scripts/rotate_secrets.py --apply` once after setting the key — a
+  deployment that sets the key and never runs that script keeps
+  plaintext secrets for any tenant that happens not to be updated again.
+- **The router split's shared `ctx` object has no type-checked contract.**
+  `RouteContext` (`routing_context.py`) is a plain, dynamically-typed
+  attribute bag by design (see its own docstring for why), which means a
+  typo in a cross-module `ctx.` reference is a runtime `AttributeError`
+  on first use, not a static-analysis or import-time failure — mitigated
+  today by `pyflakes` catching undefined bare names and the 361-test
+  suite exercising nearly every route, but a genuinely different
+  guarantee than a typed dependency-injection contract would give.

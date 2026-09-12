@@ -1,0 +1,438 @@
+"""Platform-admin surface: tenant lifecycle (list/activate/suspend),
+platform billing (send-link/mark-paid), and every cron-triggered
+`/run` endpoint (automation, digest, reengagement, reminders, winback,
+task-escalation) — Phase 9 extraction from app.py. Every route here is
+platform_admin-only; there's no in-process scheduler anywhere in this
+app, by deliberate design (see ARCHITECTURE.md) — each `/run` endpoint
+is meant to be hit by an external cron.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+
+from fastapi import FastAPI, Header, HTTPException
+
+from business_ai.alerts import (
+    render_billing_link_email,
+    render_task_escalation_alert,
+    render_tenant_activated_email,
+)
+from business_ai.digest import has_digest_content, render_owner_digest, render_owner_whatsapp_summary
+from business_ai.email_sender import EmailSendError
+from business_ai.formatting import _format_appointment_ist, _whatsapp_link
+from business_ai.constants import (
+    REENGAGEMENT_MAX_AGE_HOURS,
+    REENGAGEMENT_MIN_AGE_HOURS,
+    REMINDER_WINDOW_END_HOURS,
+    REMINDER_WINDOW_START_HOURS,
+    RECURRING_FEEDBACK_THRESHOLD,
+    TASK_ESCALATION_HOURS,
+)
+from business_ai.leads import Lead
+from business_ai.payments import PaymentLinkError
+from business_ai.schemas import BillingLinkRequest, MarkPaidRequest
+from business_ai.tenant import TenantAction, TenantConfig, TenantNotFoundError, TenantStatus, UnauthorizedError, authorize
+from business_ai.whatsapp import REENGAGEMENT_WINDOW_CLOSED_CODE, WhatsAppSendError
+
+logger = logging.getLogger(__name__)
+
+
+def register_admin(app: FastAPI, svc, ctx) -> None:
+    @app.post("/api/v1/admin/automation/run")
+    def admin_run_automation(authorization: str | None = Header(default=None)) -> dict:
+        """The one cron entrypoint for the entire automation engine — meant
+        to be invoked periodically by an external cron, same convention as
+        every other admin/*/run endpoint. Fail-closed order: tenant must
+        be ACTIVE, then automation_enabled must be true, then each of the
+        tenant's own enabled rules is evaluated via _fire_automation_rule.
+        Idempotent: re-running this immediately after a successful run
+        does nothing new, since dedup lives in automation_run_store."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        processed: dict[str, dict] = {}
+        skipped_tenants: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            if not tenant.automation_enabled:
+                skipped_tenants.append({"tenant_id": tenant.tenant_id, "reason": "automation kill switch is off"})
+                continue
+            rules = svc.automation_rule_store.list_for_tenant(tenant.tenant_id, enabled_only=True)
+            if not rules:
+                continue
+            tenant_result: dict[str, list[str]] = {"fired": [], "given_up": [], "failed": []}
+            for rule in rules:
+                outcome = ctx._fire_automation_rule(tenant, rule)
+                for key in tenant_result:
+                    tenant_result[key].extend(f"{rule.rule_id}:{t}" for t in outcome[key])
+            if any(tenant_result.values()):
+                processed[tenant.tenant_id] = tenant_result
+        return {"processed": processed, "skipped": skipped_tenants}
+
+    # -------------------------------------------------------------- platform admin
+    @app.get("/api/v1/admin/tenants")
+    def admin_list_tenants(authorization: str | None = Header(default=None)) -> dict:
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+        tenants = []
+        for t in svc.tenant_registry.list_all():
+            data = t.model_dump()
+            # Onboarding-progress checklist (Phase 8) — lets an admin see
+            # exactly where a stuck signup is without opening their
+            # dashboard, reusing existing per-tenant stores; no new state.
+            data["onboarding"] = {
+                "knowledge_sources": len(svc.source_store.list_for_tenant(t.tenant_id)),
+                "whatsapp_connected": bool(t.whatsapp_phone_number_id),
+                "employees": len(svc.employee_store.list_for_tenant(t.tenant_id)),
+                "automation_rules": len(svc.automation_rule_store.list_for_tenant(t.tenant_id)),
+            }
+            tenants.append(data)
+        return {"tenants": tenants}
+
+    @app.post("/api/v1/admin/tenants/{target_tenant_id}/activate")
+    def admin_activate(target_tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = ctx._require(authorization)
+        try:
+            authorize(principal, TenantAction.ACTIVATE_TENANT, target_tenant_id=target_tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        blocker = ctx._activation_blocker(target_tenant_id)
+        if blocker:
+            raise HTTPException(status_code=400, detail=blocker)
+
+        updated = svc.tenant_registry.update_status(target_tenant_id, TenantStatus.ACTIVE)
+        ctx._notify_owner_of_activation(updated)
+        return updated.model_dump()
+
+
+    @app.post("/api/v1/admin/tenants/{target_tenant_id}/billing-link")
+    def admin_send_billing_link(
+        target_tenant_id: str, request: BillingLinkRequest, authorization: str | None = Header(default=None)
+    ) -> dict:
+        """Generates a Business AI subscription payment link (platform's
+        own Razorpay account, never the tenant's) and emails it to the
+        owner. Same "send a link, confirm manually" shape as every other
+        payment feature in this app — see payments.py's own scope note
+        on why there's no webhook-based auto-confirmation."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+        try:
+            tenant = svc.tenant_registry.get_config(target_tenant_id)
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if not (svc.settings.platform_razorpay_key_id and svc.settings.platform_razorpay_key_secret):
+            raise HTTPException(status_code=400, detail="Platform Razorpay isn't configured (PLATFORM_RAZORPAY_KEY_ID/SECRET).")
+        if not (svc.settings.resend_api_key and svc.settings.digest_from_email):
+            raise HTTPException(status_code=400, detail="Email sending is not configured for this deployment.")
+
+        try:
+            payment_url = svc.razorpay_client().create_payment_link(
+                key_id=svc.settings.platform_razorpay_key_id, key_secret=svc.settings.platform_razorpay_key_secret,
+                amount_inr=request.amount_inr, description=f"Business AI subscription — {tenant.business_name}",
+                customer_name=tenant.business_name, reference_id=target_tenant_id,
+            )
+        except PaymentLinkError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not create payment link: {exc}") from exc
+
+        subject, html = render_billing_link_email(
+            business_name=tenant.business_name, assistant_name=tenant.assistant_name,
+            amount_inr=request.amount_inr, payment_url=payment_url,
+        )
+        try:
+            svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not send the billing email: {exc}") from exc
+
+        updated = svc.tenant_registry.update_config(
+            target_tenant_id, subscription_price_inr=request.amount_inr, billing_status="invoiced",
+            billing_link_sent_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        )
+        return {"sent_to": tenant.owner_email, "payment_url": payment_url, "billing_status": updated.billing_status}
+
+    @app.post("/api/v1/admin/tenants/{target_tenant_id}/mark-paid")
+    def admin_mark_paid(
+        target_tenant_id: str, request: MarkPaidRequest, authorization: str | None = Header(default=None)
+    ) -> dict:
+        """Manual payment confirmation — the admin checked their own
+        Razorpay dashboard and is recording it here. No webhook-based
+        auto-confirmation exists (same honest limitation as deposit
+        links); see README's known-limitations section."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+        try:
+            svc.tenant_registry.get_config(target_tenant_id)
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        fields: dict = {"billing_status": "paid", "billing_paid_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        if request.amount_inr is not None:
+            fields["subscription_price_inr"] = request.amount_inr
+        updated = svc.tenant_registry.update_config(target_tenant_id, **fields)
+        return updated.model_dump()
+
+    @app.post("/api/v1/admin/tenants/{target_tenant_id}/suspend")
+    def admin_suspend(target_tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = ctx._require(authorization)
+        try:
+            authorize(principal, TenantAction.SUSPEND_TENANT, target_tenant_id=target_tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        updated = svc.tenant_registry.update_status(target_tenant_id, TenantStatus.SUSPENDED)
+        return updated.model_dump()
+
+    @app.post("/api/v1/admin/digest/run")
+    def admin_run_digest(authorization: str | None = Header(default=None)) -> dict:
+        """Sends the owner digest to every ACTIVE tenant with activity in
+        the window. Meant to be triggered by an external scheduler
+        (Railway cron / GitHub Actions scheduled workflow hitting this
+        endpoint) — no in-process scheduler here; that would be a new
+        background-thread lifecycle to manage for something that only
+        needs to fire once a day."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        if not svc.settings.resend_api_key or not svc.settings.digest_from_email:
+            return {
+                "sent": [], "skipped": [], "failed": [],
+                "note": "Digest email is not configured (RESEND_API_KEY / DIGEST_FROM_EMAIL).",
+            }
+
+        sender = svc.email_sender()
+        since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - svc.settings.digest_window_hours * 3600))
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+
+        sent: list[str] = []
+        skipped: list[dict] = []
+        failed: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "not active"})
+                continue
+
+            new_leads = svc.lead_store.list_for_tenant(tenant.tenant_id, since_iso=since_iso)
+            analytics = svc.analytics_store.summary_for_tenant(tenant.tenant_id, since_iso=since_iso)
+            employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
+            overdue_lines = ctx._overdue_lines_by_employee(svc.task_store.list_overdue(tenant.tenant_id), employees_by_id)
+            recurring_lines = ctx._recurring_feedback_lines(tenant.tenant_id, since_iso=since_iso)
+            if not has_digest_content(
+                new_leads, analytics, overdue_summary_lines=overdue_lines, recurring_feedback_lines=recurring_lines
+            ):
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no activity in window"})
+                continue
+
+            try:
+                action_items = svc.generator().generate_action_brief(
+                    business_name=tenant.business_name, total_questions=analytics.total_questions,
+                    answered_count=analytics.answered_count, abstention_count=analytics.abstention_count,
+                    buying_intent_count=analytics.buying_intent_count, dissatisfaction_count=analytics.dissatisfaction_count,
+                    new_leads_count=len(new_leads), recent_knowledge_gaps=analytics.recent_knowledge_gaps,
+                    overdue_task_lines=overdue_lines, recurring_feedback_lines=recurring_lines,
+                )
+            except Exception as exc:  # noqa: BLE001 - a failed advisory brief must not block the digest itself
+                logger.warning("Action brief generation failed for tenant %s: %s", tenant.tenant_id, exc)
+                action_items = []
+
+            subject, html = render_owner_digest(
+                tenant, new_leads=new_leads, analytics=analytics,
+                window_hours=svc.settings.digest_window_hours, dashboard_url=dashboard_url,
+                action_items=action_items, overdue_summary_lines=overdue_lines, recurring_feedback_lines=recurring_lines,
+            )
+            try:
+                sender.send(to=tenant.owner_email, subject=subject, html_body=html)
+                sent.append(tenant.tenant_id)
+            except EmailSendError as exc:
+                failed.append({"tenant_id": tenant.tenant_id, "error": str(exc)})
+
+            # Bonus fast path alongside the guaranteed email above — never
+            # gates it, never blocks it, failure here is invisible to the
+            # caller by design (see _notify_management_whatsapp's docstring).
+            window_label = "today" if svc.settings.digest_window_hours <= 24 else f"the last {svc.settings.digest_window_hours}h"
+            whatsapp_summary = render_owner_whatsapp_summary(
+                tenant, new_leads=new_leads, analytics=analytics,
+                open_gaps_count=len(svc.analytics_store.list_open_gaps(tenant.tenant_id)),
+                window_label=window_label, action_items=action_items,
+                overdue_summary_lines=overdue_lines, recurring_feedback_lines=recurring_lines,
+            )
+            ctx._notify_management_whatsapp(tenant, whatsapp_summary)
+
+        return {"sent": sent, "skipped": skipped, "failed": failed}
+
+    def _send_whatsapp_best_effort(tenant: TenantConfig, lead: Lead, body: str) -> bool:
+        """Shared by every automation job below. WhatsApp is the only
+        delivery channel wired up for reminders/re-engagement/win-back —
+        a tenant without WhatsApp connected, or a lead without a phone
+        number, is skipped, not an error: these are background batch
+        jobs over many tenants, not a single user-facing request."""
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token and lead.phone):
+            return False
+        try:
+            svc.whatsapp_client().send_text(
+                phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                to=lead.phone, body=body,
+            )
+            return True
+        except WhatsAppSendError as exc:
+            logger.warning("Automation WhatsApp send failed for tenant %s lead %s: %s", tenant.tenant_id, lead.lead_id, exc)
+            return False
+
+    @app.post("/api/v1/admin/reengagement/run")
+    def admin_run_reengagement(authorization: str | None = Header(default=None)) -> dict:
+        """Missed-lead re-engagement: leaving contact info at all is
+        already the buying-intent signal (see leads.list_for_reengagement)
+        — no separate analytics join needed. External-cron-triggered,
+        same shape as the digest above."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        now = time.time()
+        older_than_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - REENGAGEMENT_MIN_AGE_HOURS * 3600))
+        newer_than_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - REENGAGEMENT_MAX_AGE_HOURS * 3600))
+
+        sent: list[str] = []
+        skipped: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            for lead in svc.lead_store.list_for_reengagement(
+                tenant.tenant_id, older_than_iso=older_than_iso, newer_than_iso=newer_than_iso
+            ):
+                body = (
+                    f"Hi! This is {tenant.assistant_name} from {tenant.business_name}. Just checking in on your "
+                    "recent message — happy to help you book, or answer anything else!"
+                )
+                if _send_whatsapp_best_effort(tenant, lead, body):
+                    svc.lead_store.mark_reengaged(tenant.tenant_id, lead.lead_id)
+                    sent.append(lead.lead_id)
+                else:
+                    skipped.append({"lead_id": lead.lead_id, "tenant_id": tenant.tenant_id, "reason": "no WhatsApp channel available"})
+        return {"sent": sent, "skipped": skipped}
+
+    @app.post("/api/v1/admin/reminders/run")
+    def admin_run_reminders(authorization: str | None = Header(default=None)) -> dict:
+        """Appointment reminders (see leads.list_for_reminders). Meant to
+        run once daily; the ~24h window (with slack for cron drift) means
+        a single daily run catches every upcoming appointment exactly
+        once before it happens."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        now = time.time()
+        window_start_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + REMINDER_WINDOW_START_HOURS * 3600))
+        window_end_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + REMINDER_WINDOW_END_HOURS * 3600))
+
+        sent: list[str] = []
+        skipped: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            for lead in svc.lead_store.list_for_reminders(
+                tenant.tenant_id, window_start_iso=window_start_iso, window_end_iso=window_end_iso
+            ):
+                when = _format_appointment_ist(lead.appointment_at)
+                body = f"Reminder: your appointment with {tenant.business_name} is on {when}. Reply if you need to reschedule!"
+                if _send_whatsapp_best_effort(tenant, lead, body):
+                    svc.lead_store.mark_reminder_sent(tenant.tenant_id, lead.lead_id)
+                    sent.append(lead.lead_id)
+                else:
+                    skipped.append({"lead_id": lead.lead_id, "tenant_id": tenant.tenant_id, "reason": "no WhatsApp channel available"})
+        return {"sent": sent, "skipped": skipped}
+
+    @app.post("/api/v1/admin/winback/run")
+    def admin_run_winback(authorization: str | None = Header(default=None)) -> dict:
+        """Customer win-back (see leads.list_for_winback). Deliberately
+        scoped to WhatsApp-sourced leads: a WhatsApp session_id is stable
+        per phone number forever (see whatsapp.py), so that Lead row
+        already IS a durable customer record. A web-chat session_id is
+        random per page load, so there's no reliable way yet to recognize
+        the same person returning to the website across visits."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        sent: list[str] = []
+        skipped: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            threshold_days = (
+                tenant.winback_after_days if tenant.winback_after_days is not None else svc.settings.winback_default_days
+            )
+            cutoff_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - threshold_days * 86400))
+            for lead in svc.lead_store.list_for_winback(tenant.tenant_id, source="whatsapp", cutoff_iso=cutoff_iso):
+                body = (
+                    f"We miss you at {tenant.business_name}! It's been a while — we'd love to see you again "
+                    "whenever you're ready."
+                )
+                if _send_whatsapp_best_effort(tenant, lead, body):
+                    svc.lead_store.mark_winback_sent(tenant.tenant_id, lead.lead_id)
+                    sent.append(lead.lead_id)
+                else:
+                    skipped.append({"lead_id": lead.lead_id, "tenant_id": tenant.tenant_id, "reason": "no WhatsApp channel available"})
+        return {"sent": sent, "skipped": skipped}
+
+    @app.post("/api/v1/admin/task-escalation/run")
+    def admin_run_task_escalation(authorization: str | None = Header(default=None)) -> dict:
+        """Proactive alert for tasks overdue by more than
+        TASK_ESCALATION_HOURS — a daily digest mention isn't enough for
+        something that's been sitting for two days. Meant to be polled
+        more often than the once-a-day digest (e.g. every few hours);
+        idempotent either way since escalation is deduped per-task via
+        TaskStore.mark_reminder_sent (reused as "already escalated", the
+        same field name/shape as the lead-reminder marker). Consolidates
+        every escalating task into ONE message per tenant per run, not
+        one ping per task."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        escalation_cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - TASK_ESCALATION_HOURS * 3600))
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+        escalated: list[str] = []
+        skipped: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            overdue = svc.task_store.list_overdue(tenant.tenant_id)
+            to_escalate = [
+                t for t in overdue if t.due_at and t.due_at < escalation_cutoff and t.reminder_sent_at is None
+            ]
+            if not to_escalate:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "nothing newly escalating"})
+                continue
+
+            employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
+            overdue_lines = ctx._overdue_lines_by_employee(to_escalate, employees_by_id)
+            sent_count = ctx._notify_management_whatsapp(
+                tenant, "🔴 Task escalation — significantly overdue:\n" + "\n".join(overdue_lines)
+            )
+            if svc.settings.resend_api_key and svc.settings.digest_from_email:
+                subject, html = render_task_escalation_alert(
+                    business_name=tenant.business_name, overdue_lines=overdue_lines, dashboard_url=dashboard_url,
+                )
+                try:
+                    svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+                except EmailSendError as exc:
+                    logger.warning("Task escalation email failed for tenant %s: %s", tenant.tenant_id, exc)
+            for t in to_escalate:
+                svc.task_store.mark_reminder_sent(tenant.tenant_id, t.task_id)
+            escalated.append(tenant.tenant_id)
+            if sent_count == 0:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no WhatsApp recipient reachable (email attempted)"})
+        return {"escalated": escalated, "skipped": skipped}
+

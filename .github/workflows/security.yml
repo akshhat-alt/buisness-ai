@@ -1,0 +1,49 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, independent of any code change — a dependency can gain a
+    # new published CVE without this repo touching a single line.
+    - cron: "0 6 * * 1"
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # Scans exactly the pinned ranges in requirements.txt against the
+      # PyPA/OSV advisory databases. Fails the job on any known
+      # vulnerability EXCEPT the explicit, documented exceptions below —
+      # a new finding must be either fixed (bump the dependency in
+      # requirements.txt) or added here with the same kind of reasoning,
+      # never silently ignored.
+      #
+      # Ignored, with reasoning (checked 2026-09-12):
+      #   PYSEC-2026-311, PYSEC-2026-3814, PYSEC-2026-3815, PYSEC-2026-3813
+      #   — all four are in chromadb's HTTP SERVER mode: unauthenticated/
+      #   under-authorized access to its `/api/v2/tenants/.../collections`
+      #   endpoints and its RBAC authorization provider. This app never
+      #   starts a chromadb server or exposes its API — retrieval.py uses
+      #   `chromadb.PersistentClient`, an in-process, file-backed client
+      #   with no network listener and no auth layer in the request path
+      #   at all. Re-check this reasoning if retrieval.py ever switches to
+      #   `HttpClient`/a networked chromadb deployment.
+      - name: pip-audit (dependency vulnerability scan)
+        run: >
+          pip-audit -r requirements.txt
+          --ignore-vuln PYSEC-2026-311
+          --ignore-vuln PYSEC-2026-3814
+          --ignore-vuln PYSEC-2026-3815
+          --ignore-vuln PYSEC-2026-3813

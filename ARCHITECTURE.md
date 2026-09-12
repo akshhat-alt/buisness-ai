@@ -132,11 +132,43 @@ src/business_ai/
                   action rules (AutomationRuleStore) and their execution
                   history (AutomationRunStore) — evaluated by app.py's
                   admin/automation/run cron endpoint, never a scheduler
-  app.py          FastAPI app factory: wires everything into HTTP routes
+  storage.py      Phase 9: SqliteStore, the shared connection-management
+                  base every store above inherits (WAL, busy timeout,
+                  thread lock) — one place to change if the storage
+                  backend ever needs to move past SQLite
+  secrets_vault.py  Phase 9: Fernet field-level encryption for a
+                  tenant's WhatsApp/Razorpay secrets at rest
+  observability.py  Phase 9: structured JSON logging + per-request
+                  trace ids (RequestContextMiddleware)
+  rate_limiting.py  Phase 9: IP/tenant-wide fixed-window abuse guard,
+                  layered in front of usage_limiter's per-session quota
+  tenant_data.py  Phase 9: full tenant data export + irreversible
+                  deletion across every store
+  formatting.py   Pure formatting/parsing helpers with no store/ctx
+                  dependency (appointment time parsing, WhatsApp links)
+  schemas.py      Every HTTP request/response Pydantic model
+  constants.py    PROJECT_ROOT/DATA_ROOT/STATIC_DIR + automation-window
+                  constants — computed once here, never re-derived
+  routing_context.py  Phase 9: RouteContext, the plain attribute bag
+                  routers/* modules use to share cross-cutting helpers
+  routers/        Phase 9: one register_X(app, svc, ctx) module per
+                  domain — admin_bot (the core engine: auth resolution,
+                  the grounded-answer pipeline, business-health/
+                  automation-firing, plus the WhatsApp webhook and admin-
+                  bot command grammar), auth_routes, customer_routes,
+                  leads_routes, knowledge_routes, tenant_settings_routes,
+                  team_routes, feedback_routes, automation_routes,
+                  insights_routes, webhook_routes, admin_routes,
+                  static_pages — see app.py's create_app() for wiring
+  app.py          FastAPI app factory: Services + middleware + calls
+                  every routers/register_X — the routes themselves moved
+                  to routers/ in Phase 9, this file no longer defines any
 static/           Vanilla HTML/CSS/JS frontend, no build step — includes
                   onboarding.html (Phase 8's guided setup wizard, served
                   at /onboarding, the new-signup landing page)
-tests/            pytest suite (315 tests) — see README.md
+scripts/          rotate_secrets.py — one-time secret encryption /
+                  key-rotation tool for secrets_vault.py (Phase 9)
+tests/            pytest suite (361 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

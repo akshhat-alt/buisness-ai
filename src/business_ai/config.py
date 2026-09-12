@@ -40,6 +40,12 @@ class Settings:
     admin_secret: str | None
     auth_required: bool
     app_env: str
+    # Encrypts a tenant's WhatsApp access token / Razorpay key secret at
+    # rest (see secrets_vault.py). Unset = those fields stay plaintext,
+    # exactly as every tenant onboarded before this setting existed —
+    # validate_environment() below fails closed on this in production,
+    # same tier as JWT_SECRET_KEY/ADMIN_SECRET.
+    secret_encryption_key: str | None
 
     # CORS
     allowed_origins: list[str]
@@ -54,6 +60,15 @@ class Settings:
     requests_per_minute: int
     max_concurrent_requests: int
     max_query_length: int
+
+    # Phase 9: broad, app-wide abuse guards layered in FRONT of the
+    # per-(tenant, session) question quota above — see rate_limiting.py
+    # for why a single session-scoped counter can't catch either of
+    # these on its own. Defaults are deliberately generous (a real
+    # dashboard page load alone fires a dozen-plus API calls) — this is
+    # an abuse guard, not a tight per-user quota; 0 disables a dimension.
+    ip_requests_per_minute: int
+    tenant_requests_per_minute: int
 
     # WhatsApp handoff (wa.me click-to-chat fallback link)
     default_whatsapp_number: str | None
@@ -138,6 +153,7 @@ def load_settings() -> Settings:
         jwt_issuer=os.getenv("JWT_ISSUER", "business-ai-auth").strip() or "business-ai-auth",
         jwt_audience=os.getenv("JWT_AUDIENCE", "business-ai-api").strip() or "business-ai-api",
         admin_secret=admin_secret.strip() if admin_secret and admin_secret.strip() else None,
+        secret_encryption_key=(os.getenv("SECRET_ENCRYPTION_KEY") or "").strip() or None,
         auth_required=_bool_env("AUTH_REQUIRED", False),
         app_env=os.getenv("APP_ENV", "development").strip() or "development",
         allowed_origins=allowed_origins,
@@ -148,6 +164,8 @@ def load_settings() -> Settings:
         requests_per_minute=_int_env("REQUESTS_PER_MINUTE", 2),
         max_concurrent_requests=_int_env("MAX_CONCURRENT_REQUESTS_PER_SESSION", 1),
         max_query_length=_int_env("MAX_QUERY_LENGTH", 1000),
+        ip_requests_per_minute=_int_env("IP_REQUESTS_PER_MINUTE", 120),
+        tenant_requests_per_minute=_int_env("TENANT_REQUESTS_PER_MINUTE", 300),
         default_whatsapp_number=(os.getenv("DEFAULT_WHATSAPP_NUMBER") or "").strip() or None,
         whatsapp_app_secret=(os.getenv("WHATSAPP_APP_SECRET") or "").strip() or None,
         whatsapp_verify_token=(os.getenv("WHATSAPP_VERIFY_TOKEN") or "").strip() or None,
@@ -209,6 +227,23 @@ def validate_environment(settings: Settings) -> list[ValidationIssue]:
                     level=level,
                 )
             )
+
+    # Deliberately ALWAYS a warning, never an "error" that blocks startup
+    # even in production — unlike JWT_SECRET_KEY/ADMIN_SECRET (missing
+    # either breaks the app outright), a missing SECRET_ENCRYPTION_KEY
+    # just means WhatsApp/Razorpay secrets stay plaintext, exactly as
+    # every tenant onboarded before this setting existed. Failing closed
+    # here would break every already-deployed instance's next restart —
+    # the opposite of the backward-compatible migration this setting is
+    # supposed to be.
+    if not settings.secret_encryption_key or len(settings.secret_encryption_key) < 16:
+        issues.append(
+            ValidationIssue(
+                code="WEAK_SECRET_ENCRYPTION_KEY",
+                message="SECRET_ENCRYPTION_KEY is missing or too short — WhatsApp/Razorpay secrets are stored in plaintext until this is set (see scripts/rotate_secrets.py to encrypt existing tenants once it is).",
+                level="warning",
+            )
+        )
 
     if not os.getenv("OPENAI_API_KEY"):
         issues.append(ValidationIssue(code="MISSING_OPENAI_API_KEY", message="OPENAI_API_KEY is not set.", level="error"))

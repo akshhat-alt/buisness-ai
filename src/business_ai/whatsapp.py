@@ -245,7 +245,10 @@ def parse_webhook_payload(payload: dict) -> list[IncomingWhatsAppMessage]:
     return messages
 
 
-class WhatsAppInboxStore:
+from business_ai.storage import SqliteStore
+
+
+class WhatsAppInboxStore(SqliteStore):
     """Idempotency guard: Meta redelivers webhook events on a non-200
     response and can occasionally deliver the same event more than once
     even on success. Without this, a redelivery would answer (and bill
@@ -253,24 +256,12 @@ class WhatsAppInboxStore:
     id, first-write-wins."""
 
     def __init__(self, db_path: Path | str = "data/whatsapp_inbox.db") -> None:
-        self.db_path = Path(db_path).resolve()
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
+        super().__init__(db_path)
         self._init_db()
-
-    @contextmanager
-    def _db(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
 
     def _init_db(self) -> None:
         with self._lock, self._db() as conn:
-            conn.execute("PRAGMA journal_mode=WAL;")
-            conn.execute("PRAGMA busy_timeout=10000;")
+            self._apply_default_pragmas(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS processed_messages (
@@ -296,3 +287,12 @@ class WhatsAppInboxStore:
                 return True
             except sqlite3.IntegrityError:
                 return False
+
+    def delete_for_tenant(self, tenant_id: str) -> int:
+        """Phase 9 tenant data deletion: removes every row for this
+        tenant. Returns the number of rows deleted, for the export/
+        deletion endpoint's summary report."""
+        with self._lock, self._db() as conn:
+            cur = conn.execute("DELETE FROM processed_messages WHERE tenant_id = ?", (tenant_id,))
+            conn.commit()
+            return cur.rowcount

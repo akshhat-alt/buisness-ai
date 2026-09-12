@@ -1,0 +1,37 @@
+"""Shared path/window constants (Phase 9 extraction from app.py), kept in
+one place at the package root — never duplicated into routers/ modules —
+because PROJECT_ROOT is computed relative to `__file__`'s own location;
+computing it again from a deeper module would silently point at the
+wrong directory.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# Anchored to this project's own directory, never to the launching
+# process's cwd. A cwd-relative "data" path is a real cross-project
+# isolation hazard: this app could otherwise be started from a sibling
+# project's directory and silently read/write that project's own
+# data/ (found in dev when a mismatched schema surfaced the collision
+# before any actual write happened).
+DATA_ROOT = PROJECT_ROOT / "data"
+STATIC_DIR = PROJECT_ROOT / "static"
+
+# Automation windows (implementation constants, not tenant/platform-tunable
+# knobs — see winback_after_days/deposit_amount_inr on TenantConfig for the
+# dials that genuinely vary per business). Each of these is read by an
+# admin/*/run endpoint meant to be invoked once a day by an external cron;
+# there's no in-process scheduler in this app.
+REENGAGEMENT_MIN_AGE_HOURS = 48  # give a lead a fair chance to book on their own first
+REENGAGEMENT_MAX_AGE_HOURS = 24 * 14  # older than this is stale — don't blast old history on first run
+REMINDER_WINDOW_START_HOURS = 20  # a ~24h-before reminder, with slack for cron timing drift
+REMINDER_WINDOW_END_HOURS = 28
+# A feedback theme reported at least this many times in one window is a
+# pattern worth surfacing to management (digest, action brief, scorecard),
+# not a one-off complaint.
+RECURRING_FEEDBACK_THRESHOLD = 3
+# A task overdue by more than this is a proactive-alert-worthy problem,
+# not just a line in tomorrow's digest — see /api/v1/admin/task-escalation/run.
+TASK_ESCALATION_HOURS = 48

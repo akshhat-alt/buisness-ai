@@ -248,3 +248,20 @@ class UsageLimiter:
             if not row:
                 return {"questions_remaining": quota_limit, "questions_limit": quota_limit}
             return {"questions_remaining": row["remaining_quota"], "questions_limit": row["quota_limit"]}
+
+    def delete_for_tenant(self, tenant_id: str) -> int:
+        """Phase 9 tenant data deletion. session_usage/usage_reservations
+        key on `f"{tenant_id}:{session_id}"`, not a separate tenant_id
+        column (see `_key`) — matched here with a LIKE prefix instead."""
+        prefix = f"{tenant_id}:%"
+        with self._get_connection() as conn:
+            keys = [r["session_key"] for r in conn.execute(
+                "SELECT session_key FROM session_usage WHERE session_key LIKE ?;", (prefix,)
+            ).fetchall()]
+            cur = conn.execute("DELETE FROM session_usage WHERE session_key LIKE ?;", (prefix,))
+            deleted = cur.rowcount
+            if keys:
+                placeholders = ",".join("?" for _ in keys)
+                conn.execute(f"DELETE FROM usage_reservations WHERE session_key IN ({placeholders});", keys)
+            conn.commit()
+            return deleted
