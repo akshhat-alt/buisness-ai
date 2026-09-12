@@ -34,6 +34,7 @@ from business_ai.constants import (
 from business_ai.dependency_graph import compute_dependency_snapshot
 from business_ai.leads import Lead
 from business_ai.payments import PaymentLinkError
+from business_ai.scorecard import build_weekly_scorecard_data, has_scorecard_content, render_weekly_scorecard_email, render_weekly_scorecard_whatsapp
 from business_ai.schemas import BillingLinkRequest, MarkPaidRequest
 from business_ai.tenant import TenantAction, TenantConfig, TenantNotFoundError, TenantStatus, UnauthorizedError, authorize
 from business_ai.whatsapp import REENGAGEMENT_WINDOW_CLOSED_CODE, WhatsAppSendError
@@ -270,6 +271,62 @@ def register_admin(app: FastAPI, svc, ctx) -> None:
                 overdue_summary_lines=overdue_lines, recurring_feedback_lines=recurring_lines,
             )
             ctx._notify_management_whatsapp(tenant, whatsapp_summary)
+
+        return {"sent": sent, "skipped": skipped, "failed": failed}
+
+    @app.post("/api/v1/admin/weekly-scorecard/run")
+    def admin_run_weekly_scorecard(authorization: str | None = Header(default=None)) -> dict:
+        """Phase 13: a week-over-week rollup (tasks completed, customer
+        dissatisfaction rate, manual sales/expense/collections, top
+        recurring feedback theme, open single-point-of-failure risk
+        count) built entirely from data every earlier phase already
+        collects — no new store. Meant to be triggered weekly by the
+        same external-cron convention as every other admin/*/run
+        endpoint; unlike the daily digest this has no persistent dedup
+        because the caller controls the cadence (calling it twice in one
+        week just resends the same week's numbers, which is harmless,
+        not a data-integrity problem)."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        now = time.time()
+        one_week_ago_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 7 * 86400))
+        two_weeks_ago_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 14 * 86400))
+
+        sent: list[str] = []
+        skipped: list[dict] = []
+        failed: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "not active"})
+                continue
+
+            snapshot = compute_dependency_snapshot(
+                tenant.tenant_id, employee_store=svc.employee_store, task_store=svc.task_store,
+                sop_store=svc.sop_store, lead_store=svc.lead_store,
+            )
+            high_severity_count = len([r for r in snapshot["risks"] if r["severity"] == "high"])
+
+            data = build_weekly_scorecard_data(
+                tenant.tenant_id, one_week_ago_iso=one_week_ago_iso, two_weeks_ago_iso=two_weeks_ago_iso,
+                task_store=svc.task_store, analytics_store=svc.analytics_store, metric_store=svc.metric_store,
+                feedback_store=svc.feedback_store, high_severity_risk_count=high_severity_count,
+            )
+            if not has_scorecard_content(data):
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no activity this week"})
+                continue
+
+            if svc.settings.resend_api_key and svc.settings.digest_from_email:
+                subject, html = render_weekly_scorecard_email(tenant, data)
+                try:
+                    svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+                except EmailSendError as exc:
+                    failed.append({"tenant_id": tenant.tenant_id, "error": str(exc)})
+
+            whatsapp_body = render_weekly_scorecard_whatsapp(tenant, data)
+            ctx._notify_management_whatsapp(tenant, whatsapp_body)
+            sent.append(tenant.tenant_id)
 
         return {"sent": sent, "skipped": skipped, "failed": failed}
 

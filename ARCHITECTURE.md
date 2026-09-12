@@ -161,6 +161,10 @@ src/business_ai/
                   the enforced boundary
   metrics.py      Phase 12: BusinessMetricStore — manual sales/expense/
                   collection ledger, always labeled source="manual"
+  scorecard.py    Phase 13: weekly business scorecard — pure data-
+                  assembly + render over tasks/analytics/metrics/
+                  feedback/dependency-risk, no new store (same shape
+                  as digest.py, weekly lens instead of rolling window)
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -191,7 +195,7 @@ static/           Vanilla HTML/CSS/JS frontend, no build step — includes
                   at /onboarding, the new-signup landing page)
 scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9)
-tests/            pytest suite (446 tests) — see README.md
+tests/            pytest suite (456 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

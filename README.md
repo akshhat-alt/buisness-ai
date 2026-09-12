@@ -856,6 +856,40 @@ correctly, and confirmed cross-tenant access is refused. 13 new tests
 across `tests/test_metrics.py` (6) and `tests/test_metrics_routes.py`
 (7) — 446 total, all green.
 
+## What V1.18 adds: Weekly Business Scorecard (Phase 13)
+
+A week-over-week rollup (`scorecard.py`) built entirely from data every
+earlier phase already collects — tasks completed, customer
+dissatisfaction rate, manual sales/expense/collections (Phase 12), top
+recurring team feedback theme, and open single-point-of-failure risk
+count (Phase 10) — no new store, pure data-assembly + render exactly
+like `digest.py`'s own shape, just a weekly lens instead of a rolling
+window.
+
+`POST /api/v1/admin/weekly-scorecard/run` (the same external-cron,
+platform_admin-only convention as every other admin `/run` endpoint)
+sends the scorecard by email (when configured) and WhatsApp
+(best-effort) to every ACTIVE tenant with any activity in the week —
+quiet tenants are skipped, not spammed with an empty report, same
+reasoning as the daily digest's `has_digest_content` gate. Unlike the
+daily digest, this has no persistent dedup: the caller's own weekly
+cadence is the only guard, since re-sending the same week's numbers
+twice is harmless, not a correctness problem.
+
+A real same-second boundary bug surfaced while writing this: computing
+"this week" as `[one_week_ago, now)` with a fixed `now` string means a
+row logged in that exact same second gets silently excluded by the
+strict `<` comparison. Fixed by leaving "this week" open-ended (no upper
+bound at all) rather than trying to compute a "now" precise enough to
+never collide — the fix and the reasoning are in `scorecard.py`'s own
+comment.
+
+Live-verified end to end against a real running server: a brand-new
+tenant with zero activity was correctly skipped, then real sale/expense
+entries were logged and the very next cron run correctly included and
+sent that tenant's scorecard. 10 new tests across `tests/test_scorecard.py`
+(6) and `tests/test_scorecard_cron.py` (4) — 456 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1316,3 +1350,15 @@ before the prompt/schema was finalized.
   entry can be logged alongside it. Real correction support (and
   probably an "edit window" policy) is a deliberate later addition, not
   an oversight.
+- **The weekly scorecard has no persistent dedup** (Phase 13) — calling
+  `/api/v1/admin/weekly-scorecard/run` twice in the same week resends
+  the same numbers rather than being silently skipped like the
+  dependency-risk cron. Harmless (a report, not an alert an owner needs
+  to act on once), and deliberately simpler than adding a new audit-log
+  dedup key for a job whose cadence the external cron already controls.
+- **The scorecard's task-completion count uses `updated_at`, not a
+  dedicated `completed_at` field** — a task marked done and then
+  reassigned or edited again within the same week would have its
+  `updated_at` bumped past the done-marking event, though `status`
+  itself never leaves `"done"` from a normal workflow, so this is a
+  narrow edge case, not a routine miscount.
