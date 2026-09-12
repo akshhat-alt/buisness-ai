@@ -155,6 +155,12 @@ class TenantAction(str, Enum):
     # the live customer assistant's behavior, which is a strictly
     # higher-stakes lever than MANAGE_AUTOMATION's rule CRUD.
     MANAGE_EVOLUTION = "manage_evolution"
+    # Financial Truth Layer (Phase 12) — see metrics.py. Logging an entry
+    # needs no permission check at all (same shape as feedback
+    # submission — any roster member can log a sale/expense/collection
+    # over WhatsApp); VIEWING the aggregated total is the gated part,
+    # owner+manager only, like VIEW_FEEDBACK.
+    VIEW_FINANCIALS = "view_financials"
 
 
 OWNER_ACTIONS = frozenset(
@@ -174,6 +180,7 @@ OWNER_ACTIONS = frozenset(
         TenantAction.MANAGE_AUTOMATION,
         TenantAction.VIEW_AUTOMATION,
         TenantAction.MANAGE_EVOLUTION,
+        TenantAction.VIEW_FINANCIALS,
     }
 )
 

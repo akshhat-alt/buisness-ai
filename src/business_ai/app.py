@@ -55,6 +55,7 @@ from business_ai.employees import EmployeeStore
 from business_ai.evolution import EvolutionEvaluationStore, EvolutionProposalStore, EvolutionVersionStore
 from business_ai.feedback import FeedbackStore
 from business_ai.memory import SopStore
+from business_ai.metrics import BusinessMetricStore
 from business_ai.email_sender import EmailSender
 from business_ai.config import Settings, load_settings, validate_environment
 from business_ai.generation import OpenAIGenerationProvider
@@ -82,6 +83,7 @@ from business_ai.routers.feedback_routes import register_feedback
 from business_ai.routers.insights_routes import register_insights
 from business_ai.routers.knowledge_routes import register_knowledge
 from business_ai.routers.leads_routes import register_leads
+from business_ai.routers.metrics_routes import register_metrics
 from business_ai.routers.static_pages import register_static_pages
 from business_ai.routers.team_routes import register_team
 from business_ai.routers.tenant_settings_routes import register_tenant_settings
@@ -114,6 +116,7 @@ class Services:
         self.evolution_versions = EvolutionVersionStore(data_root / "evolution_versions.db")
         self.evolution_proposals = EvolutionProposalStore(data_root / "evolution_proposals.db")
         self.evolution_evaluations = EvolutionEvaluationStore(data_root / "evolution_evaluations.db")
+        self.metric_store = BusinessMetricStore(data_root / "metrics.db")
 
     def embeddings(self):
         return OpenAIEmbeddingProvider(model_name=self.settings.embedding_model, api_key=_openai_key())
@@ -232,6 +235,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     register_feedback(app, svc, ctx)
     register_dependency(app, svc, ctx)
     register_evolution(app, svc, ctx)
+    register_metrics(app, svc, ctx)
     register_automation(app, svc, ctx)
     register_webhooks(app, svc, ctx)
     register_admin(app, svc, ctx)

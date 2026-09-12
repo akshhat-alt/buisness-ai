@@ -121,6 +121,8 @@ _ADMIN_SOP_RE = re.compile(r"^approve sop\s+(.+?)\s*:\s*(.+)$", re.IGNORECASE | 
 _ADMIN_SUGGEST_SOP_RE = re.compile(r"^suggest sop\s+(.+)$", re.IGNORECASE)
 _ADMIN_MARK_PAID_RE = re.compile(r"^mark\s+paid\s+(\S+)(?:\s+(\d+))?$", re.IGNORECASE)
 _ADMIN_MARK_OUTCOME_RE = re.compile(r"^mark\s+(completed|no-show|no_show|cancelled|canceled)\s+(\S+)$", re.IGNORECASE)
+# Phase 12: "log sale 1500 haircut", "log expense 300", "log collection 2000 deposit"
+_ADMIN_LOG_METRIC_RE = re.compile(r"^log\s+(sale|expense|collection)\s+([\d,]+(?:\.\d+)?)(?:\s+(.+))?$", re.IGNORECASE | re.DOTALL)
 _OUTCOME_ALIASES = {"no-show": "no_show", "no_show": "no_show", "cancelled": "cancelled", "canceled": "cancelled", "completed": "completed"}
 
 _FEEDBACK_THEME_LABELS = {
@@ -156,6 +158,8 @@ def _admin_bot_help_text() -> str:
         "• mark paid <lead id> [<amount>] — confirm a deposit received\n"
         "• mark completed/no-show/cancelled <lead id> — record what happened\n"
         "• timeline — recent activity (owner/manager)\n"
+        "• log sale/expense/collection <amount> [note] — record a manual entry\n"
+        "• financials / sales report — last 30 days manual totals (owner/manager)\n"
         "\nOr just type naturally — I'll do my best to understand "
         "(except money/outcome confirmations, which always need the exact commands above)."
     )
@@ -1157,6 +1161,44 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 target_type="lead", target_id=lead.lead_id, metadata={"outcome": outcome},
             )
             reply(f"✅ Recorded {lead.name or lead.phone or lead.email}'s appointment as {outcome.replace('_', ' ')}.")
+            return True
+
+        log_metric_match = _ADMIN_LOG_METRIC_RE.match(raw)
+        if log_metric_match:
+            metric_type, amount_text, note = log_metric_match.group(1).lower(), log_metric_match.group(2), log_metric_match.group(3)
+            try:
+                amount = int(round(float(amount_text.replace(",", ""))))
+            except ValueError:
+                reply(f'Couldn\'t read "{amount_text}" as an amount. Try "log {metric_type} 1500 optional note".')
+                return True
+            if amount <= 0:
+                reply("Amount must be a positive number.")
+                return True
+            metric = svc.metric_store.record(
+                tenant_id=tenant.tenant_id, metric_type=metric_type, amount_inr=amount,
+                note=(note or "").strip(), reported_by_employee_id=employee.employee_id,
+            )
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="metric_logged",
+                target_type="business_metric", target_id=metric.metric_id,
+                metadata={"metric_type": metric_type, "amount_inr": amount},
+            )
+            reply(f"✅ Logged {metric_type}: ₹{amount}" + (f" — {note.strip()}" if note else "") + ".")
+            return True
+
+        if clean in ("financials", "sales report"):
+            if not can_manage:
+                reply("Only an owner or manager can view financials.")
+                return True
+            since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 30 * 86400))
+            summary = svc.metric_store.summary_for_tenant(tenant.tenant_id, since_iso=since_iso)
+            if not summary:
+                reply("No manual sales/expense/collection entries logged in the last 30 days. Try \"log sale 1500 haircut\".")
+                return True
+            lines = [f"💰 Last 30 days (manual entries):"]
+            for s in sorted(summary, key=lambda x: x.metric_type):
+                lines.append(f"• {s.metric_type.capitalize()}: ₹{s.total_inr} ({s.entry_count} entr{'y' if s.entry_count == 1 else 'ies'})")
+            reply("\n".join(lines))
             return True
 
         if clean in ("scorecard", "health"):

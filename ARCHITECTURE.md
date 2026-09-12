@@ -159,6 +159,8 @@ src/business_ai/
                   check. Can NEVER touch Python/SQL/infra/secrets/
                   money/activation — see the module's own docstring for
                   the enforced boundary
+  metrics.py      Phase 12: BusinessMetricStore — manual sales/expense/
+                  collection ledger, always labeled source="manual"
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -178,7 +180,9 @@ src/business_ai/
                   Business Map's map/simulate routes), evolution_routes
                   (Phase 11: proposal review/approve/reject, version
                   history/rollback, kill switch, and the two evolution
-                  cron endpoints) — see app.py's create_app() for wiring
+                  cron endpoints), metrics_routes (Phase 12: financial
+                  summary/CSV export) — see app.py's create_app() for
+                  wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -187,7 +191,7 @@ static/           Vanilla HTML/CSS/JS frontend, no build step — includes
                   at /onboarding, the new-signup landing page)
 scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9)
-tests/            pytest suite (433 tests) — see README.md
+tests/            pytest suite (446 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

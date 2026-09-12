@@ -827,6 +827,35 @@ across `tests/test_evolution.py` (26), `tests/test_evolution_routes.py`
 the live smoke test surfaced the per-tenant rollback isolation gap
 above) — 433 total, all green.
 
+## What V1.17 adds: Financial Truth Layer (Phase 12)
+
+A manual sales/expense/collection ledger (`metrics.py`,
+`BusinessMetricStore`) — Business AI has no live POS/accounting
+integration, so every response this layer produces is explicitly
+labeled `"source": "manual"`, never implied as a live sync.
+
+**Logging** happens only over the admin WhatsApp bot's deterministic
+`log sale/expense/collection <amount> [note]` grammar (e.g. `log sale
+1500 haircut`) — zero LLM cost, same idiom as Phase 0's task commands.
+Open to any roster member, no permission check, the same shape as
+feedback submission: a staff member at the register should be able to
+log a sale without needing owner/manager rights.
+
+**Viewing** is gated: `financials` / `sales report` over WhatsApp, and
+`GET /api/metrics/summary` / `GET /api/metrics/export.csv` over HTTP,
+all owner/manager-only (`VIEW_FINANCIALS`) and tenant-isolated —
+aggregated totals are more sensitive than a single log-entry action, the
+same reasoning as `VIEW_FEEDBACK`. CSV export uses Python's stdlib `csv`
+module — no new dependency, no PDF library added (see Known
+limitations).
+
+Live-verified end to end against a real running server: confirmed an
+empty summary for a brand-new tenant, logged real sale/expense entries,
+confirmed both the summary endpoint and the CSV export reflected them
+correctly, and confirmed cross-tenant access is refused. 13 new tests
+across `tests/test_metrics.py` (6) and `tests/test_metrics_routes.py`
+(7) — 446 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1273,3 +1302,17 @@ before the prompt/schema was finalized.
   again automatically later" — an owner reviewing version history and
   clicking Restore, or a fresh proposal, are the only ways a rolled-back
   version returns.
+- **The Financial Truth Layer has no PDF report generation** (Phase 12)
+  — CSV export and a WhatsApp `financials` summary ship now; the earlier
+  roadmap's `fpdf2` PDF report was deliberately deferred rather than
+  adding a new rendering dependency mid-autonomous-run without a human
+  checkpoint to review that tradeoff.
+- **No dashboard UI for financials yet** (Phase 12) — `/api/metrics/
+  summary` and `/api/metrics/export.csv` exist and are tested, but
+  there's no dashboard panel for them today; viewing happens over
+  WhatsApp (`financials`) or direct API/CSV.
+- **Financial entries have no edit/delete.** A mis-logged sale or
+  expense can't be corrected or removed today — only a fresh, correct
+  entry can be logged alongside it. Real correction support (and
+  probably an "edit window" policy) is a deliberate later addition, not
+  an oversight.
