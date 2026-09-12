@@ -41,3 +41,16 @@ TASK_ESCALATION_HOURS = 48
 # passed — an unresolved risk staying true every single day shouldn't
 # mean a daily repeat of the same WhatsApp message forever.
 DEPENDENCY_RISK_RENOTIFY_HOURS = 24 * 7
+
+# Phase 11 — Self-Evolution Infrastructure (evolution.py). All thresholds
+# are deliberately conservative: this pipeline is allowed to touch a
+# tenant's live customer-assistant tone, so false positives (proposing
+# too eagerly, or failing to roll back a real regression) are the
+# expensive direction to get wrong, not "one fewer improvement."
+EVOLUTION_LOOKBACK_HOURS = 24 * 14  # two weeks of conversation history per detection/monitoring window
+EVOLUTION_MIN_SAMPLE_FOR_DETECTION = 10  # don't draw conclusions from a handful of conversations
+EVOLUTION_FAILURE_DISSATISFACTION_RATE_THRESHOLD = 0.20  # 20% of recent questions showing dissatisfaction
+EVOLUTION_SANDBOX_SAMPLE_SIZE = 5  # historical questions replayed (never to a real customer) per sandbox evaluation
+EVOLUTION_MONITORING_MIN_HOURS_ACTIVE = 24  # give a promoted version a full day of real traffic before judging it
+EVOLUTION_MONITORING_MIN_SAMPLE = 5  # per window (pre- and post-activation) before a rate comparison is trusted
+EVOLUTION_MONITORING_REGRESSION_DELTA = 0.15  # a 15-point rise in dissatisfaction rate triggers automatic rollback

@@ -139,11 +139,23 @@ class AnalyticsStore(SqliteStore):
             conn.commit()
         return turn
 
-    def summary_for_tenant(self, tenant_id: str, *, gap_limit: int = 10, since_iso: str | None = None) -> AnalyticsSummary:
+    def summary_for_tenant(
+        self, tenant_id: str, *, gap_limit: int = 10, since_iso: str | None = None, until_iso: str | None = None,
+    ) -> AnalyticsSummary:
         # created_at is "%Y-%m-%dT%H:%M:%SZ" — lexicographically sortable,
         # so a plain string comparison is a correct time-window filter.
-        clause = "tenant_id = ?" + (" AND created_at >= ?" if since_iso else "")
-        params: tuple = (tenant_id, since_iso) if since_iso else (tenant_id,)
+        # until_iso (Phase 11) lets a caller bound a window on both ends —
+        # e.g. evolution.py's monitoring check comparing a fixed-length
+        # window just before a version's activation against the window
+        # since. Every existing call site omits it and is unaffected.
+        clause = "tenant_id = ?"
+        params: tuple = (tenant_id,)
+        if since_iso:
+            clause += " AND created_at >= ?"
+            params += (since_iso,)
+        if until_iso:
+            clause += " AND created_at < ?"
+            params += (until_iso,)
 
         with self._lock, self._db() as conn:
             total = conn.execute(f"SELECT COUNT(*) c FROM turns WHERE {clause}", params).fetchone()["c"]
@@ -177,6 +189,27 @@ class AnalyticsStore(SqliteStore):
             dissatisfaction_count=dissatisfaction,
             recent_knowledge_gaps=[r["query"] for r in gap_rows],
         )
+
+    def list_recent_answered_queries(self, tenant_id: str, *, limit: int = 5) -> list[str]:
+        """Phase 11: the sample self-evolution's sandbox evaluation
+        replays. Deliberately restricted to answer_status='answered'
+        (never abstained) questions — those are the ones a tone change
+        can meaningfully affect; an abstention's outcome doesn't depend
+        on tone at all, so including it would just add noise to the
+        regression comparison. Distinct queries, most recent first."""
+        with self._lock, self._db() as conn:
+            rows = conn.execute(
+                """
+                SELECT query, MAX(created_at) as latest
+                FROM turns
+                WHERE tenant_id = ? AND answer_status = 'answered'
+                GROUP BY query
+                ORDER BY latest DESC
+                LIMIT ?
+                """,
+                (tenant_id, limit),
+            ).fetchall()
+            return [r["query"] for r in rows]
 
     def session_ids_with_buying_intent(self, tenant_id: str, *, since_iso: str | None = None) -> set[str]:
         """Distinct sessions where at least one turn showed buying intent

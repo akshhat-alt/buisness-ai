@@ -47,6 +47,8 @@ def export_tenant_data(svc, tenant_id: str) -> dict:
         "knowledge_sources": [s.model_dump() for s in svc.source_store.list_for_tenant(tenant_id)],
         "analytics_summary": svc.analytics_store.summary_for_tenant(tenant_id).model_dump(),
         "knowledge_gaps": [g.model_dump() for g in svc.analytics_store.list_open_gaps(tenant_id, limit=100000)],
+        "evolution_versions": [v.model_dump() for v in svc.evolution_versions.list_for_tenant(tenant_id)],
+        "evolution_proposals": [p.model_dump() for p in svc.evolution_proposals.list_for_tenant(tenant_id)],
     }
 
 
@@ -70,6 +72,9 @@ def delete_tenant_data(svc, tenant_id: str) -> dict:
         "users": svc.user_store.delete_for_tenant(tenant_id),
         "whatsapp_inbox": svc.whatsapp_inbox.delete_for_tenant(tenant_id),
         "usage_sessions": svc.usage_limiter.delete_for_tenant(tenant_id),
+        "evolution_versions": svc.evolution_versions.delete_for_tenant(tenant_id),
+        "evolution_proposals": svc.evolution_proposals.delete_for_tenant(tenant_id),
+        "evolution_evaluations": svc.evolution_evaluations.delete_for_tenant(tenant_id),
     }
     svc.vector_store.delete_tenant(tenant_id)
     deleted["tenant_config"] = 1 if svc.tenant_registry.delete(tenant_id) else 0

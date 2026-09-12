@@ -94,6 +94,16 @@ class TenantConfig(BaseModel):
     # enabled flags. Checked once, fail-closed, at the top of the
     # automation cron run — see app.py's admin_run_automation.
     automation_enabled: bool = True
+    # Self-Evolution Infrastructure (Phase 11) — an explicit OPT-IN kill
+    # switch, default False, unlike automation_enabled's default-True.
+    # Self-evolution can change a tenant's live customer-assistant tone;
+    # it must never start doing that for a tenant who never asked for it.
+    # When False, the evolution-scan/evolution-monitor crons skip this
+    # tenant entirely — no proposals are ever generated, and an already-
+    # active self-evolved version simply stops updating (it isn't rolled
+    # back just because the switch flips off; an owner who wants that
+    # uses the explicit manual rollback endpoint).
+    evolution_enabled: bool = False
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
 
@@ -139,6 +149,12 @@ class TenantAction(str, Enum):
     # to managers too, like VIEW_FEEDBACK/VIEW_TASKS.
     MANAGE_AUTOMATION = "manage_automation"
     VIEW_AUTOMATION = "view_automation"
+    # Self-Evolution Infrastructure (Phase 11) — see evolution.py.
+    # Owner-only, no manager/staff variant at all: this action gates
+    # every proposal/version/rollback/kill-switch route, and it changes
+    # the live customer assistant's behavior, which is a strictly
+    # higher-stakes lever than MANAGE_AUTOMATION's rule CRUD.
+    MANAGE_EVOLUTION = "manage_evolution"
 
 
 OWNER_ACTIONS = frozenset(
@@ -157,14 +173,16 @@ OWNER_ACTIONS = frozenset(
         TenantAction.MANAGE_SOPS,
         TenantAction.MANAGE_AUTOMATION,
         TenantAction.VIEW_AUTOMATION,
+        TenantAction.MANAGE_EVOLUTION,
     }
 )
 
 # Day-to-day operating power (assign/approve tasks, everything a staff
 # member can do) without owner-only levers: can't touch the knowledge
-# base, assistant config, the employee roster, SOP policy, or the
-# automation engine's rules/kill switch — a manager can SEE what
-# automation is doing (VIEW_AUTOMATION) but not change what it does.
+# base, assistant config, the employee roster, SOP policy, the
+# automation engine's rules/kill switch, or self-evolution — a manager
+# can SEE what automation is doing (VIEW_AUTOMATION) but not change what
+# it does, and has no visibility or control over evolution at all.
 MANAGER_ACTIONS = OWNER_ACTIONS - frozenset(
     {
         TenantAction.INGEST_KNOWLEDGE,
@@ -172,6 +190,7 @@ MANAGER_ACTIONS = OWNER_ACTIONS - frozenset(
         TenantAction.MANAGE_EMPLOYEES,
         TenantAction.MANAGE_SOPS,
         TenantAction.MANAGE_AUTOMATION,
+        TenantAction.MANAGE_EVOLUTION,
     }
 )
 

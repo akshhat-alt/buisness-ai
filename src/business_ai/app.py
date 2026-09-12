@@ -52,6 +52,7 @@ from business_ai.audit import AuditLogStore
 from business_ai.automation import AutomationRuleStore, AutomationRunStore
 from business_ai.constants import DATA_ROOT, STATIC_DIR
 from business_ai.employees import EmployeeStore
+from business_ai.evolution import EvolutionEvaluationStore, EvolutionProposalStore, EvolutionVersionStore
 from business_ai.feedback import FeedbackStore
 from business_ai.memory import SopStore
 from business_ai.email_sender import EmailSender
@@ -76,6 +77,7 @@ from business_ai.routers.automation_routes import register_automation
 from business_ai.routers.auth_routes import register_auth
 from business_ai.routers.customer_routes import register_customer
 from business_ai.routers.dependency_routes import register_dependency
+from business_ai.routers.evolution_routes import register_evolution
 from business_ai.routers.feedback_routes import register_feedback
 from business_ai.routers.insights_routes import register_insights
 from business_ai.routers.knowledge_routes import register_knowledge
@@ -109,6 +111,9 @@ class Services:
         self.sop_store = SopStore(data_root / "sops.db")
         self.automation_rule_store = AutomationRuleStore(data_root / "automation_rules.db")
         self.automation_run_store = AutomationRunStore(data_root / "automation_runs.db")
+        self.evolution_versions = EvolutionVersionStore(data_root / "evolution_versions.db")
+        self.evolution_proposals = EvolutionProposalStore(data_root / "evolution_proposals.db")
+        self.evolution_evaluations = EvolutionEvaluationStore(data_root / "evolution_evaluations.db")
 
     def embeddings(self):
         return OpenAIEmbeddingProvider(model_name=self.settings.embedding_model, api_key=_openai_key())
@@ -226,6 +231,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     register_team(app, svc, ctx)
     register_feedback(app, svc, ctx)
     register_dependency(app, svc, ctx)
+    register_evolution(app, svc, ctx)
     register_automation(app, svc, ctx)
     register_webhooks(app, svc, ctx)
     register_admin(app, svc, ctx)

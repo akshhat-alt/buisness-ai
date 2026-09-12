@@ -115,6 +115,10 @@ class AutomationKillSwitchRequest(BaseModel):
     enabled: bool
 
 
+class EvolutionKillSwitchRequest(BaseModel):
+    enabled: bool
+
+
 class TenantConfigUpdate(BaseModel):
     assistant_name: str | None = None
     welcome_message: str | None = None

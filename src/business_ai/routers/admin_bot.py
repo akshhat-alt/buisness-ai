@@ -380,7 +380,18 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 is_dissatisfied = svc.generator().classify_dissatisfaction(query=query)
                 answer = build_abstention_answer(pack, gate, shows_dissatisfaction=is_dissatisfied)
             else:
-                system_prompt = build_system_prompt(tenant.business_name, tenant.assistant_name, channel=channel)
+                # Phase 11: an active, owner-approved self-evolution tone
+                # version (if any) is the ONLY thing this pipeline lets
+                # self-evolution influence — see evolution.py's module
+                # docstring for the full safety boundary. Absent one
+                # (the default for every tenant unless they've opted in
+                # and approved a proposal), this is "" and behavior is
+                # byte-for-byte identical to before this phase existed.
+                active_tone_version = svc.evolution_versions.get_active(tenant_id, "assistant_tone")
+                tone_instructions = active_tone_version.payload.get("tone_instructions", "") if active_tone_version else ""
+                system_prompt = build_system_prompt(
+                    tenant.business_name, tenant.assistant_name, channel=channel, tone_instructions=tone_instructions,
+                )
                 user_prompt = build_user_prompt(pack)
                 draft = svc.generator().generate(system_prompt=system_prompt, user_prompt=user_prompt)
                 answer = validate_llm_draft(draft, pack)

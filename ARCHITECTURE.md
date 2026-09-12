@@ -149,6 +149,16 @@ src/business_ai/
                   customer concentration risk, and the "what breaks if
                   X is unavailable" simulation (no new source-of-truth
                   store; reads employees/tasks/sop/leads directly)
+  evolution.py    Phase 11: Self-Evolution Infrastructure — the
+                  whitelisted/bounded behavior-config validator,
+                  EvolutionVersionStore/EvolutionProposalStore/
+                  EvolutionEvaluationStore, failure detection (reads
+                  AnalyticsStore only), sandbox/shadow evaluation (real
+                  retrieval+generation, never shown to a customer), and
+                  the LLM-free post-promotion monitoring/auto-rollback
+                  check. Can NEVER touch Python/SQL/infra/secrets/
+                  money/activation — see the module's own docstring for
+                  the enforced boundary
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -165,8 +175,10 @@ src/business_ai/
                   team_routes, feedback_routes, automation_routes,
                   insights_routes, webhook_routes, admin_routes,
                   static_pages, dependency_routes (Phase 10: the
-                  Business Map's map/simulate routes) — see app.py's
-                  create_app() for wiring
+                  Business Map's map/simulate routes), evolution_routes
+                  (Phase 11: proposal review/approve/reject, version
+                  history/rollback, kill switch, and the two evolution
+                  cron endpoints) — see app.py's create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -175,7 +187,7 @@ static/           Vanilla HTML/CSS/JS frontend, no build step — includes
                   at /onboarding, the new-signup landing page)
 scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9)
-tests/            pytest suite (391 tests) — see README.md
+tests/            pytest suite (433 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

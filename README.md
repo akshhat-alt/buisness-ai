@@ -741,6 +741,92 @@ tests across `tests/test_dependency_graph.py` (18),
 `tests/test_dependency_routes.py` (6), and
 `tests/test_dependency_scan_cron.py` (6) — 391 total, all green.
 
+## What V1.16 adds: Self-Evolution Infrastructure (Phase 11)
+
+A safety-first pipeline (`evolution.py`) that lets Business AI propose
+small, reviewable improvements to a tenant's customer assistant — never
+anything it can just go make happen. The hard boundary, enforced in
+code, not just in this description: self-evolution can NEVER touch
+Python source, SQL schema, infrastructure, secrets, money/payment logic,
+or a tenant's account/activation status. It can only create and, once an
+owner approves, activate a version of one whitelisted, plain-text
+config: the customer assistant's tone-guidance string, appended to the
+end of its system prompt as supplementary guidance that can never
+override the grounding/citation/dissatisfaction rules above it.
+
+**observe -> failure detection**: a pure read model over
+`AnalyticsStore` — the only signal actually about the customer
+assistant's own behavior (employee feedback in `feedback.py` is about
+internal operations, a different thing, and isn't consulted here). If a
+tenant's dissatisfaction rate over the last two weeks crosses 20% (with
+at least 10 real questions logged, so a bad afternoon doesn't look like
+a trend), that's a failure signal.
+
+**proposal -> evaluation/versioning**: a new `EvolutionVersionStore`
+holds every version of a tenant's assistant-tone config, immutable once
+created, full lineage preserved (`parent_version_id`, `activated_at`,
+`deactivated_at` — nothing is ever deleted by activation or rollback).
+On a failure signal, `generate_behavior_proposal` deterministically (no
+LLM call — 100% reproducible) drafts a candidate version and an
+`EvolutionProposalStore` row, at most one in flight per tenant at a time.
+
+**sandbox testing**: before an owner ever sees a proposal,
+`run_sandbox_evaluation` shadow-replays a small sample (5) of the
+tenant's own recently-answered real questions through the REAL
+retrieval+generation pipeline twice — once with the current tone, once
+with the candidate — comparing outcomes. Neither run is ever shown to a
+customer or logged as a real conversation; this is pure evaluation. Any
+regression (an answer that flips from answered to abstained, or newly
+shows dissatisfaction) fails the sandbox outright, recorded in a new
+`EvolutionEvaluationStore`.
+
+**gated promotion**: `POST /api/evolution/proposals/{id}/approve` is the
+ONLY code path that ever activates a version for real customers, and it
+flatly refuses anything that hasn't passed sandbox evaluation — verified
+live (see below) against a real proposal that failed sandbox and was
+correctly refused. Owners can reject a proposal, or manually roll back
+to any prior version at any time, independent of automatic monitoring.
+
+**monitoring + automatic rollback**: once active for 24+ hours,
+`POST /api/v1/admin/evolution-monitor/run` (the same external-cron
+convention as every other admin `/run` endpoint) compares a promoted
+version's post-activation dissatisfaction rate against its own
+pre-activation baseline window — deliberately LLM-free so this safety
+net keeps working during an OpenAI outage — and automatically rolls back
+on a real regression, notifying the owner over WhatsApp. One tenant's
+rollback failing (a real edge case a live smoke test surfaced) is
+isolated so it can never abort the cron run for every other tenant.
+
+**kill switch + audit trail**: `TenantConfig.evolution_enabled` defaults
+to **False** (opt-in, unlike automation's default-on kill switch — this
+touches live customer-assistant behavior, automation doesn't) and gates
+both crons entirely. Every state change — proposal created, sandbox
+evaluated, approved, rejected, promoted, rolled back manually or
+automatically — writes an immutable `AuditLogStore` row. A new
+owner-only `MANAGE_EVOLUTION` action gates every route; managers and
+staff have no visibility into evolution at all.
+
+**owner-facing UI**: a new "Self-Evolution" dashboard section — the kill
+switch, pending proposals with approve/reject buttons, and a full
+version history table with a "Restore" action on any prior version.
+
+Live-verified end to end against a real running server with a real
+OpenAI key (not the test suite's fake generator): drove real
+dissatisfaction into a tenant's conversation history, ran the scan cron
+with the kill switch off (correctly skipped) and on (correctly proposed
+and sandbox-evaluated a real candidate, which genuinely failed sandbox
+evaluation against real model output and was correctly refused at
+approval); separately approved a second, sandbox-passed candidate,
+confirmed it reached a real customer's `/api/ask` call end to end, then
+seeded a real regression and confirmed the monitoring cron automatically
+rolled it back and wrote the full audit trail; also confirmed directly
+against the live database that a SQL/code-injection-shaped tone string
+is rejected at the storage layer regardless of caller. 42 new tests
+across `tests/test_evolution.py` (26), `tests/test_evolution_routes.py`
+(8), and `tests/test_evolution_cron.py` (8, including one added after
+the live smoke test surfaced the per-tenant rollback isolation gap
+above) — 433 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1157,3 +1243,33 @@ before the prompt/schema was finalized.
   interrupting pushes for the most unambiguous risk, at the cost of an
   owner only discovering a concentration risk if they open the Business
   Map themselves.
+- **Self-evolution's only lever is one plain-text tone-guidance string**
+  (Phase 11). The approved roadmap scoped this deliberately narrow —
+  escalation windows, reminder timing, and other numeric tenant config
+  are natural extensions of the exact same versioned-config pattern, but
+  weren't built now; adding one means adding it explicitly to
+  `evolution.CONFIG_TYPES` with its own bounds, not a generic "any
+  setting" path.
+- **Failure detection is a single fixed threshold on one metric**
+  (dissatisfaction rate over a 2-week window), not a themed/root-cause
+  classifier — deliberately deterministic (no LLM call) so this stage is
+  100% reproducible and reviewable, at the cost of every proposal
+  carrying the same generic suggested tone text rather than one tailored
+  to the specific complaint pattern.
+- **Sandbox evaluation replays at most 5 historical questions**, and
+  needs at least one real answered (non-abstained) question in a
+  tenant's history to evaluate anything at all — a brand-new tenant with
+  no real traffic yet gets `insufficient_data`, never a false "pass."
+  Each sandbox run costs two real LLM calls per replayed question (spent
+  only when a failure signal actually fires and only against the
+  platform_admin-triggered scan cron, never on customer traffic).
+- **Monitoring compares two 2-week windows around one activation
+  timestamp** and needs at least 5 real questions in each to trust the
+  comparison — a low-traffic tenant's regression could take longer than
+  24 hours to actually get caught, simply because there isn't enough
+  post-activation traffic yet to compute a reliable rate.
+- **A version rolled back for one reason stays out of rotation until an
+  owner (or a future proposal) reactivates it.** There's no "try it
+  again automatically later" — an owner reviewing version history and
+  clicking Restore, or a fresh proposal, are the only ways a rolled-back
+  version returns.

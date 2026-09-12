@@ -107,6 +107,7 @@
     <a href="#health">Business Health</a>
     <a href="#business-map">Business Map</a>
     <a href="#automation">Automation</a>
+    <a href="#evolution">Self-Evolution</a>
     <a href="#staff">Staff Assistant</a>
     <a href="#whatsapp">WhatsApp</a>
     <a href="#growth">Deposits</a>
@@ -123,6 +124,7 @@
       <a class="dash-nav-link" href="#health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Business Health</a>
       <a class="dash-nav-link" href="#business-map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8.2 7.3 10 15.5M15.8 7.3 14 15.5M8.5 6h7"/></svg> Business Map</a>
       <a class="dash-nav-link" href="#automation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg> Automation</a>
+      <a class="dash-nav-link" href="#evolution"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg> Self-Evolution</a>
       <a class="dash-nav-link" href="#staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Staff Assistant</a>
       <a class="dash-nav-link" href="#whatsapp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> WhatsApp</a>
       <a class="dash-nav-link" href="#growth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Deposits</a>
@@ -398,6 +400,31 @@
           </div>
         </section>
 
+        <section class="dash-section" id="evolution">
+          <div class="dash-section-head">
+            <h2>Self-Evolution</h2>
+            <p class="ba-muted" style="margin:0;">Business AI can propose small, reviewable adjustments to your assistant's tone when it detects a real pattern of customer dissatisfaction — never anything else, and never live until you approve it. Off by default.</p>
+          </div>
+
+          <div class="ba-card">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+              <input type="checkbox" id="evolution-kill-switch" onchange="toggleEvolutionKillSwitch()">
+              <span>Allow Business AI to propose assistant tone improvements</span>
+            </label>
+          </div>
+
+          <div class="ba-card" id="evolution-proposals-card">
+            <h3 style="margin-top:0;">Pending Proposals</h3>
+            <div id="evolution-proposals-list" class="ba-muted">Loading…</div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Version History</h3>
+            <table class="ba-table" id="evolution-versions-table"><thead><tr><th>Status</th><th>Tone Guidance</th><th>Created By</th><th>Activated</th><th></th></tr></thead><tbody></tbody></table>
+            <div id="evolution-versions-empty" class="ba-muted" style="display:none;">No self-evolution history yet.</div>
+          </div>
+        </section>
+
         <section class="dash-section" id="staff">
           <div class="dash-section-head">
             <h2>Staff Assistant</h2>
@@ -487,8 +514,8 @@
     // login would just get a wall of 403s, so hide the nav entirely
     // rather than show a broken section.
     if (role !== 'owner') {
-      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#command-center"], a[href="#automation"], a[href="#business-map"]').forEach(el => el.remove());
-      ['team', 'health', 'command-center', 'automation', 'business-map'].forEach(id => {
+      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#command-center"], a[href="#automation"], a[href="#business-map"], a[href="#evolution"]').forEach(el => el.remove());
+      ['team', 'health', 'command-center', 'automation', 'business-map', 'evolution'].forEach(id => {
         const section = document.getElementById(id);
         if (section) section.remove();
       });
@@ -637,6 +664,7 @@
         loadBusinessMap();
         loadAutomationKillSwitch();
         loadAutomationRules().then(loadAutomationRuns);
+        loadEvolution();
       }
 
       const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -1367,6 +1395,103 @@
           <td>${escapeHtml(r.target_type)} ${escapeHtml(r.target_id)}</td>
           <td><span class="stage-pill ${AUTOMATION_STATUS_PILL[r.status] || ''}">${escapeHtml(r.status)}</span></td>
         </tr>`).join('');
+    }
+
+    // ---------------------------------------------------------- Self-Evolution (Phase 11)
+
+    const EVOLUTION_STATUS_LABEL = {
+      pending_sandbox: 'Evaluating…', pending_owner_review: 'Ready for your review', sandbox_failed: 'Failed safety check',
+      approved: 'Approved', rejected: 'Rejected',
+    };
+
+    async function loadEvolution() {
+      const tenantRes = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (tenantRes.ok) {
+        const t = await tenantRes.json();
+        document.getElementById('evolution-kill-switch').checked = t.evolution_enabled === true;
+      }
+
+      const [proposalsRes, versionsRes] = await Promise.all([
+        fetch(`/api/evolution/proposals?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/evolution/versions?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+      ]);
+
+      const listEl = document.getElementById('evolution-proposals-list');
+      if (proposalsRes.ok) {
+        const data = await proposalsRes.json();
+        const pending = data.proposals.filter(p => p.status === 'pending_owner_review' || p.status === 'pending_sandbox');
+        listEl.innerHTML = pending.length ? pending.map(p => `
+          <div class="ba-card" style="margin-bottom:10px;">
+            <div><b>Proposed tone guidance:</b> ${escapeHtml(p.candidate_version ? p.candidate_version.payload.tone_instructions : '')}</div>
+            <div class="ba-muted" style="margin:4px 0;">${escapeHtml(p.candidate_version ? p.candidate_version.rationale : '')}</div>
+            <div class="ba-muted">Status: ${escapeHtml(EVOLUTION_STATUS_LABEL[p.status] || p.status)}</div>
+            ${p.status === 'pending_owner_review' ? `
+              <div style="display:flex; gap:8px; margin-top:8px;">
+                <button class="ba-btn ba-btn-sm" onclick="approveEvolutionProposal('${escapeHtml(p.proposal_id)}')">Approve</button>
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="rejectEvolutionProposal('${escapeHtml(p.proposal_id)}')">Reject</button>
+              </div>` : ''}
+          </div>`).join('') : '<span class="ba-muted">No pending proposals right now.</span>';
+      }
+
+      if (versionsRes.ok) {
+        const data = await versionsRes.json();
+        const tbody = document.querySelector('#evolution-versions-table tbody');
+        const emptyEl = document.getElementById('evolution-versions-empty');
+        if (!data.versions.length) {
+          tbody.innerHTML = '';
+          emptyEl.style.display = 'block';
+        } else {
+          emptyEl.style.display = 'none';
+          tbody.innerHTML = data.versions.map(v => `
+            <tr>
+              <td><span class="stage-pill ${v.status === 'active' ? '' : v.status === 'rejected' || v.status === 'rolled_back' ? 'lost' : 'neutral'}">${escapeHtml(v.status)}</span></td>
+              <td>${escapeHtml(v.payload.tone_instructions || '(none)')}</td>
+              <td>${escapeHtml(v.created_by)}</td>
+              <td class="ba-muted" style="white-space:nowrap;">${v.activated_at ? escapeHtml(v.activated_at.slice(0, 16).replace('T', ' ')) : '—'}</td>
+              <td>${v.status === 'superseded' || v.status === 'rolled_back' ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="rollbackEvolutionVersion('${escapeHtml(v.version_id)}')">Restore</button>` : ''}</td>
+            </tr>`).join('');
+        }
+      }
+    }
+
+    async function toggleEvolutionKillSwitch() {
+      const checkbox = document.getElementById('evolution-kill-switch');
+      const enabled = checkbox.checked;
+      try {
+        const res = await fetch(`/api/tenant/evolution-toggle?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ enabled }),
+        });
+        if (!res.ok) throw new Error('Could not update the self-evolution setting.');
+      } catch (e) {
+        checkbox.checked = !enabled;
+        alert(e.message);
+      }
+    }
+
+    async function approveEvolutionProposal(proposalId) {
+      const res = await fetch(`/api/evolution/proposals/${encodeURIComponent(proposalId)}/approve?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders(),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); alert(err.detail || 'Could not approve this proposal.'); return; }
+      loadEvolution();
+    }
+
+    async function rejectEvolutionProposal(proposalId) {
+      const res = await fetch(`/api/evolution/proposals/${encodeURIComponent(proposalId)}/reject?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders(),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); alert(err.detail || 'Could not reject this proposal.'); return; }
+      loadEvolution();
+    }
+
+    async function rollbackEvolutionVersion(versionId) {
+      if (!confirm('Restore this version as your assistant\'s active tone?')) return;
+      const res = await fetch(`/api/evolution/versions/${encodeURIComponent(versionId)}/rollback?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders(),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); alert(err.detail || 'Could not restore this version.'); return; }
+      loadEvolution();
     }
 
     async function loadAdminPanel() {
