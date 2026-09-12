@@ -419,6 +419,75 @@ confirmed a ₹250 payment — the lead's stage flipped to "Converted," the
 scorecard and timeline updated correctly, all in one session with zero
 console errors.
 
+## What V1.12 adds: the Automation Engine + Owner Command Center (Phase 6 + 7)
+
+**Automation Engine** (`src/business_ai/automation.py`): owner-configured
+trigger → condition → action rules (`AutomationRuleStore`) plus their
+execution history (`AutomationRunStore`), evaluated by a new
+`POST /api/v1/admin/automation/run` cron endpoint — the same
+external-cron-hits-an-endpoint convention as every other periodic job in
+this codebase, not a new in-process scheduler. Four trigger types, each a
+pure, deterministic read of data that already exists (no new signal
+invented, no existing store duplicated): a task overdue by an
+owner-chosen number of hours, negative feedback unresolved for that long,
+a feedback theme repeated at least N times, or a lead's deposit still
+unpaid a chosen number of hours after its appointment. Two action types,
+both reusing existing, already-tested capabilities: notify the owner/
+manager roster on WhatsApp, or create a follow-up task (assigned to the
+tenant's owner employee by default). Dedup/retry follows the same
+existence-based idiom as `WhatsAppInboxStore.claim()`/
+`TaskStore.reminder_sent_at`: a successful run row means "never fire
+again for this target" (except a recurring-feedback-theme rule, which is
+allowed to refire only when the count has grown since its last alert); a
+failed run leaves no such row, so the next cron tick retries
+automatically, capped at `MAX_ATTEMPTS` (5) before giving up and
+surfacing a `given_up` row in execution history rather than retrying
+forever. Every fired action also writes an `AuditLogStore` entry, reusing
+the same audit backbone as every other admin-bot state change — no new
+event-sourcing system. Owner-only **kill switch**
+(`TenantConfig.automation_enabled`, default `True`) instantly stops every
+rule for a tenant without touching individual rules' own enabled flags;
+checked fail-closed at the top of the cron run, right after the
+tenant-must-be-ACTIVE check. Two new `TenantAction`s
+(`MANAGE_AUTOMATION` owner-only, `VIEW_AUTOMATION` owner+manager) follow
+the same fail-closed `ROLE_ACTIONS` map as every other permission in this
+app. New dashboard "Automation" section: kill switch toggle, a rules
+table (create/enable/disable/delete), and an execution-history table
+showing every run's status (`success`/`failed`/`given_up`) — all reading
+the same API a script or future integration would use.
+
+**Owner Command Center** (`GET /api/command-center`, new dashboard
+"Command Center" section): a pure reorganization of signals that already
+exist — the same `_business_health_snapshot` the Business Health section
+reads, plus the automation engine's own execution history — around the
+questions an owner actually asks: what needs my attention, where's the
+revenue opportunity, what's operationally broken, is it trending up or
+down, what should I do next, and what has automation already handled for
+me. "Recommended actions" are computed **deterministically** from the
+snapshot (no LLM call on this path, unlike the digest email's
+`generate_action_brief`) — opening the dashboard never waits on, or
+costs, an OpenAI call. "Handled automatically" is a direct, visible link
+back to Phase 6: every successful automation run appears here as
+something the owner didn't have to do themselves.
+
+Both phases are gated the same as Business Health/Feedback
+(`VIEW_FEEDBACK`/new `VIEW_AUTOMATION`/`MANAGE_AUTOMATION`), tenant-scoped
+identically to every other store in this app, and covered by 20 new
+tests (`tests/test_automation.py`, `tests/test_command_center.py`) plus
+2 new RBAC tests in `tests/test_tenant_authorization.py` — rule CRUD,
+tenant isolation, the kill switch, all four triggers firing for real
+(including the recurring-theme refire-on-growth case and the confirmed-
+payment case that stops a deposit-unpaid rule from re-firing), dedup
+across repeated cron runs, and the full retry → give-up sequence. Live-
+verified against a real running server: created two rules (notify-owner
+and create-task) against a backdated overdue task, ran the cron endpoint
+twice, and confirmed in a real browser session that the Command Center,
+Automation rules table, and execution-history table all rendered the
+correct real data with zero console errors — including the notify-owner
+rule genuinely failing (no WhatsApp configured for the smoke tenant) and
+the create-task rule genuinely succeeding, both visible with the right
+status pill.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -500,7 +569,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-269 tests covering the full HTTP lifecycle (signup → ingest → activate →
+291 tests covering the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
 from the new FAQ entry), owner digest (sends only to active tenants with
@@ -722,3 +791,32 @@ before the prompt/schema was finalized.
   given point fairly clearly at a specific fix — a deliberate trade-off
   (erring toward not inventing a fix over being maximally useful), not
   a bug.
+- **The Automation Engine has four trigger types and two action types,
+  not an arbitrary rule builder.** Deliberately scoped to what's real and
+  reusable today (task/feedback/deposit conditions; WhatsApp-notify and
+  create-task actions) rather than a generic condition/action DSL nobody
+  asked for yet. Notably, there's no "send the customer a WhatsApp
+  message" action — that would duplicate the existing reengagement/
+  reminder/winback cron jobs, which already own that responsibility.
+- **No per-rule scheduling or priority.** All of a tenant's enabled rules
+  are evaluated every time the cron endpoint is hit, in creation order;
+  there's no way to run one rule hourly and another daily, or to make one
+  rule's action wait on another's outcome.
+- **Recurring-feedback-theme re-fire only tracks count growth, not time
+  decay.** A theme that stops recurring never "resets" — if it starts
+  climbing again after a long quiet period, the rule refires correctly,
+  but the comparison is always against the last alert's count, not a
+  rolling window boundary.
+- **Automation run ordering ties at one-second resolution.** Like every
+  other timestamp in this app (`AuditLogStore` included),
+  `AutomationRunStore.created_at` is second-resolution — two runs
+  recorded within the same second have no guaranteed relative order in a
+  tied query. Found while writing this sprint's own retry/give-up test;
+  worked around there by asserting on status counts rather than row
+  order, not by changing the storage format.
+- **Command Center's "recommended actions" are deterministic templates,
+  not an LLM-written brief.** By design (see V1.12 above — no cost, no
+  latency on dashboard load), but that means the wording is fixed and
+  generic compared to the digest email's `generate_action_brief`, which
+  still does the richer, LLM-written version on its own once-a-day
+  schedule.

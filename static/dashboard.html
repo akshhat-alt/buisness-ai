@@ -100,10 +100,12 @@
 
   <nav class="mobile-tabbar" aria-label="Dashboard sections">
     <a href="#overview">Overview</a>
+    <a href="#command-center">Command Center</a>
     <a href="#knowledge">Knowledge</a>
     <a href="#leads">Leads</a>
     <a href="#team">Team &amp; Tasks</a>
     <a href="#health">Business Health</a>
+    <a href="#automation">Automation</a>
     <a href="#staff">Staff Assistant</a>
     <a href="#whatsapp">WhatsApp</a>
     <a href="#growth">Deposits</a>
@@ -113,10 +115,12 @@
   <div class="dash-shell">
     <aside class="dash-sidebar">
       <a class="dash-nav-link" href="#overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> Overview</a>
+      <a class="dash-nav-link" href="#command-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg> Command Center</a>
       <a class="dash-nav-link" href="#knowledge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Knowledge</a>
       <a class="dash-nav-link" href="#leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg> Leads</a>
       <a class="dash-nav-link" href="#team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Team &amp; Tasks</a>
       <a class="dash-nav-link" href="#health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Business Health</a>
+      <a class="dash-nav-link" href="#automation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg> Automation</a>
       <a class="dash-nav-link" href="#staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Staff Assistant</a>
       <a class="dash-nav-link" href="#whatsapp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> WhatsApp</a>
       <a class="dash-nav-link" href="#growth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Deposits</a>
@@ -152,6 +156,36 @@
             <div class="ba-metric-box"><div class="ba-metric-label">Answered</div><div class="ba-metric-val" id="m-answered">—</div></div>
             <div class="ba-metric-box"><div class="ba-metric-label">Leads Captured</div><div class="ba-metric-val" id="m-leads">—</div></div>
             <div class="ba-metric-box"><div class="ba-metric-label">Buying Interest</div><div class="ba-metric-val" id="m-intent">—</div></div>
+          </div>
+        </section>
+
+        <section class="dash-section" id="command-center">
+          <div class="dash-section-head">
+            <h2>Command Center</h2>
+            <p class="ba-muted" style="margin:0;">Everything that needs a decision from you, in one place — what to look at, where the revenue is, and what's already been handled automatically.</p>
+          </div>
+
+          <div class="ba-card" id="cc-attention-card">
+            <h3 style="margin-top:0;">⚠️ Needs Your Attention</h3>
+            <ul id="cc-attention-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Loading…</li></ul>
+          </div>
+
+          <div class="ba-metric">
+            <div class="ba-metric-box"><div class="ba-metric-label">Missed Opportunities</div><div class="ba-metric-val" id="cc-opportunities">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Confirmed Revenue</div><div class="ba-metric-val" id="cc-revenue">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Conversion Rate</div><div class="ba-metric-val" id="cc-conversion">—</div></div>
+            <div class="ba-metric-box"><div class="ba-metric-label">Tasks Overdue</div><div class="ba-metric-val" id="cc-overdue">—</div></div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Recommended Actions</h3>
+            <ul id="cc-recommended-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Nothing to recommend right now.</li></ul>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">🤖 Handled Automatically</h3>
+            <p class="ba-muted" style="margin-top:-6px;">Actions your automation rules already took — configure them under Automation.</p>
+            <ul id="cc-automated-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Nothing yet.</li></ul>
           </div>
         </section>
 
@@ -269,6 +303,55 @@
           </div>
         </section>
 
+        <section class="dash-section" id="automation">
+          <div class="dash-section-head">
+            <h2>Automation</h2>
+            <p class="ba-muted" style="margin:0;">Trigger → condition → action rules that watch your business and act on your behalf — notify you, or create a task — without you having to ask.</p>
+          </div>
+
+          <div class="ba-card">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+              <div>
+                <h3 style="margin:0;">Automation Kill Switch</h3>
+                <p class="ba-muted" style="margin:4px 0 0;">Instantly stop every automation rule for your business, without deleting them.</p>
+              </div>
+              <label style="display:flex; align-items:center; gap:8px; font-weight:600; white-space:nowrap;">
+                <input type="checkbox" id="automation-kill-switch" onchange="toggleKillSwitch()"> Automation enabled
+              </label>
+            </div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Rules</h3>
+            <table class="ba-table" id="automation-rules-table"><thead><tr><th>Name</th><th>Trigger</th><th>Action</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
+
+            <div style="margin-top:16px; display:flex; flex-direction:column; gap:8px; max-width:520px;">
+              <input class="ba-input" id="new-rule-name" placeholder="Rule name (e.g. Chase overdue tasks)">
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <select class="ba-input" id="new-rule-trigger" style="flex:1; min-width:220px;">
+                  <option value="task_overdue">Task overdue by at least (hours)</option>
+                  <option value="negative_feedback_unresolved">Negative feedback unresolved for at least (hours)</option>
+                  <option value="recurring_feedback_theme">Feedback theme repeated at least (count)</option>
+                  <option value="deposit_unpaid_after_appointment">Deposit unpaid after appointment by at least (hours)</option>
+                </select>
+                <input class="ba-input" type="number" min="1" id="new-rule-threshold" placeholder="Threshold" style="max-width:110px;" value="24">
+              </div>
+              <select class="ba-input" id="new-rule-action">
+                <option value="notify_owner">Notify me on WhatsApp</option>
+                <option value="create_task">Create a follow-up task</option>
+              </select>
+              <button class="ba-btn ba-btn-sm" onclick="addAutomationRule()" style="align-self:flex-start;">Create Rule</button>
+            </div>
+            <div id="automation-rule-status" class="ba-muted" style="margin-top:6px;"></div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Execution History</h3>
+            <table class="ba-table" id="automation-runs-table"><thead><tr><th>When</th><th>Rule</th><th>Action</th><th>Target</th><th>Status</th></tr></thead><tbody></tbody></table>
+            <div id="automation-runs-empty" class="ba-muted" style="display:none;">No automated actions have run yet.</div>
+          </div>
+        </section>
+
         <section class="dash-section" id="staff">
           <div class="dash-section-head">
             <h2>Staff Assistant</h2>
@@ -358,11 +441,11 @@
     // login would just get a wall of 403s, so hide the nav entirely
     // rather than show a broken section.
     if (role !== 'owner') {
-      document.querySelectorAll('a[href="#team"], a[href="#health"]').forEach(el => el.remove());
-      const teamSection = document.getElementById('team');
-      const healthSection = document.getElementById('health');
-      if (teamSection) teamSection.remove();
-      if (healthSection) healthSection.remove();
+      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#command-center"], a[href="#automation"]').forEach(el => el.remove());
+      ['team', 'health', 'command-center', 'automation'].forEach(id => {
+        const section = document.getElementById(id);
+        if (section) section.remove();
+      });
     }
 
     function escapeHtml(str) {
@@ -504,6 +587,9 @@
       if (role === 'owner') {
         loadTeam();
         loadHealth();
+        loadCommandCenter();
+        loadAutomationKillSwitch();
+        loadAutomationRules().then(loadAutomationRuns);
       }
 
       const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -973,6 +1059,9 @@
           task_approved: 'Task approved', task_rejected: 'Task sent back', sop_approved: 'Guidance approved',
           feedback_resolved: 'Feedback resolved', deposit_confirmed_paid: 'Payment confirmed',
           appointment_outcome_recorded: 'Appointment outcome recorded',
+          automation_rule_created: 'Automation rule created', automation_rule_updated: 'Automation rule updated',
+          automation_rule_deleted: 'Automation rule deleted', automation_kill_switch: 'Automation switch changed',
+          automation_action_executed: 'Automation took action',
         };
         document.getElementById('health-timeline-list').innerHTML = tl.entries.length ? tl.entries.map(e => `
           <li><span class="ba-muted" style="font-size:.8125rem;">${escapeHtml(e.created_at.slice(0, 16).replace('T', ' '))}</span> — ${escapeHtml(actionLabels[e.action] || e.action)}</li>`).join('')
@@ -994,6 +1083,160 @@
         document.getElementById('sop-text').value = '';
         loadHealth();
       } catch (e) { alert(e.message); }
+    }
+
+    // ---------------------------------------------------------- Command Center (Phase 7)
+
+    async function loadCommandCenter() {
+      const res = await fetch(`/api/command-center?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const cc = await res.json();
+
+      const attn = [];
+      (cc.needs_attention.overdue_task_lines || []).forEach(l => attn.push(`⚠️ ${l}`));
+      if (cc.needs_attention.unresolved_complaints > 0) {
+        attn.push(`⚠️ ${cc.needs_attention.unresolved_complaints} unresolved customer complaint${cc.needs_attention.unresolved_complaints > 1 ? 's' : ''}`);
+      }
+      if (cc.needs_attention.recurring_issues_without_sop > 0) {
+        attn.push(`⚠️ ${cc.needs_attention.recurring_issues_without_sop} recurring issue${cc.needs_attention.recurring_issues_without_sop > 1 ? 's' : ''} with no approved fix yet`);
+      }
+      document.getElementById('cc-attention-list').innerHTML = attn.length
+        ? attn.map(l => `<li>${escapeHtml(l)}</li>`).join('')
+        : '<li class="ba-muted">You\'re all caught up — nothing needs attention right now.</li>';
+
+      document.getElementById('cc-opportunities').textContent = cc.revenue_opportunities.missed_opportunities;
+      document.getElementById('cc-revenue').textContent = `₹${cc.revenue_opportunities.confirmed_revenue_inr}`;
+      document.getElementById('cc-conversion').textContent = `${cc.revenue_opportunities.conversion_rate_pct}%`;
+      document.getElementById('cc-overdue').textContent = cc.operational_problems.tasks_overdue;
+
+      document.getElementById('cc-recommended-list').innerHTML = (cc.recommended_actions || []).length
+        ? cc.recommended_actions.map(l => `<li>${escapeHtml(l)}</li>`).join('')
+        : '<li class="ba-muted">Nothing to recommend right now.</li>';
+
+      document.getElementById('cc-automated-list').innerHTML = (cc.automated_actions_taken || []).length
+        ? cc.automated_actions_taken.map(l => `<li>${escapeHtml(l)}</li>`).join('')
+        : '<li class="ba-muted">Nothing yet — create a rule under Automation to have Business AI act on your behalf.</li>';
+    }
+
+    // ---------------------------------------------------------- Automation Engine (Phase 6)
+
+    const AUTOMATION_TRIGGER_PARAM_KEY = {
+      task_overdue: 'hours', negative_feedback_unresolved: 'hours',
+      recurring_feedback_theme: 'min_count', deposit_unpaid_after_appointment: 'hours',
+    };
+    const AUTOMATION_TRIGGER_LABELS = {
+      task_overdue: 'Task overdue', negative_feedback_unresolved: 'Feedback unresolved',
+      recurring_feedback_theme: 'Recurring feedback', deposit_unpaid_after_appointment: 'Deposit unpaid',
+    };
+    const AUTOMATION_ACTION_LABELS = { notify_owner: 'Notify owner (WhatsApp)', create_task: 'Create follow-up task' };
+    const AUTOMATION_STATUS_PILL = { success: 'converted', failed: 'awaiting_payment', given_up: 'lost' };
+    let automationRuleNames = {};
+
+    async function loadAutomationKillSwitch() {
+      const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const t = await res.json();
+      document.getElementById('automation-kill-switch').checked = t.automation_enabled !== false;
+    }
+
+    async function toggleKillSwitch() {
+      const checkbox = document.getElementById('automation-kill-switch');
+      const enabled = checkbox.checked;
+      try {
+        const res = await fetch(`/api/automation/kill-switch?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ enabled }),
+        });
+        if (!res.ok) throw new Error('Could not update the automation setting.');
+      } catch (e) {
+        checkbox.checked = !enabled;
+        alert(e.message);
+      }
+    }
+
+    async function loadAutomationRules() {
+      const res = await fetch(`/api/automation/rules?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      automationRuleNames = {};
+      data.rules.forEach(r => { automationRuleNames[r.rule_id] = r.name; });
+      const tbody = document.querySelector('#automation-rules-table tbody');
+      tbody.innerHTML = data.rules.length ? data.rules.map(r => `
+        <tr>
+          <td>${escapeHtml(r.name)}</td>
+          <td>${escapeHtml(AUTOMATION_TRIGGER_LABELS[r.trigger_type] || r.trigger_type)}</td>
+          <td>${escapeHtml(AUTOMATION_ACTION_LABELS[r.action_type] || r.action_type)}</td>
+          <td><span class="stage-pill ${r.enabled ? 'converted' : ''}">${r.enabled ? 'Enabled' : 'Disabled'}</span></td>
+          <td style="white-space:nowrap;">
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="toggleAutomationRule('${r.rule_id}', ${!r.enabled})">${r.enabled ? 'Disable' : 'Enable'}</button>
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="deleteAutomationRule('${r.rule_id}')">Delete</button>
+          </td>
+        </tr>`).join('') : '<tr><td colspan="5" class="ba-muted">No automation rules yet — create one below.</td></tr>';
+    }
+
+    async function addAutomationRule() {
+      const statusEl = document.getElementById('automation-rule-status');
+      const name = document.getElementById('new-rule-name').value.trim();
+      const triggerType = document.getElementById('new-rule-trigger').value;
+      const threshold = Number(document.getElementById('new-rule-threshold').value);
+      const actionType = document.getElementById('new-rule-action').value;
+      if (!name || !threshold || threshold <= 0) {
+        statusEl.textContent = 'Enter a rule name and a positive threshold.';
+        return;
+      }
+      const paramKey = AUTOMATION_TRIGGER_PARAM_KEY[triggerType];
+      try {
+        const res = await fetch(`/api/automation/rules?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            name, trigger_type: triggerType, trigger_params: { [paramKey]: threshold },
+            action_type: actionType, action_params: {},
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not create the rule.');
+        document.getElementById('new-rule-name').value = '';
+        statusEl.textContent = '';
+        loadAutomationRules();
+      } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    async function toggleAutomationRule(ruleId, enabled) {
+      const res = await fetch(`/api/automation/rules/${ruleId}?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'PATCH', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ enabled }),
+      });
+      if (res.ok) loadAutomationRules();
+    }
+
+    async function deleteAutomationRule(ruleId) {
+      if (!confirm('Delete this automation rule? This cannot be undone.')) return;
+      const res = await fetch(`/api/automation/rules/${ruleId}?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'DELETE', headers: BizAuth.getAuthHeaders(),
+      });
+      if (res.ok) loadAutomationRules();
+    }
+
+    async function loadAutomationRuns() {
+      const res = await fetch(`/api/automation/runs?tenant_id=${encodeURIComponent(tenantId)}&limit=50`, { headers: BizAuth.getAuthHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const tbody = document.querySelector('#automation-runs-table tbody');
+      const emptyEl = document.getElementById('automation-runs-empty');
+      if (!data.runs.length) {
+        tbody.innerHTML = '';
+        emptyEl.style.display = 'block';
+        return;
+      }
+      emptyEl.style.display = 'none';
+      tbody.innerHTML = data.runs.map(r => `
+        <tr>
+          <td class="ba-muted" style="font-size:.8125rem; white-space:nowrap;">${escapeHtml(r.created_at.slice(0, 16).replace('T', ' '))}</td>
+          <td>${escapeHtml(automationRuleNames[r.rule_id] || r.rule_id)}</td>
+          <td>${escapeHtml(AUTOMATION_ACTION_LABELS[r.action_type] || r.action_type)}</td>
+          <td>${escapeHtml(r.target_type)} ${escapeHtml(r.target_id)}</td>
+          <td><span class="stage-pill ${AUTOMATION_STATUS_PILL[r.status] || ''}">${escapeHtml(r.status)}</span></td>
+        </tr>`).join('');
     }
 
     async function loadAdminPanel() {

@@ -123,9 +123,13 @@ src/business_ai/
                   theme/urgency), theme aggregation for management review
   memory.py       Admin WhatsApp bot: owner-approved SOP/workaround notes
                   per recurring feedback theme
+  automation.py   Automation Engine: owner-configured trigger/condition/
+                  action rules (AutomationRuleStore) and their execution
+                  history (AutomationRunStore) — evaluated by app.py's
+                  admin/automation/run cron endpoint, never a scheduler
   app.py          FastAPI app factory: wires everything into HTTP routes
 static/           Vanilla HTML/CSS/JS frontend, no build step
-tests/            pytest suite (269 tests) — see README.md
+tests/            pytest suite (291 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

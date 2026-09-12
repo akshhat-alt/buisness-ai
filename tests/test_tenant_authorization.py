@@ -146,3 +146,20 @@ def test_only_owner_can_manage_employees(registry):
     authorize(owner, TenantAction.MANAGE_EMPLOYEES, target_tenant_id="salon-a", registry=registry)
     with pytest.raises(UnauthorizedError):
         authorize(manager, TenantAction.MANAGE_EMPLOYEES, target_tenant_id="salon-a", registry=registry)
+
+
+def test_manager_can_view_automation_but_not_manage_it(registry):
+    manager = Principal.manager("user_10", "salon-a")
+    authorize(manager, TenantAction.VIEW_AUTOMATION, target_tenant_id="salon-a", registry=registry)
+    with pytest.raises(UnauthorizedError):
+        authorize(manager, TenantAction.MANAGE_AUTOMATION, target_tenant_id="salon-a", registry=registry)
+
+
+def test_only_owner_can_manage_automation(registry):
+    owner = Principal.owner("user_11", "salon-a")
+    staff = Principal.staff("user_12", "salon-a")
+    authorize(owner, TenantAction.MANAGE_AUTOMATION, target_tenant_id="salon-a", registry=registry)
+    with pytest.raises(UnauthorizedError):
+        authorize(staff, TenantAction.MANAGE_AUTOMATION, target_tenant_id="salon-a", registry=registry)
+    with pytest.raises(UnauthorizedError):
+        authorize(staff, TenantAction.VIEW_AUTOMATION, target_tenant_id="salon-a", registry=registry)

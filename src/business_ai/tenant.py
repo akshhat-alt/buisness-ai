@@ -85,6 +85,13 @@ class TenantConfig(BaseModel):
     billing_paid_at: str | None = None
     status: TenantStatus = TenantStatus.PROVISIONING
     question_quota: int | None = None  # None = platform default (see config.active_tenant_quota)
+    # Owner-facing automation kill switch (Phase 6) — default True so
+    # existing tenants keep working with zero action; an owner can flip
+    # this to False to instantly stop every automation rule from taking
+    # any action for their business, without touching individual rules'
+    # enabled flags. Checked once, fail-closed, at the top of the
+    # automation cron run — see app.py's admin_run_automation.
+    automation_enabled: bool = True
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
 
@@ -124,6 +131,12 @@ class TenantAction(str, Enum):
     # Approving a workaround/SOP note for a recurring feedback theme is a
     # policy action, owner-only like MANAGE_EMPLOYEES — see memory.py.
     MANAGE_SOPS = "manage_sops"
+    # Automation Engine (Phase 6) — see automation.py. Creating/editing/
+    # deleting rules and flipping the kill switch is owner-only policy,
+    # like MANAGE_SOPS; viewing rules and execution history is available
+    # to managers too, like VIEW_FEEDBACK/VIEW_TASKS.
+    MANAGE_AUTOMATION = "manage_automation"
+    VIEW_AUTOMATION = "view_automation"
 
 
 OWNER_ACTIONS = frozenset(
@@ -140,14 +153,24 @@ OWNER_ACTIONS = frozenset(
         TenantAction.UPDATE_TASK_STATUS,
         TenantAction.VIEW_FEEDBACK,
         TenantAction.MANAGE_SOPS,
+        TenantAction.MANAGE_AUTOMATION,
+        TenantAction.VIEW_AUTOMATION,
     }
 )
 
 # Day-to-day operating power (assign/approve tasks, everything a staff
 # member can do) without owner-only levers: can't touch the knowledge
-# base, assistant config, the employee roster, or SOP policy itself.
+# base, assistant config, the employee roster, SOP policy, or the
+# automation engine's rules/kill switch — a manager can SEE what
+# automation is doing (VIEW_AUTOMATION) but not change what it does.
 MANAGER_ACTIONS = OWNER_ACTIONS - frozenset(
-    {TenantAction.INGEST_KNOWLEDGE, TenantAction.MANAGE_ASSISTANT, TenantAction.MANAGE_EMPLOYEES, TenantAction.MANAGE_SOPS}
+    {
+        TenantAction.INGEST_KNOWLEDGE,
+        TenantAction.MANAGE_ASSISTANT,
+        TenantAction.MANAGE_EMPLOYEES,
+        TenantAction.MANAGE_SOPS,
+        TenantAction.MANAGE_AUTOMATION,
+    }
 )
 
 STAFF_ACTIONS = frozenset(

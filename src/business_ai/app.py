@@ -50,6 +50,16 @@ from business_ai.alerts import (
 )
 from business_ai.analytics import AnalyticsStore
 from business_ai.audit import AuditLogStore
+from business_ai.automation import (
+    ActionType,
+    AutomationRule,
+    AutomationRuleStore,
+    AutomationRun,
+    AutomationRunStore,
+    MAX_ATTEMPTS,
+    RunStatus,
+    TriggerType,
+)
 from business_ai.digest import has_digest_content, render_owner_digest, render_owner_whatsapp_summary
 from business_ai.employees import Employee, EmployeeStore
 from business_ai.feedback import FeedbackStore
@@ -145,6 +155,8 @@ class Services:
         self.audit_log = AuditLogStore(data_root / "audit.db")
         self.feedback_store = FeedbackStore(data_root / "feedback.db")
         self.sop_store = SopStore(data_root / "sops.db")
+        self.automation_rule_store = AutomationRuleStore(data_root / "automation_rules.db")
+        self.automation_run_store = AutomationRunStore(data_root / "automation_runs.db")
 
     def embeddings(self):
         return OpenAIEmbeddingProvider(model_name=self.settings.embedding_model, api_key=_openai_key())
@@ -267,6 +279,25 @@ class ApproveSopRequest(BaseModel):
 class UpdateEmployeeRequest(BaseModel):
     role: str | None = None
     active: bool | None = None
+
+
+class CreateAutomationRuleRequest(BaseModel):
+    name: str
+    trigger_type: TriggerType
+    trigger_params: dict = {}
+    action_type: ActionType
+    action_params: dict = {}
+
+
+class UpdateAutomationRuleRequest(BaseModel):
+    name: str | None = None
+    trigger_params: dict | None = None
+    action_params: dict | None = None
+    enabled: bool | None = None
+
+
+class AutomationKillSwitchRequest(BaseModel):
+    enabled: bool
 
 
 class TenantConfigUpdate(BaseModel):
@@ -1109,6 +1140,215 @@ def create_app(services: Services | None = None) -> FastAPI:
             lines.append("No recurring employee issues.")
         return "\n".join(lines)
 
+    def _recommended_actions(snapshot: dict) -> list[str]:
+        """Deterministic, data-grounded recommendations for the Owner
+        Command Center — no LLM call on this path. Mirrors the spirit of
+        generate_action_brief (only surface something the data actually
+        supports, never pad the list) but computed for free from the same
+        snapshot _business_health_snapshot already builds, so opening the
+        dashboard never waits on, or costs, an OpenAI call. The digest
+        email is still the place for the richer LLM-written brief."""
+        actions: list[str] = []
+        if snapshot["tasks_overdue"] > 0:
+            noun = "task is" if snapshot["tasks_overdue"] == 1 else "tasks are"
+            actions.append(f"{snapshot['tasks_overdue']} {noun} overdue — review team workload.")
+        if snapshot["missed_opportunity_count"] > 0:
+            noun = "lead hasn't" if snapshot["missed_opportunity_count"] == 1 else "leads haven't"
+            actions.append(f"{snapshot['missed_opportunity_count']} {noun} been followed up — reach out to convert them.")
+        themes_without_sop = snapshot["recurring_themes_total"] - snapshot["recurring_themes_with_sop"]
+        if themes_without_sop > 0:
+            noun = "issue has" if themes_without_sop == 1 else "issues have"
+            actions.append(f"{themes_without_sop} recurring {noun} no approved fix yet — approve an SOP for the team.")
+        if snapshot["dissatisfaction_count"] > 0:
+            noun = "complaint" if snapshot["dissatisfaction_count"] == 1 else "complaints"
+            actions.append(f"{snapshot['dissatisfaction_count']} customer {noun} this period — review and resolve.")
+        return actions
+
+    def _render_automated_action_line(run: AutomationRun, rule_name: str) -> str:
+        ts = run.created_at[:16].replace("T", " ")
+        action_desc = {"notify_owner": "notified the owner", "create_task": "created a follow-up task"}.get(
+            run.action_type, run.action_type
+        )
+        return f'{ts} — "{rule_name}" {action_desc} ({run.target_type} {run.target_id})'
+
+    # ---------------------------------------------------------- automation engine
+    # Phase 6: trigger -> condition -> action rules. Every trigger below is a
+    # pure, deterministic read of data that already exists (tasks/feedback/
+    # leads) — no new signal is invented, and no existing store is
+    # duplicated. See automation.py's module docstring for the overall
+    # dedup/retry design.
+
+    def _automation_candidates(tenant: TenantConfig, rule: AutomationRule) -> list[tuple[str, str, dict]]:
+        """Every entity CURRENTLY matching `rule`'s trigger condition, as
+        (target_type, target_id, metadata). Dedup/retry/give-up decisions
+        happen in `_fire_automation_rule`, using this list plus
+        automation_run_store history — this function only answers "is the
+        condition true right now," nothing about whether it already fired."""
+        now = time.time()
+        params = rule.trigger_params
+
+        if rule.trigger_type == TriggerType.TASK_OVERDUE:
+            hours = float(params.get("hours", 24))
+            cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - hours * 3600))
+            overdue = svc.task_store.list_overdue(tenant.tenant_id)
+            return [
+                ("task", t.task_id, {"title": t.title, "due_at": t.due_at})
+                for t in overdue if t.due_at and t.due_at < cutoff
+            ]
+
+        if rule.trigger_type == TriggerType.NEGATIVE_FEEDBACK_UNRESOLVED:
+            hours = float(params.get("hours", 24))
+            cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - hours * 3600))
+            unresolved = svc.feedback_store.list_unresolved_negative(tenant.tenant_id)
+            return [
+                ("feedback", f.feedback_id, {"theme": f.theme, "raw_text": f.raw_text[:200]})
+                for f in unresolved if f.created_at < cutoff
+            ]
+
+        if rule.trigger_type == TriggerType.RECURRING_FEEDBACK_THEME:
+            min_count = int(params.get("min_count", RECURRING_FEEDBACK_THRESHOLD))
+            window_hours = float(params.get("window_hours", 24 * 7))
+            since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - window_hours * 3600))
+            summaries = svc.feedback_store.summarize_by_theme(tenant.tenant_id, since_iso=since_iso)
+            return [
+                ("feedback_theme", f"theme:{s.theme}", {"count": s.count, "theme": s.theme})
+                for s in summaries if s.count >= min_count
+            ]
+
+        if rule.trigger_type == TriggerType.DEPOSIT_UNPAID_AFTER_APPOINTMENT:
+            hours = float(params.get("hours", 24))
+            cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - hours * 3600))
+            leads = svc.lead_store.list_for_tenant(tenant.tenant_id, limit=2000)
+            return [
+                ("lead", l.lead_id, {"name": l.name, "appointment_at": l.appointment_at})
+                for l in leads
+                if l.appointment_at and l.appointment_at < cutoff
+                and l.deposit_link_sent_at and not l.deposit_paid_at and not l.appointment_outcome
+            ]
+
+        return []
+
+    def _render_automation_notification(rule: AutomationRule, target_type: str, target_id: str, metadata: dict) -> str:
+        custom = rule.action_params.get("message")
+        if custom:
+            try:
+                return custom.format(**metadata)
+            except (KeyError, IndexError):
+                return custom
+        if rule.trigger_type == TriggerType.TASK_OVERDUE:
+            return f'🤖 Automation "{rule.name}": task "{metadata.get("title", target_id)}" is overdue.'
+        if rule.trigger_type == TriggerType.NEGATIVE_FEEDBACK_UNRESOLVED:
+            return f'🤖 Automation "{rule.name}": unresolved negative feedback ({metadata.get("theme", "unknown theme")}) needs attention.'
+        if rule.trigger_type == TriggerType.RECURRING_FEEDBACK_THEME:
+            return f'🤖 Automation "{rule.name}": recurring feedback theme "{metadata.get("theme", "?")}" reported {metadata.get("count", "?")} times.'
+        if rule.trigger_type == TriggerType.DEPOSIT_UNPAID_AFTER_APPOINTMENT:
+            who = metadata.get("name") or "A customer"
+            return f'🤖 Automation "{rule.name}": {who}\'s deposit is still unpaid after their appointment.'
+        return f'🤖 Automation "{rule.name}" triggered.'
+
+    def _execute_automation_action(tenant: TenantConfig, rule: AutomationRule, target_type: str, target_id: str, metadata: dict) -> None:
+        """Raises on failure — the caller records the run row either way.
+        Both action types reuse existing, already-tested capabilities
+        (management WhatsApp push, task creation); this function adds no
+        new side-effect mechanism of its own."""
+        if rule.action_type == ActionType.NOTIFY_OWNER:
+            message = _render_automation_notification(rule, target_type, target_id, metadata)
+            sent = _notify_management_whatsapp(tenant, message)
+            if sent == 0:
+                raise RuntimeError("No reachable WhatsApp recipient for owner notification.")
+            return
+
+        if rule.action_type == ActionType.CREATE_TASK:
+            assignee_id = rule.action_params.get("assigned_to_employee_id")
+            if not assignee_id:
+                owners = [e for e in svc.employee_store.list_for_tenant(tenant.tenant_id) if e.role == "owner"]
+                if not owners:
+                    raise RuntimeError("No owner employee to assign the automated task to.")
+                assignee_id = owners[0].employee_id
+            title_template = rule.action_params.get("task_title") or f"[Automated] {rule.name}"
+            try:
+                title = title_template.format(**metadata)
+            except (KeyError, IndexError):
+                title = title_template
+            lead_id = target_id if target_type == "lead" else None
+            svc.task_store.create(
+                tenant_id=tenant.tenant_id, title=title[:200],
+                assigned_to_employee_id=assignee_id, assigned_by_employee_id=assignee_id,
+                description=f"Auto-created by automation rule \"{rule.name}\" ({rule.trigger_type.value}).",
+                customer_facing_lead_id=lead_id,
+            )
+            return
+
+        raise RuntimeError(f"Unknown action type: {rule.action_type}")
+
+    def _fire_automation_rule(tenant: TenantConfig, rule: AutomationRule) -> dict:
+        """Evaluate one rule against current state and, for every matching
+        target not already successfully handled (or given up on), execute
+        the action exactly once — recording a run row whether it succeeds
+        or fails. A recurring-feedback-theme target is the one exception
+        allowed to re-fire after a prior success: only when its count has
+        grown since the last successful alert, so a still-recurring issue
+        can escalate again without ever spamming on an unchanged count."""
+        fired: list[str] = []
+        given_up: list[str] = []
+        failed: list[str] = []
+        try:
+            candidates = _automation_candidates(tenant, rule)
+        except Exception as exc:
+            logger.warning("Automation rule %s condition check failed for tenant %s: %s", rule.rule_id, tenant.tenant_id, exc)
+            return {"fired": fired, "given_up": given_up, "failed": failed}
+
+        for target_type, target_id, metadata in candidates:
+            history = svc.automation_run_store.history_for_target(tenant.tenant_id, rule.rule_id, target_id)
+            successes = [r for r in history if r.status == RunStatus.SUCCESS.value]
+
+            if successes:
+                if rule.trigger_type != TriggerType.RECURRING_FEEDBACK_THEME:
+                    continue  # one-shot trigger: never refire once handled
+                last_success = max(successes, key=lambda r: r.created_at)
+                if metadata.get("count", 0) <= last_success.metadata.get("count", 0):
+                    continue  # no growth since the last time this fired
+                # else: the theme kept recurring since the last alert — refire
+            else:
+                if any(r.status == RunStatus.GIVEN_UP.value for r in history):
+                    given_up.append(target_id)
+                    continue
+                failed_attempts = sum(1 for r in history if r.status == RunStatus.FAILED.value)
+                if failed_attempts >= MAX_ATTEMPTS:
+                    svc.automation_run_store.record(
+                        tenant_id=tenant.tenant_id, rule_id=rule.rule_id, trigger_type=rule.trigger_type.value,
+                        target_type=target_type, target_id=target_id, action_type=rule.action_type.value,
+                        status=RunStatus.GIVEN_UP, error=f"Gave up after {failed_attempts} failed attempts.",
+                        metadata=metadata,
+                    )
+                    given_up.append(target_id)
+                    continue
+
+            try:
+                _execute_automation_action(tenant, rule, target_type, target_id, metadata)
+            except Exception as exc:
+                svc.automation_run_store.record(
+                    tenant_id=tenant.tenant_id, rule_id=rule.rule_id, trigger_type=rule.trigger_type.value,
+                    target_type=target_type, target_id=target_id, action_type=rule.action_type.value,
+                    status=RunStatus.FAILED, error=str(exc), metadata=metadata,
+                )
+                failed.append(target_id)
+                continue
+
+            svc.automation_run_store.record(
+                tenant_id=tenant.tenant_id, rule_id=rule.rule_id, trigger_type=rule.trigger_type.value,
+                target_type=target_type, target_id=target_id, action_type=rule.action_type.value,
+                status=RunStatus.SUCCESS, metadata=metadata,
+            )
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=None, action="automation_action_executed",
+                target_type=target_type, target_id=target_id,
+                metadata={"rule_id": rule.rule_id, "rule_name": rule.name, "action_type": rule.action_type.value},
+            )
+            fired.append(target_id)
+
+        return {"fired": fired, "given_up": given_up, "failed": failed}
+
     _TIMELINE_DESCRIPTIONS = {
         "employee_added": "{actor} added an employee to the roster",
         "role_changed": "{actor} changed an employee's role to {role}",
@@ -1125,6 +1365,11 @@ def create_app(services: Services | None = None) -> FastAPI:
         "feedback_resolved": "{actor} marked a feedback item resolved",
         "deposit_confirmed_paid": "{actor} confirmed a deposit of ₹{amount_inr}",
         "appointment_outcome_recorded": "{actor} recorded an appointment as {outcome}",
+        "automation_rule_created": "{actor} created automation rule \"{rule_name}\"",
+        "automation_rule_updated": "{actor} updated automation rule \"{rule_name}\"",
+        "automation_rule_deleted": "{actor} deleted automation rule \"{rule_name}\"",
+        "automation_kill_switch": "{actor} turned automation {state} for this business",
+        "automation_action_executed": "🤖 Automation \"{rule_name}\" took action automatically",
     }
 
     def _render_timeline_line(entry, employees_by_id: dict[str, Employee]) -> str:
@@ -1137,7 +1382,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         try:
             description = template.format(actor=actor, **entry.metadata)
         except (KeyError, IndexError):
-            description = template.format(actor=actor, role="?", amount_inr="?", outcome="?")
+            description = template.format(actor=actor, role="?", amount_inr="?", outcome="?", rule_name="?", state="?")
         return f"{entry.created_at[:16].replace('T', ' ')} — {description}"
 
     def _render_timeline(entries, employees_by_id: dict[str, Employee]) -> str:
@@ -2344,6 +2589,61 @@ def create_app(services: Services | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return _business_health_snapshot(tenant, window_hours=svc.settings.digest_window_hours)
 
+    @app.get("/api/command-center")
+    def get_command_center(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Phase 7: the owner's single "what's going on" view — a pure
+        reorganization of signals that already exist (the same
+        business-health snapshot above, plus the automation engine's own
+        execution history) around the questions an owner actually asks:
+        what needs my attention, where's the revenue opportunity, what's
+        operationally broken, is it trending up or down, what should I do
+        next, and what has automation already handled for me. No LLM call
+        on this path — see _recommended_actions. Gated the same as
+        business-health/feedback: aggregated management insight."""
+        principal = _resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.VIEW_FEEDBACK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        snapshot = _business_health_snapshot(tenant, window_hours=svc.settings.digest_window_hours)
+        recent_successes = [
+            r for r in svc.automation_run_store.list_for_tenant(tenant_id, limit=50) if r.status == "success"
+        ][:10]
+        rule_names: dict[str, str] = {}
+        automated_actions_taken = []
+        for run in recent_successes:
+            if run.rule_id not in rule_names:
+                rule = svc.automation_rule_store.get(tenant_id, run.rule_id)
+                rule_names[run.rule_id] = rule.name if rule else "(deleted rule)"
+            automated_actions_taken.append(_render_automated_action_line(run, rule_names[run.rule_id]))
+
+        return {
+            "needs_attention": {
+                "overdue_tasks": snapshot["tasks_overdue"],
+                "overdue_task_lines": snapshot["overdue_lines"],
+                "unresolved_complaints": snapshot["dissatisfaction_count"],
+                "recurring_issues_without_sop": snapshot["recurring_themes_total"] - snapshot["recurring_themes_with_sop"],
+            },
+            "revenue_opportunities": {
+                "missed_opportunities": snapshot["missed_opportunity_count"],
+                "missed_opportunity_lines": snapshot["missed_opportunity_lines"],
+                "buying_intent_count": snapshot["buying_intent_count"],
+                "confirmed_revenue_inr": snapshot["confirmed_revenue_inr"],
+                "conversion_rate_pct": snapshot["conversion_rate_pct"],
+            },
+            "operational_problems": {
+                "tasks_overdue": snapshot["tasks_overdue"],
+                "unresolved_negative_feedback": snapshot["dissatisfaction_count"],
+                "recurring_feedback_lines": snapshot["recurring_feedback_lines"],
+            },
+            "trends": snapshot["trends"],
+            "recommended_actions": _recommended_actions(snapshot),
+            "automated_actions_taken": automated_actions_taken,
+        }
+
     @app.get("/api/timeline")
     def get_timeline(tenant_id: str, authorization: str | None = Header(default=None), limit: int = 50) -> dict:
         """A read over the existing audit log, not a new event-store —
@@ -2394,6 +2694,157 @@ def create_app(services: Services | None = None) -> FastAPI:
             target_type="sop", target_id=theme_key,
         )
         return note.model_dump()
+
+    # -------------------------------------------------------------- automation engine (Phase 6)
+    @app.get("/api/automation/rules")
+    def list_automation_rules(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_AUTOMATION, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"rules": [r.model_dump() for r in svc.automation_rule_store.list_for_tenant(tenant_id)]}
+
+    @app.post("/api/automation/rules")
+    def create_automation_rule(
+        request: CreateAutomationRuleRequest, tenant_id: str, authorization: str | None = Header(default=None)
+    ) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.MANAGE_AUTOMATION, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        try:
+            rule = svc.automation_rule_store.create(
+                tenant_id=tenant_id, name=request.name, trigger_type=request.trigger_type,
+                trigger_params=request.trigger_params, action_type=request.action_type,
+                action_params=request.action_params, created_by_employee_id=principal.principal_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="automation_rule_created",
+            target_type="automation_rule", target_id=rule.rule_id, metadata={"rule_name": rule.name},
+        )
+        return rule.model_dump()
+
+    @app.patch("/api/automation/rules/{rule_id}")
+    def update_automation_rule(
+        rule_id: str, request: UpdateAutomationRuleRequest, tenant_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.MANAGE_AUTOMATION, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        fields = {k: v for k, v in request.model_dump().items() if v is not None}
+        if not fields:
+            existing = svc.automation_rule_store.get(tenant_id, rule_id)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Unknown rule_id for this business.")
+            return existing.model_dump()
+        updated = svc.automation_rule_store.update(tenant_id, rule_id, **fields)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Unknown rule_id for this business.")
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="automation_rule_updated",
+            target_type="automation_rule", target_id=updated.rule_id, metadata={"rule_name": updated.name},
+        )
+        return updated.model_dump()
+
+    @app.delete("/api/automation/rules/{rule_id}")
+    def delete_automation_rule(rule_id: str, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.MANAGE_AUTOMATION, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        rule = svc.automation_rule_store.get(tenant_id, rule_id)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="Unknown rule_id for this business.")
+        svc.automation_rule_store.delete(tenant_id, rule_id)
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="automation_rule_deleted",
+            target_type="automation_rule", target_id=rule_id, metadata={"rule_name": rule.name},
+        )
+        return {"deleted": True}
+
+    @app.get("/api/automation/runs")
+    def list_automation_runs(tenant_id: str, authorization: str | None = Header(default=None), limit: int = 100) -> dict:
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_AUTOMATION, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"runs": [r.model_dump() for r in svc.automation_run_store.list_for_tenant(tenant_id, limit=min(limit, 200))]}
+
+    @app.post("/api/automation/kill-switch")
+    def set_automation_kill_switch(
+        request: AutomationKillSwitchRequest, tenant_id: str, authorization: str | None = Header(default=None)
+    ) -> dict:
+        """Owner-only, instant, tenant-wide: flips automation_enabled on
+        TenantConfig, checked fail-closed at the top of every automation
+        cron run. Does not touch individual rules' own enabled flags —
+        flipping this back on resumes exactly the rules that were already
+        turned on before."""
+        principal = _resolve(authorization)
+        try:
+            authorize(principal, TenantAction.MANAGE_AUTOMATION, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        updated = svc.tenant_registry.update_config(tenant_id, automation_enabled=request.enabled)
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="automation_kill_switch",
+            target_type="tenant", target_id=tenant_id,
+            metadata={"state": "on" if request.enabled else "off"},
+        )
+        return {"automation_enabled": updated.automation_enabled}
+
+    @app.post("/api/v1/admin/automation/run")
+    def admin_run_automation(authorization: str | None = Header(default=None)) -> dict:
+        """The one cron entrypoint for the entire automation engine — meant
+        to be invoked periodically by an external cron, same convention as
+        every other admin/*/run endpoint. Fail-closed order: tenant must
+        be ACTIVE, then automation_enabled must be true, then each of the
+        tenant's own enabled rules is evaluated via _fire_automation_rule.
+        Idempotent: re-running this immediately after a successful run
+        does nothing new, since dedup lives in automation_run_store."""
+        principal = _require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        processed: dict[str, dict] = {}
+        skipped_tenants: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            if not tenant.automation_enabled:
+                skipped_tenants.append({"tenant_id": tenant.tenant_id, "reason": "automation kill switch is off"})
+                continue
+            rules = svc.automation_rule_store.list_for_tenant(tenant.tenant_id, enabled_only=True)
+            if not rules:
+                continue
+            tenant_result: dict[str, list[str]] = {"fired": [], "given_up": [], "failed": []}
+            for rule in rules:
+                outcome = _fire_automation_rule(tenant, rule)
+                for key in tenant_result:
+                    tenant_result[key].extend(f"{rule.rule_id}:{t}" for t in outcome[key])
+            if any(tenant_result.values()):
+                processed[tenant.tenant_id] = tenant_result
+        return {"processed": processed, "skipped": skipped_tenants}
 
     # -------------------------------------------------------------- platform admin
     @app.get("/api/v1/admin/tenants")
