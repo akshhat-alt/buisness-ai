@@ -78,6 +78,7 @@ from business_ai.ingestion import IngestionError, SourceStore, extract_pdf_text,
 from business_ai.leads import Lead, LeadStore, lead_stage
 from business_ai.payments import PaymentLinkError, RazorpayClient, verify_razorpay_webhook_signature
 from business_ai.retrieval import OpenAIEmbeddingProvider, RetrievalEngine, VectorStore
+from business_ai.revenue_radar import compute_revenue_leakage, render_revenue_radar_whatsapp
 from business_ai.security import InvalidTenantIdError, UnsafeUrlError, validate_tenant_id
 from business_ai.tasks import Task, TaskStore
 from business_ai.tenant import (
@@ -160,6 +161,7 @@ def _admin_bot_help_text() -> str:
         "• timeline — recent activity (owner/manager)\n"
         "• log sale/expense/collection <amount> [note] — record a manual entry\n"
         "• financials / sales report — last 30 days manual totals (owner/manager)\n"
+        "• revenue radar / leakage — missed bookings, unpaid deposits, no-shows (owner/manager)\n"
         "\nOr just type naturally — I'll do my best to understand "
         "(except money/outcome confirmations, which always need the exact commands above)."
     )
@@ -1199,6 +1201,17 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             for s in sorted(summary, key=lambda x: x.metric_type):
                 lines.append(f"• {s.metric_type.capitalize()}: ₹{s.total_inr} ({s.entry_count} entr{'y' if s.entry_count == 1 else 'ies'})")
             reply("\n".join(lines))
+            return True
+
+        if clean in ("revenue radar", "leakage"):
+            if not can_manage:
+                reply("Only an owner or manager can view the revenue radar.")
+                return True
+            report = compute_revenue_leakage(
+                tenant.tenant_id, lead_store=svc.lead_store, analytics_store=svc.analytics_store,
+                deposit_amount_inr=tenant.deposit_amount_inr,
+            )
+            reply(render_revenue_radar_whatsapp(report))
             return True
 
         if clean in ("scorecard", "health"):

@@ -168,6 +168,9 @@ src/business_ai/
   ops.py          Phase 14: backup/restore (tar.gz snapshot of data/)
                   and the read-only data-integrity scanner — no new
                   store, pure filesystem + read-only cross-store checks
+  revenue_radar.py  Phase 15: Revenue Leakage Radar — missed buying
+                  intent, unpaid deposits, no-shows; no new store,
+                  reuses fields the existing automations already key off
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -189,8 +192,9 @@ src/business_ai/
                   history/rollback, kill switch, and the two evolution
                   cron endpoints), metrics_routes (Phase 12: financial
                   summary/CSV export), ops_routes (Phase 14: backup
-                  trigger/list, detailed health, data integrity) — see
-                  app.py's create_app() for wiring
+                  trigger/list, detailed health, data integrity),
+                  revenue_radar_routes (Phase 15) — see app.py's
+                  create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -201,7 +205,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (474 tests) — see README.md
+tests/            pytest suite (487 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

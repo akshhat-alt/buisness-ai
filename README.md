@@ -939,6 +939,45 @@ count into a separate location, with the pre-restore directory
 preserved, not deleted. 18 new tests across `tests/test_ops.py` (10) and
 `tests/test_ops_routes.py` (8) — 474 total, all green.
 
+## What V1.20 adds: Revenue Leakage Radar (Phase 15)
+
+A single, consolidated, owner-facing report of concrete missed-revenue
+situations (`revenue_radar.py`) — no new store, no inference, no LLM,
+built entirely from fields every earlier phase's automations already
+key off (`Lead.appointment_at`, `deposit_link_sent_at`/`deposit_paid_at`,
+`appointment_outcome`, and `AnalyticsStore`'s buying-intent tracking).
+Every existing automation trigger ACTS on one condition; this is the
+complementary READ-ONLY view answering "where is money actually being
+left on the table right now":
+
+- **Missed buying intent**: a lead whose conversation showed real
+  purchase interest but never got an appointment set or a deposit paid.
+- **Unpaid deposits**: a deposit link sent, still unpaid past a 48-hour
+  grace window (an honest estimate — `total_estimated_leakage_inr` uses
+  the tenant's own configured deposit amount, never presented as exact
+  lost revenue since there's no live payment webhook).
+- **No-shows**: appointments the owner has already marked as a no-show.
+
+Reachable via `GET /api/revenue-radar` (owner/manager-gated, reusing
+`VIEW_FEEDBACK` — the same "aggregate management view, not for staff"
+permission Phase 10's Business Map uses, since plain `VIEW_LEADS` is
+available to staff and too broad for a consolidated financial-leakage
+report) and the admin bot's `revenue radar` / `leakage` WhatsApp
+commands.
+
+**Deliberately NOT a new proactive push.** Business AI already has four
+owner-facing proactive channels (daily digest, weekly scorecard,
+dependency-risk scan, evolution-monitor rollback alerts) — a fifth
+unconditional WhatsApp push risks the alert fatigue that makes an owner
+start ignoring all of them. This ships as a pull report only.
+
+Live-verified end to end against a real running server: an empty radar
+for a brand-new tenant, then a real buying-intent conversation turn and
+a real appointment marked no-show both correctly surfaced through
+`GET /api/revenue-radar` against the live database. 13 new tests across
+`tests/test_revenue_radar.py` (9) and `tests/test_revenue_radar_routes.py`
+(4) — 487 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1430,3 +1469,14 @@ before the prompt/schema was finalized.
   possible cross-store reference in the codebase (e.g. automation rules
   referencing a deleted employee); extending it is additive, following
   the same pattern.
+- **Revenue leakage's "estimated" figure covers unpaid deposits only**
+  (Phase 15) — a missed-buying-intent lead or a no-show has no reliable
+  rupee figure attached anywhere in the data model (no expected-sale
+  amount is ever captured before a sale happens), so those two
+  categories are reported as counts, not estimated amounts. Inventing a
+  number for them would be a guess dressed up as data.
+- **The Revenue Radar's "missed buying intent" window is fixed at 14
+  days** and isn't yet a tenant-configurable setting — same category as
+  several other fixed windows in this codebase (task escalation hours,
+  reminder windows) that are implementation constants today, not owner
+  dials, until a real business asks for control over the number.
