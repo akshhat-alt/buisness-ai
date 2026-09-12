@@ -75,6 +75,7 @@ from business_ai.routers.admin_routes import register_admin
 from business_ai.routers.automation_routes import register_automation
 from business_ai.routers.auth_routes import register_auth
 from business_ai.routers.customer_routes import register_customer
+from business_ai.routers.dependency_routes import register_dependency
 from business_ai.routers.feedback_routes import register_feedback
 from business_ai.routers.insights_routes import register_insights
 from business_ai.routers.knowledge_routes import register_knowledge
@@ -224,6 +225,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     register_tenant_settings(app, svc, ctx)
     register_team(app, svc, ctx)
     register_feedback(app, svc, ctx)
+    register_dependency(app, svc, ctx)
     register_automation(app, svc, ctx)
     register_webhooks(app, svc, ctx)
     register_admin(app, svc, ctx)

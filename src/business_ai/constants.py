@@ -35,3 +35,9 @@ RECURRING_FEEDBACK_THRESHOLD = 3
 # A task overdue by more than this is a proactive-alert-worthy problem,
 # not just a line in tomorrow's digest — see /api/v1/admin/task-escalation/run.
 TASK_ESCALATION_HOURS = 48
+# Phase 10: once a dependency risk (a bus-factor-1 process, a workload/
+# knowledge concentration, sole-contact customers) has been flagged to
+# the owner, don't re-flag the SAME risk again until this many hours have
+# passed — an unresolved risk staying true every single day shouldn't
+# mean a daily repeat of the same WhatsApp message forever.
+DEPENDENCY_RISK_RENOTIFY_HOURS = 24 * 7

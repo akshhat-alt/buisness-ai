@@ -671,6 +671,76 @@ matching structured JSON log line. 47 new tests across
 `tests/test_rate_limiting.py`, and `tests/test_config_validation.py` —
 361 total, all green.
 
+## What V1.15 adds: Business Dependency Intelligence (Phase 10)
+
+The owner-facing answer to "what breaks if my one experienced person
+goes on leave tomorrow" — computed, not guessed, from data the app
+already has (tasks, employees, SOPs, leads), with zero new
+source-of-truth store.
+
+**Dependency graph** (`dependency_graph.py`): a "process" is a recurring
+task type — task titles grouped by exact normalized match (case,
+punctuation, whitespace), any title appearing 2+ times. Each process
+gets a **bus factor**: how many distinct employees have ever completed
+it (falling back to who's been assigned it, if nobody's finished one
+yet). A bus factor of 1 is a single point of failure, flagged as a
+**high**-severity risk regardless of team size — a one-person team where
+only that one person can do something is exactly the risk this feature
+exists to surface, not a false positive to suppress. Two more risk
+types, gated behind a minimum roster of 3 (below that, "one person does
+most of the work" is trivially true and not a meaningful finding):
+**workload concentration** (one employee holding the outsized majority
+of currently-open tasks) and **knowledge concentration** (one employee
+as the sole author across a business's approved SOP notes). A fourth,
+**customer concentration**, flags a lead whose every interaction has
+gone through a single employee.
+
+**"What breaks if X is unavailable?" simulation**
+(`simulate_employee_unavailable`): pure deterministic graph traversal
+for one named employee — their own open tasks, which processes would
+become bus-factor-zero (orphaned) without them, which customers only
+they've ever spoken to, and which SOPs only they've authored. Never a
+prediction, never LLM-generated — the same inputs always produce the
+same answer, which is the point when an owner is deciding whether
+someone can actually take next week off.
+
+**Owner-facing Business Map** (new dashboard section, `#business-map` in
+`static/dashboard.html`): the risk list, the process/bus-factor table,
+workload/knowledge concentration cards, sole-contact customers, and a
+"simulate this employee being unavailable" picker — all reading from two
+new `GET /api/dependency/map` / `GET /api/dependency/simulate` routes,
+gated by the same `VIEW_FEEDBACK` action already used for other
+owner/manager-only aggregate views (nothing here is more sensitive than
+feedback themes; it doesn't need a new permission).
+
+**Proactive dependency detection**
+(`POST /api/v1/admin/dependency-scan/run`, platform_admin-only, meant
+for the same external daily cron as every other `/admin/*/run` job):
+scans every active tenant's snapshot, and for any **high**-severity risk
+(bus-factor-1 processes only — concentration risk stays dashboard-only,
+not urgent enough to interrupt an owner over WhatsApp) sends one
+WhatsApp alert naming the specific process at risk. Dedup reuses
+`AuditLogStore` exactly like every other proactive job in this
+codebase (WhatsApp inbox claims, task reminder markers, automation run
+history) — a stable `target_id` per risk (e.g.
+`process:restock shelf 3`) is recorded once flagged and not re-sent for
+7 days (`DEPENDENCY_RISK_RENOTIFY_HOURS`), so an unresolved risk doesn't
+mean a daily repeat of the same message forever; a genuinely new risk
+(a different process going bus-factor-1) still notifies immediately.
+
+Live-verified end to end against a real running server: created an
+employee with 3 completed instances of one task title, confirmed
+`GET /api/dependency/map` correctly reported it as a bus-factor-1 high
+risk, confirmed `GET /api/dependency/simulate` for that employee listed
+the process as one that would become orphaned, confirmed the dashboard's
+new Business Map section rendered the same data with zero console
+errors, then ran the proactive scan cron twice — the first run notified
+and wrote an audit-log entry naming the process, the second run
+correctly deduped it (no new WhatsApp send, no new audit row). 30 new
+tests across `tests/test_dependency_graph.py` (18),
+`tests/test_dependency_routes.py` (6), and
+`tests/test_dependency_scan_cron.py` (6) — 391 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1061,3 +1131,29 @@ before the prompt/schema was finalized.
   today by `pyflakes` catching undefined bare names and the 361-test
   suite exercising nearly every route, but a genuinely different
   guarantee than a typed dependency-injection contract would give.
+- **A "process" is defined by exact-normalized-title matching, not fuzzy
+  grouping.** "Restock shelf 3" and "restock shelf #3" are the same
+  process; "restock shelf 3" and "restock shelves" are not — an owner
+  who titles the same recurring job inconsistently gets it split into
+  separate, individually-lower-bus-factor processes instead of one
+  correctly-counted one. A later phase could add fuzzy/embedding-based
+  title grouping; this phase deliberately didn't, to keep the risk
+  computation fully deterministic and explainable.
+- **Knowledge concentration shows current SOP authorship only, not
+  history.** `SopNote.approved_by_employee_id` records who approved the
+  note as it stands today; if authorship changed hands, the prior
+  author's now-transferred knowledge isn't reflected as a past
+  concentration risk.
+- **Dependency intelligence is a derived read model, recomputed on every
+  request** — `compute_dependency_snapshot` re-scans a tenant's full
+  task/employee/SOP/lead history each time `/api/dependency/map` or the
+  scan cron runs, the same pattern as the existing business-health
+  snapshot. Correct and simple at today's task volumes; a tenant with a
+  very large task history would eventually warrant caching or
+  incremental computation.
+- **The proactive scan only fires WhatsApp alerts for bus-factor-1
+  process risk**, not workload/knowledge/customer concentration — those
+  stay dashboard-only. This mirrors the existing convention of reserving
+  interrupting pushes for the most unambiguous risk, at the cost of an
+  owner only discovering a concentration risk if they open the Business
+  Map themselves.

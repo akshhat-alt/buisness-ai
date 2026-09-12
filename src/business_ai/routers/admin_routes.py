@@ -23,6 +23,7 @@ from business_ai.digest import has_digest_content, render_owner_digest, render_o
 from business_ai.email_sender import EmailSendError
 from business_ai.formatting import _format_appointment_ist, _whatsapp_link
 from business_ai.constants import (
+    DEPENDENCY_RISK_RENOTIFY_HOURS,
     REENGAGEMENT_MAX_AGE_HOURS,
     REENGAGEMENT_MIN_AGE_HOURS,
     REMINDER_WINDOW_END_HOURS,
@@ -30,6 +31,7 @@ from business_ai.constants import (
     RECURRING_FEEDBACK_THRESHOLD,
     TASK_ESCALATION_HOURS,
 )
+from business_ai.dependency_graph import compute_dependency_snapshot
 from business_ai.leads import Lead
 from business_ai.payments import PaymentLinkError
 from business_ai.schemas import BillingLinkRequest, MarkPaidRequest
@@ -435,4 +437,64 @@ def register_admin(app: FastAPI, svc, ctx) -> None:
             if sent_count == 0:
                 skipped.append({"tenant_id": tenant.tenant_id, "reason": "no WhatsApp recipient reachable (email attempted)"})
         return {"escalated": escalated, "skipped": skipped}
+
+    @app.post("/api/v1/admin/dependency-scan/run")
+    def admin_run_dependency_scan(authorization: str | None = Header(default=None)) -> dict:
+        """Phase 10's proactive half of Business Dependency Intelligence:
+        computes the same Business Map GET /api/dependency/map renders,
+        and notifies the owner/manager roster about any NEW high-severity
+        risk (a bus-factor-1 process) they haven't already been told about
+        recently. Dedup reuses AuditLogStore exactly like every other
+        dedup in this codebase (WhatsAppInboxStore.claim(),
+        TaskStore.reminder_sent_at, the Automation Engine's run history) —
+        existence of a recent `dependency_risk_flagged` audit entry for
+        the same (tenant, target_id) means "already told them, don't
+        repeat it every single day this stays true." Medium/low-severity
+        risks (workload/knowledge/customer concentration) are surfaced
+        on-demand in the dashboard's Business Map, not pushed proactively —
+        only a single point of failure is urgent enough to interrupt an
+        owner's day over."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        renotify_cutoff = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - DEPENDENCY_RISK_RENOTIFY_HOURS * 3600)
+        )
+        notified: list[str] = []
+        skipped: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            snapshot = compute_dependency_snapshot(
+                tenant.tenant_id, employee_store=svc.employee_store, task_store=svc.task_store,
+                sop_store=svc.sop_store, lead_store=svc.lead_store,
+            )
+            high_severity = [r for r in snapshot["risks"] if r["severity"] == "high"]
+            if not high_severity:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no high-severity risk"})
+                continue
+
+            already_flagged = {
+                e.target_id for e in svc.audit_log.list_for_tenant(tenant.tenant_id, action="dependency_risk_flagged")
+                if e.created_at >= renotify_cutoff
+            }
+            new_risks = [r for r in high_severity if r["target_id"] not in already_flagged]
+            if not new_risks:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "already flagged recently"})
+                continue
+
+            lines = "\n".join(f"• {r['summary']}" for r in new_risks)
+            sent_count = ctx._notify_management_whatsapp(
+                tenant, f"⚠️ Business dependency risk{'s' if len(new_risks) > 1 else ''} found:\n{lines}"
+            )
+            for r in new_risks:
+                svc.audit_log.record(
+                    tenant_id=tenant.tenant_id, actor_employee_id=None, action="dependency_risk_flagged",
+                    target_type="dependency_risk", target_id=r["target_id"], metadata={"summary": r["summary"]},
+                )
+            notified.append(tenant.tenant_id)
+            if sent_count == 0:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no WhatsApp recipient reachable, flagged anyway"})
+        return {"notified": notified, "skipped": skipped}
 
