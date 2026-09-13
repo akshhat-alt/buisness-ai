@@ -1424,6 +1424,27 @@ real signed webhook request. 24 new tests across `tests/test_menu_engineering.py
 (14, new file), `tests/test_menu_engineering_routes.py` (6, new file),
 and `tests/test_admin_bot_restaurant.py` (4) — 644 total, all green.
 
+**Follow-up fix: `PurchaseStore.sum_for_ingredient` now reconciles
+compatible units instead of silently mixing them.** Phase 22 was the
+first thing to actually read `sum_for_ingredient`'s average-price-per-
+unit for a real calculation (food cost), which surfaced a pre-existing
+Phase 17 gap: it summed `quantity` across every purchase for an
+ingredient with no check that they shared a unit, so "5 kg chicken" and
+"500 g chicken" silently averaged into a meaningless number. Fixed by
+converting purchases within the same compatible unit family (g↔kg,
+ml↔L — the two conversions real restaurant owners actually hit, buying
+the same ingredient in different package sizes over time) into one
+canonical unit before summing, and raising a new
+`PurchaseUnitMismatchError` — mirroring `InventoryStore`'s own
+`UnitMismatchError` fail-closed style — only when an ingredient's
+purchases mix genuinely incompatible units (e.g. "kg" and "pieces").
+Both callers (`menu_engineering._recipe_cost` and the WhatsApp waste-log
+cost estimate) treat that error the same honest way they already treat
+"no purchase history yet": cost reported as unknown/₹0, never a crash
+or a guessed number. 7 new tests across `tests/test_purchases.py` (4),
+`tests/test_menu_engineering.py` (2), and `tests/test_admin_bot_restaurant.py`
+(1) — 651 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1505,7 +1526,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-644 tests (and rising — see each phase's own "What Vx.x adds" section
+651 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written
@@ -2058,16 +2079,6 @@ before the prompt/schema was finalized.
   record as an `Employee`'s WhatsApp roster identity, so there's no
   employee_id to attribute it to without the same linking work named
   above.
-- **`PurchaseStore.sum_for_ingredient` (and therefore Phase 22's food-
-  cost calculation) is unit-naive** — it averages `amount_inr` over
-  `quantity` regardless of the unit each purchase was logged in, so a
-  purchase logged in "kg" and another in "g" for the same ingredient
-  would silently mix into one meaningless average. `InventoryStore`
-  itself already fails closed on exactly this (`UnitMismatchError`);
-  `PurchaseStore` doesn't have the equivalent guard yet. Pre-existing
-  since Phase 17, surfaced (not introduced) by Phase 22 actually reading
-  this data for the first time — a real gap worth closing in a future
-  pass, not a Phase 22 regression.
 - **Menu-engineering classification needs real comparative data to mean
   anything** — a tenant with only one or two active dishes, or with
   sales concentrated in one short burst, gets a technically-computed but

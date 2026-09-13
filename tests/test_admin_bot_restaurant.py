@@ -205,6 +205,29 @@ def test_log_waste_without_purchase_history_costs_zero_honestly(client_wa, servi
     assert entries[0].reason == "other"
 
 
+def test_log_waste_with_incompatible_purchase_units_costs_zero_honestly(client_wa, services_wa):
+    """Paneer's purchase history mixes "kg" and "pieces" — genuinely
+    incompatible units that can't be averaged into a price. The waste
+    entry must still record (the waste unit itself matches inventory
+    fine), just with an honest unknown (₹0) cost estimate, not a crash
+    or a meaningless number."""
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+    services_wa.purchase_store.record(tenant_id=tenant_id, ingredient_name="Paneer", quantity=10, unit="kg", amount_inr=3000)
+    services_wa.purchase_store.record(tenant_id=tenant_id, ingredient_name="Paneer", quantity=4, unit="pieces", amount_inr=200)
+    services_wa.inventory_store.adjust_quantity(tenant_id, "Paneer", delta=10, unit="kg")
+
+    _send(client_wa, wa_id=OWNER_WA, text="log waste 2 kg paneer: spoiled", message_id="wamid.waste3")
+
+    entries = services_wa.wastage_store.list_for_tenant(tenant_id)
+    assert len(entries) == 1
+    assert entries[0].estimated_cost_inr == 0
+
+    stock = services_wa.inventory_store.get(tenant_id, "Paneer")
+    assert stock.quantity_on_hand == 8
+
+
 def test_restaurant_log_commands_open_to_any_roster_member(client_wa, services_wa):
     headers, tenant_id = _signup(client_wa)
     _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")

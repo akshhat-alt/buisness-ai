@@ -33,6 +33,7 @@ from business_ai.constants import (
     REORDER_SUGGESTION_INCREASE_PCT,
     REORDER_SUGGESTION_MIN_TRIGGER_COUNT,
 )
+from business_ai.purchases import PurchaseUnitMismatchError
 
 
 class DishProfitability(BaseModel):
@@ -69,16 +70,21 @@ CLASSIFICATION_LABELS = {
 def _recipe_cost(tenant_id: str, menu_item_id: str, *, menu_store, purchase_store) -> float | None:
     """Sums quantity * (average price per unit from purchase history) for
     every recipe line — the exact technique wastage.py's cost estimate
-    already uses. Returns None (not 0) when the recipe is empty or ANY
-    ingredient has no purchase history yet — matches purchases.py/
-    wastage.py's own "never invent a cost" discipline: a partially-priced
-    recipe cost would be a silently wrong total, not an honest estimate."""
+    already uses. Returns None (not 0) when the recipe is empty, ANY
+    ingredient has no purchase history yet, or ANY ingredient's purchase
+    history mixes genuinely incompatible units (PurchaseUnitMismatchError)
+    — matches purchases.py/wastage.py's own "never invent a cost"
+    discipline: a partially-priced recipe cost would be a silently wrong
+    total, not an honest estimate."""
     lines = menu_store.get_recipe(tenant_id, menu_item_id)
     if not lines:
         return None
     total = 0.0
     for line in lines:
-        summary = purchase_store.sum_for_ingredient(tenant_id, line.ingredient_name)
+        try:
+            summary = purchase_store.sum_for_ingredient(tenant_id, line.ingredient_name)
+        except PurchaseUnitMismatchError:
+            return None  # inconsistent purchase data makes this ingredient's price unknown, not guessable
         if summary["total_quantity"] <= 0:
             return None  # any unpriceable ingredient makes the whole recipe cost unknown, not partially wrong
         cost_per_unit = summary["total_amount_inr"] / summary["total_quantity"]

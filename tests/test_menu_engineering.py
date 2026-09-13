@@ -89,6 +89,37 @@ def test_a_recipe_with_one_unpriceable_ingredient_makes_the_whole_dish_unknown(t
     assert report.dishes[0].recipe_cost_inr is None
 
 
+def test_recipe_cost_uses_converted_total_for_mixed_compatible_units(tmp_path):
+    menu = MenuStore(tmp_path / "menu.db")
+    purchases = PurchaseStore(tmp_path / "purchases.db")
+    metrics = BusinessMetricStore(tmp_path / "metrics.db")
+    item = menu.create_item(tenant_id=TENANT, name="Butter Chicken", price_inr=350)
+    menu.set_recipe(TENANT, item.menu_item_id, [{"ingredient_name": "Chicken", "quantity": 200, "unit": "g"}])
+    # One purchase in kg, one in g — same real ingredient, different package sizes.
+    purchases.record(tenant_id=TENANT, ingredient_name="Chicken", quantity=1, unit="kg", amount_inr=500)  # 1000g for ₹500
+    purchases.record(tenant_id=TENANT, ingredient_name="Chicken", quantity=1000, unit="g", amount_inr=500)  # another 1000g for ₹500
+    # Combined: 2000g for ₹1000 -> ₹0.5/g, same as the single-unit case above.
+
+    report = build_menu_engineering_report(TENANT, menu_store=menu, purchase_store=purchases, metric_store=metrics)
+    assert report.dishes[0].recipe_cost_inr == 100.0  # 200g * ₹0.5/g
+
+
+def test_recipe_cost_is_unknown_when_purchase_units_are_incompatible(tmp_path):
+    """Mixing "g" and "pieces" for the same ingredient can't be averaged
+    honestly — the dish must report unknown cost, not a meaningless
+    number, matching the "never invent a number" discipline."""
+    menu = MenuStore(tmp_path / "menu.db")
+    purchases = PurchaseStore(tmp_path / "purchases.db")
+    metrics = BusinessMetricStore(tmp_path / "metrics.db")
+    item = menu.create_item(tenant_id=TENANT, name="Butter Chicken", price_inr=350)
+    menu.set_recipe(TENANT, item.menu_item_id, [{"ingredient_name": "Chicken", "quantity": 200, "unit": "g"}])
+    purchases.record(tenant_id=TENANT, ingredient_name="Chicken", quantity=1000, unit="g", amount_inr=500)
+    purchases.record(tenant_id=TENANT, ingredient_name="Chicken", quantity=4, unit="pieces", amount_inr=400)
+
+    report = build_menu_engineering_report(TENANT, menu_store=menu, purchase_store=purchases, metric_store=metrics)
+    assert report.dishes[0].recipe_cost_inr is None
+
+
 def test_menu_engineering_classifies_all_four_quadrants(tmp_path):
     menu = MenuStore(tmp_path / "menu.db")
     purchases = PurchaseStore(tmp_path / "purchases.db")
