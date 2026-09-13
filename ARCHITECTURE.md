@@ -111,7 +111,13 @@ src/business_ai/
   usage_limiter.py  Atomic SQLite quota/concurrency/rate-limit + kill switch
   knowledge.py    Text chunking
   retrieval.py    Embeddings, tenant-isolated vector store, retrieval engine
-  generation.py   Prompts, abstention gate, LLM call, citation validator
+  generation.py   Prompts, abstention gate, LLM call, citation validator.
+                  Phase 25 added transcribe_voice_note() (Whisper, via
+                  the OpenAI dependency this app already has — a new
+                  method, not a new vendor) and extract_receipt_data()
+                  (OpenAI vision input; every field is None unless
+                  clearly legible, same "never invent a number"
+                  discipline as purchases.py/wastage.py)
   ingestion.py    SSRF-safe website fetch, PDF text extraction, SourceStore
   leads.py        Lead capture (SQLite) + appointment/reminder/reengagement/
                   winback/deposit tracking fields and query methods.
@@ -135,7 +141,12 @@ src/business_ai/
   whatsapp.py     WhatsApp Cloud API: webhook parsing/signature, send client,
                   redelivery idempotency (WhatsAppInboxStore), and
                   MetaEmbeddedSignupClient (one-click onboarding's OAuth
-                  code exchange, gated behind WHATSAPP_APP_ID)
+                  code exchange, gated behind WHATSAPP_APP_ID). Phase 25
+                  added audio/image extraction to parse_webhook_payload
+                  (IncomingWhatsAppMessage.media_type/media_id/mime_type
+                  — text-only was a deliberate, documented V1 scope line
+                  until this phase) and WhatsAppClient.get_media_url()/
+                  download_media() (Meta's two-step media retrieval)
   payments.py     Razorpay payment-link client (deposit links) +
                   verify_razorpay_webhook_signature, shared by the
                   platform webhook and Phase 18's per-tenant one
@@ -275,6 +286,14 @@ src/business_ai/
                   for purchases whose supplier name never matched
                   (surfacing find_by_name's exact-match-only gap, not
                   fixing it — see README's Known Limitations)
+  reviews.py      Phase 25 (Perception & Input Expansion): ReviewStore —
+                  genuinely new, nothing tracked review ratings before
+                  this. Two write paths into one table: an automated
+                  Google Places pull (GooglePlacesReviewClient, stdlib
+                  urllib, platform-level GOOGLE_PLACES_API_KEY — NOT
+                  "bring your own" like WhatsApp/Razorpay) and a manual
+                  paste-in for Zomato/Swiggy (no public review-pull API
+                  either has)
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -334,7 +353,12 @@ src/business_ai/
                   GET /api/menu-recommendations,
                   POST /api/menu-engineering/simulate, and
                   GET /api/digital-gm-briefing to
-                  menu_engineering_routes.py (all VIEW_INVENTORY-gated)
+                  menu_engineering_routes.py (all VIEW_INVENTORY-gated).
+                  Phase 25 added reviews_routes.py (GET /api/reviews,
+                  POST /api/reviews/manual, both VIEW_FINANCIALS-gated —
+                  same tier as POST /api/metrics) and
+                  POST /api/v1/admin/review-sync/run to admin_routes.py
+                  (platform_admin-only, the Google Places sync cron)
                   — see app.py's create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
@@ -346,7 +370,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (728 tests) — see README.md
+tests/            pytest suite (775 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

@@ -121,6 +121,19 @@ class TenantConfig(BaseModel):
     evolution_dissatisfaction_threshold: float | None = None
     evolution_lookback_hours: int | None = None
     evolution_regression_delta: float | None = None
+    # Phase 25 — Perception & Input Expansion. This tenant's own Google
+    # Place ID (from their Google Business Profile) — the platform-level
+    # GOOGLE_PLACES_API_KEY (Settings) does the actual API call, this
+    # says WHICH business to look up. None = the automated review-sync
+    # cron skips this tenant; manual review logging is unaffected.
+    google_place_id: str | None = None
+    # Voice-note transcription (Whisper, via the OpenAI key this app
+    # already requires) — an explicit opt-in, default False like
+    # evolution_enabled, because every transcribed voice note spends
+    # this tenant's own OpenAI usage. When False, an inbound voice note
+    # gets a reply asking the employee to type instead, never silently
+    # dropped and never transcribed without consent.
+    voice_notes_enabled: bool = False
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
 

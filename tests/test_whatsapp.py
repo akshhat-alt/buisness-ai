@@ -29,6 +29,13 @@ class FakeWhatsAppClient:
         self.sent: list[dict] = []
         self.template_sent: list[dict] = []
         self.raise_reengagement = False
+        # Phase 25: media_bytes_by_id lets a test control what
+        # download_media() "returns" for a given media_id, keyed by the
+        # id the test sent in its webhook payload — default is a small
+        # placeholder so a test that doesn't care what the bytes are
+        # doesn't need to configure this at all.
+        self.media_bytes_by_id: dict[str, bytes] = {}
+        self.raise_media_error = False
 
     def send_text(self, *, phone_number_id: str, access_token: str, to: str, body: str) -> dict:
         if self.raise_reengagement:
@@ -48,6 +55,21 @@ class FakeWhatsAppClient:
 
     def mark_read(self, **kwargs) -> None:
         pass
+
+    def get_media_url(self, *, media_id: str, access_token: str) -> str:
+        if self.raise_media_error:
+            from business_ai.whatsapp import WhatsAppSendError
+
+            raise WhatsAppSendError("fake media lookup failure")
+        return f"https://fake-media.example/{media_id}"
+
+    def download_media(self, *, media_url: str, access_token: str) -> bytes:
+        if self.raise_media_error:
+            from business_ai.whatsapp import WhatsAppSendError
+
+            raise WhatsAppSendError("fake media download failure")
+        media_id = media_url.rsplit("/", 1)[-1]
+        return self.media_bytes_by_id.get(media_id, b"fake-media-bytes")
 
 
 @pytest.fixture()

@@ -8,7 +8,13 @@ import pytest
 
 from business_ai.app import Services, create_app
 from business_ai.config import load_settings
-from business_ai.generation import EmployeeCommandIntent, FeedbackClassification, LLMResponseDraft, ToneAdjustmentDraft
+from business_ai.generation import (
+    EmployeeCommandIntent,
+    FeedbackClassification,
+    LLMResponseDraft,
+    ReceiptExtraction,
+    ToneAdjustmentDraft,
+)
 from business_ai.retrieval import HashEmbeddingProvider
 
 
@@ -23,6 +29,8 @@ class FakeGenerator:
         feedback_classifications: dict[str, FeedbackClassification] | None = None,
         employee_command_intents: dict[str, EmployeeCommandIntent] | None = None,
         tone_adjustment_draft: ToneAdjustmentDraft | Exception | None = None,
+        voice_transcript: str | Exception | None = None,
+        receipt_extraction: ReceiptExtraction | Exception | None = None,
     ) -> None:
         self.status = status
         self.answer_text = answer_text
@@ -43,6 +51,15 @@ class FakeGenerator:
         # for a deterministic default draft — same "override or sensible
         # default" idiom as the other fakes here.
         self.tone_adjustment_draft = tone_adjustment_draft
+        # A transcript string to return from transcribe_voice_note(), an
+        # Exception instance to raise (exercising admin_bot.py's
+        # "couldn't transcribe" fallback), or None for a deterministic
+        # default transcript.
+        self.voice_transcript = voice_transcript
+        # A ReceiptExtraction to return from extract_receipt_data(), an
+        # Exception instance to raise, or None for a deterministic
+        # default (a fully-readable, fully-populated receipt).
+        self.receipt_extraction = receipt_extraction
 
     def generate(self, *, system_prompt: str, user_prompt: str) -> LLMResponseDraft:
         match = re.search(r'evidence_passage id="([^"]+)"', user_prompt)
@@ -91,6 +108,23 @@ class FakeGenerator:
         # exercised only in the live (non-CI) validation script, never
         # against the real OpenAI API in the test suite.
         return text
+
+    def transcribe_voice_note(self, *, audio_bytes: bytes, mime_type: str) -> str:
+        if isinstance(self.voice_transcript, Exception):
+            raise self.voice_transcript
+        if self.voice_transcript is not None:
+            return self.voice_transcript
+        return "This is a deterministic test transcript."
+
+    def extract_receipt_data(self, *, image_bytes: bytes, mime_type: str) -> ReceiptExtraction:
+        if isinstance(self.receipt_extraction, Exception):
+            raise self.receipt_extraction
+        if self.receipt_extraction is not None:
+            return self.receipt_extraction
+        return ReceiptExtraction(
+            ingredient_name="Chicken", quantity=10.0, unit="kg", amount_inr=4200.0,
+            supplier_name="Ramesh Traders", readable=True,
+        )
 
 
 class FakeEmailSender:

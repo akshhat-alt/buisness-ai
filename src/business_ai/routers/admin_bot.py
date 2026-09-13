@@ -94,6 +94,7 @@ from business_ai.payments import PaymentLinkError, RazorpayClient, verify_razorp
 from business_ai.purchases import PurchaseUnitMismatchError
 from business_ai.retrieval import OpenAIEmbeddingProvider, RetrievalEngine, VectorStore
 from business_ai.revenue_radar import compute_revenue_leakage, render_revenue_radar_whatsapp
+from business_ai.reviews import KNOWN_PLATFORMS, render_reviews_whatsapp
 from business_ai.security import InvalidTenantIdError, UnsafeUrlError, validate_tenant_id
 from business_ai.shifts import Shift
 from business_ai.tasks import Task, TaskStore
@@ -171,6 +172,10 @@ _ADMIN_SCHEDULE_SHIFT_RE = re.compile(
     r"^schedule\s+(.+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})(?:\s+(.+))?$", re.IGNORECASE
 )
 _ADMIN_CANCEL_SHIFT_RE = re.compile(r"^cancel\s+shift\s+(\S+)$", re.IGNORECASE)
+# Phase 25 (Perception & Input Expansion): "log review zomato 4.3 128" —
+# manual paste-in for platforms with no public review-pull API (Zomato/
+# Swiggy); review_count is optional since it's not always at hand.
+_ADMIN_LOG_REVIEW_RE = re.compile(r"^log\s+review\s+(\S+)\s+([\d.]+)(?:\s+(\d+))?$", re.IGNORECASE)
 # Phase 24 (Restaurant Autopilot): "simulate price butter chicken 350" —
 # same last-field-eats-rest-of-string idiom as "log sale <dish> x<qty>",
 # with the trailing token being the one required numeric hypothetical
@@ -230,6 +235,10 @@ def _admin_bot_help_text() -> str:
         "• menu recommendations / autopilot — reviewable pricing/menu suggestions (owner/manager)\n"
         "• simulate price <dish> <price> — what-if food cost % and margin (owner/manager)\n"
         "• gm report / daily gm — one-view daily briefing (owner/manager)\n"
+        "• log review <platform> <rating> [count] — e.g. \"log review zomato 4.3 128\"\n"
+        "• reviews / ratings — current rating per platform (owner/manager)\n"
+        "• send a photo of a purchase receipt — get a suggested log purchase command\n"
+        "• send a voice note — transcribed and handled like a typed message (if enabled)\n"
         "\nOr just type naturally — I'll do my best to understand "
         "(except money/outcome confirmations, which always need the exact commands above)."
     )
@@ -1470,6 +1479,41 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             reply(f"✅ Logged {metric_type}: ₹{amount}" + (f" — {note.strip()}" if note else "") + ".")
             return True
 
+        log_review_match = _ADMIN_LOG_REVIEW_RE.match(raw)
+        if log_review_match:
+            platform_text, rating_text, count_text = log_review_match.groups()
+            platform = platform_text.lower()
+            if platform not in KNOWN_PLATFORMS:
+                reply(f'Unknown review platform "{platform_text}". Try one of: {", ".join(sorted(KNOWN_PLATFORMS))}.')
+                return True
+            try:
+                rating = float(rating_text)
+            except ValueError:
+                reply(f'Couldn\'t read "{rating_text}" as a rating. Try "log review zomato 4.3 128".')
+                return True
+            if not (0 < rating <= 5):
+                reply("Rating must be between 0 and 5.")
+                return True
+            snapshot = svc.review_store.record(
+                tenant_id=tenant.tenant_id, platform=platform, rating=rating,
+                review_count=int(count_text) if count_text else None, source="manual",
+                recorded_by_employee_id=employee.employee_id,
+            )
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="review_logged",
+                target_type="review", target_id=snapshot.review_id,
+                metadata={"platform": platform, "rating": rating, "review_count": snapshot.review_count},
+            )
+            reply(f"✅ Logged {platform.title()}: {rating:g}★" + (f" ({count_text} reviews)" if count_text else "") + ".")
+            return True
+
+        if clean in ("reviews", "review rating", "ratings"):
+            if not can_manage:
+                reply("Only an owner or manager can view reviews.")
+                return True
+            reply(render_reviews_whatsapp(svc.review_store.latest_by_platform(tenant.tenant_id)))
+            return True
+
         if dish_sale_match:
             dish_name, qty_text = dish_sale_match.group(1).strip(), dish_sale_match.group(2)
             quantity = int(qty_text) if qty_text else 1
@@ -1935,6 +1979,67 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
 
         reply(_admin_bot_help_text())
 
+    def _handle_admin_bot_voice_note(tenant: TenantConfig, employee: Employee, msg, *, message_id: str | None) -> None:
+        """Phase 25: transcribes an inbound voice note and feeds the
+        transcript through the EXACT SAME command dispatcher as if it
+        had been typed — never a separate, parallel handling path.
+        Employee-only (customers sending voice notes isn't a capability
+        this app has); an explicit opt-in per tenant since transcription
+        spends that tenant's own OpenAI usage."""
+        if not tenant.voice_notes_enabled:
+            _send_admin_bot_message(tenant, msg.wa_id, "Voice notes aren't enabled for this business yet — please type your message instead.")
+            return
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
+            return
+        try:
+            media_url = svc.whatsapp_client().get_media_url(media_id=msg.media_id, access_token=tenant.whatsapp_access_token)
+            audio_bytes = svc.whatsapp_client().download_media(media_url=media_url, access_token=tenant.whatsapp_access_token)
+            transcript = svc.generator().transcribe_voice_note(audio_bytes=audio_bytes, mime_type=msg.mime_type or "audio/ogg")
+        except Exception as exc:  # noqa: BLE001 - best-effort transcription, never crash the webhook over it
+            logger.warning("Admin-bot voice transcription failed for tenant %s: %s", tenant.tenant_id, exc)
+            _send_admin_bot_message(tenant, msg.wa_id, "Couldn't transcribe that voice note — please type your message instead.")
+            return
+        if not transcript.strip():
+            _send_admin_bot_message(tenant, msg.wa_id, "Couldn't make out that voice note — please type your message instead.")
+            return
+        _handle_admin_bot_message(tenant, employee, msg.wa_id, transcript, message_id=message_id)
+
+    def _handle_admin_bot_receipt_image(tenant: TenantConfig, employee: Employee, msg, *, message_id: str | None) -> None:
+        """Phase 25: reads a photographed purchase receipt and replies
+        with a SUGGESTED "log purchase ..." command — never logs
+        anything itself. Reuses the existing deterministic command
+        grammar end to end (unit conversion, unit-mismatch handling,
+        stock depletion) rather than a second write path; the sender
+        still has to send the suggested command themselves to log it."""
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
+            return
+        try:
+            media_url = svc.whatsapp_client().get_media_url(media_id=msg.media_id, access_token=tenant.whatsapp_access_token)
+            image_bytes = svc.whatsapp_client().download_media(media_url=media_url, access_token=tenant.whatsapp_access_token)
+            extraction = svc.generator().extract_receipt_data(image_bytes=image_bytes, mime_type=msg.mime_type or "image/jpeg")
+        except Exception as exc:  # noqa: BLE001 - best-effort OCR, never crash the webhook over it
+            logger.warning("Admin-bot receipt OCR failed for tenant %s: %s", tenant.tenant_id, exc)
+            _send_admin_bot_message(
+                tenant, msg.wa_id,
+                'Couldn\'t read that photo — please send the log purchase command directly, '
+                'e.g. "log purchase 10 kg chicken ₹4200 from Ramesh".',
+            )
+            return
+        if not (extraction.readable and extraction.ingredient_name and extraction.quantity and extraction.unit and extraction.amount_inr):
+            _send_admin_bot_message(
+                tenant, msg.wa_id,
+                'Couldn\'t read enough from that photo to suggest a purchase log — please send the log purchase '
+                'command directly, e.g. "log purchase 10 kg chicken ₹4200 from Ramesh".',
+            )
+            return
+        suggested = f"log purchase {extraction.quantity:g} {extraction.unit} {extraction.ingredient_name} ₹{extraction.amount_inr:g}"
+        if extraction.supplier_name:
+            suggested += f" from {extraction.supplier_name}"
+        _send_admin_bot_message(
+            tenant, msg.wa_id,
+            f"📷 Read from that receipt:\n{suggested}\n\nSend this exact command to log it — nothing has been logged yet.",
+        )
+
     def _handle_admin_bot_message(
         tenant: TenantConfig, employee: Employee, from_wa_id: str, text: str, *, message_id: str | None = None
     ) -> None:
@@ -2007,8 +2112,19 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 svc.employee_store.ensure_owner_bootstrap(tenant.tenant_id, tenant.owner_whatsapp_number)
                 employee = svc.employee_store.find_by_whatsapp(tenant.tenant_id, msg.wa_id)
                 if employee is not None:
-                    _handle_admin_bot_message(tenant, employee, msg.wa_id, msg.text, message_id=msg.message_id)
+                    if msg.media_type == "audio":
+                        _handle_admin_bot_voice_note(tenant, employee, msg, message_id=msg.message_id)
+                    elif msg.media_type == "image":
+                        _handle_admin_bot_receipt_image(tenant, employee, msg, message_id=msg.message_id)
+                    else:
+                        _handle_admin_bot_message(tenant, employee, msg.wa_id, msg.text, message_id=msg.message_id)
                     continue  # internal admin-bot message, not a customer — no lead, no RAG, no quota spent
+
+                if msg.media_type is not None:
+                    # Customer-sent media (voice note, photo) isn't a
+                    # capability this app has — the customer pipeline
+                    # below is text-only by design, and stays that way.
+                    continue
 
                 session_id = f"wa_{msg.wa_id}"
                 if not svc.lead_store.exists_for_session(tenant.tenant_id, session_id):

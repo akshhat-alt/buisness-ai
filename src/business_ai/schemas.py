@@ -162,6 +162,8 @@ class TenantConfigUpdate(BaseModel):
     evolution_dissatisfaction_threshold: float | None = Field(default=None, gt=0, le=1)
     evolution_lookback_hours: int | None = Field(default=None, ge=1, le=24 * 90)
     evolution_regression_delta: float | None = Field(default=None, gt=0, le=1)
+    google_place_id: str | None = None
+    voice_notes_enabled: bool | None = None
 
 
 class TenantDeleteRequest(BaseModel):
@@ -216,4 +218,13 @@ class SetInventoryParLevelRequest(BaseModel):
 class SimulateMenuPriceRequest(BaseModel):
     menu_item_id: str
     hypothetical_price_inr: int = Field(gt=0)
+
+
+# ---------------------------------------------------------- Perception & Input Expansion (Phase 25)
+
+
+class ManualReviewLogRequest(BaseModel):
+    platform: str
+    rating: float = Field(gt=0, le=5)
+    review_count: int | None = Field(default=None, ge=0)
 

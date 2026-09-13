@@ -57,6 +57,7 @@ def export_tenant_data(svc, tenant_id: str) -> dict:
         "suppliers": [s.model_dump() for s in svc.supplier_store.list_for_tenant(tenant_id)],
         "purchases": [p.model_dump() for p in svc.purchase_store.list_for_tenant(tenant_id, limit=100000)],
         "wastage": [w.model_dump() for w in svc.wastage_store.list_for_tenant(tenant_id, limit=100000)],
+        "reviews": [r.model_dump() for r in svc.review_store.list_for_tenant(tenant_id, limit=100000)],
     }
 
 
@@ -90,6 +91,7 @@ def delete_tenant_data(svc, tenant_id: str) -> dict:
         "suppliers": svc.supplier_store.delete_for_tenant(tenant_id),
         "purchases": svc.purchase_store.delete_for_tenant(tenant_id),
         "wastage": svc.wastage_store.delete_for_tenant(tenant_id),
+        "reviews": svc.review_store.delete_for_tenant(tenant_id),
     }
     svc.vector_store.delete_tenant(tenant_id)
     deleted["tenant_config"] = 1 if svc.tenant_registry.delete(tenant_id) else 0

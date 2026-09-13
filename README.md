@@ -1576,6 +1576,83 @@ plus extensions to `tests/test_menu_engineering.py`,
 `tests/test_menu_engineering_routes.py`, and
 `tests/test_admin_bot_restaurant.py` — 728 total, all green.
 
+## What V1.30 adds: Perception & Input Expansion (Phase 25)
+
+Three genuinely new input capabilities — every prior phase computed over
+data someone already typed; this phase is the first to let the admin
+bot see a photo or hear a voice note.
+
+**WhatsApp media receiving is new infrastructure, not an extension** —
+`parse_webhook_payload` only ever extracted `type == "text"` before this
+phase (a deliberate, documented V1 scope line). It now also extracts
+`audio`/`image` messages (`IncomingWhatsAppMessage.media_type`/
+`media_id`/`mime_type`), and `WhatsAppClient` gained `get_media_url()`/
+`download_media()` — Meta's two-step retrieval (exchange the opaque
+`media_id` for a short-lived URL, then fetch it with the same bearer
+token). Deliberately **employee-only**: a customer-sent voice note or
+photo is silently ignored by the webhook handler — the customer pipeline
+stays 100% text-only, exactly as before this phase.
+
+**Voice notes transcribe via Whisper, through the OpenAI dependency this
+app already has** — `transcribe_voice_note()` (a new method on the
+existing generation provider, not a new vendor relationship) feeds the
+transcript through the EXACT SAME command dispatcher as if it had been
+typed, so every deterministic command and the NL fallback both just
+work on a voice note with zero duplicated logic. An explicit per-tenant
+opt-in (`TenantConfig.voice_notes_enabled`, default False, since every
+transcription spends that tenant's own OpenAI usage) — disabled or a
+failed transcription both reply asking the employee to type instead,
+never a silent drop.
+
+**Receipt/invoice OCR never logs anything itself** — `extract_receipt_data()`
+reads a photographed receipt via OpenAI's vision input (same key, same
+"never invent a number" discipline as every other cost-estimating
+function in this codebase: every field is `None` unless clearly legible).
+The result is turned into a SUGGESTED `log purchase ...` command text
+replied back to the sender — reusing the EXISTING deterministic command
+grammar end to end (unit conversion, unit-mismatch handling, stock
+depletion) rather than a second write path or a confirm/correct state
+machine. The sender still has to send that exact command themselves to
+actually log the purchase — the one-tap-apply-never-auto-apply pattern
+every prior phase's suggestion feature has used, applied here to a
+photo instead of a computed number.
+
+**Review aggregation is a genuinely new store** (`reviews.py`,
+`ReviewStore`) — nothing in this codebase tracked review ratings before
+this. Two write paths into the same table: an automated Google Places
+pull (`POST /api/v1/admin/review-sync/run`, one cron per tenant with a
+configured `google_place_id`, same one-job-per-cron-endpoint convention
+as every other periodic job here) and a manual paste-in for Zomato/
+Swiggy — confirmed during this phase's own research to have no public
+merchant review-pull API a small business could reasonably use.
+`GOOGLE_PLACES_API_KEY` is deliberately a PLATFORM-level credential
+(billed to the platform operator), unlike WhatsApp/Razorpay's "bring
+your own" shape — a Google Cloud project + billing setup is a much
+higher-friction ask than WhatsApp's Meta Developer flow; each tenant
+only brings their own Place ID. Unset = the sync cron skips every
+tenant gracefully; manual logging (`log review zomato 4.3 128`,
+owner/manager/staff — same no-permission-check shape as every other
+`log *` WhatsApp command) is completely unaffected. `GET /api/reviews`
+and `POST /api/reviews/manual` (VIEW_FINANCIALS-gated, same tier as
+`POST /api/metrics`), `reviews`/`ratings` (WhatsApp, owner/manager), and
+a new dashboard "Reviews" card with a manual-log form.
+
+Live-verified against the real running app: a real signed voice-note
+webhook message and a real signed receipt-photo webhook message both
+genuinely attempted media retrieval against Meta's real API (with a
+fake access token) and received a real `401 Invalid OAuth access token`
+— confirming the admin bot degrades gracefully (asks the sender to
+type/resend) rather than crashing, exactly like every prior phase's
+real-API live check. The review-sync cron was run for real with no
+`GOOGLE_PLACES_API_KEY` configured and correctly skipped every tenant
+with the documented reason; the manual review-logging REST route
+correctly recorded and read back a real snapshot through a real owner
+token, and both new review routes correctly 403'd a staff principal.
+47 new tests across five new files (`tests/test_reviews.py`,
+`tests/test_reviews_routes.py`, `tests/test_review_sync_cron.py`,
+`tests/test_whatsapp_media.py`, `tests/test_admin_bot_perception.py`)
+— 775 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1657,7 +1734,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-728 tests (and rising — see each phase's own "What Vx.x adds" section
+775 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written

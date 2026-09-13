@@ -579,6 +579,24 @@
             <table class="ba-table" id="ri-supplier-table"><thead><tr><th>Supplier</th><th>Spend</th><th>Purchases</th><th>Ingredients</th></tr></thead><tbody></tbody></table>
             <div id="ri-supplier-unattributed" class="ba-muted" style="margin-top:8px;"></div>
           </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">⭐ Reviews</h3>
+            <p class="ba-muted" style="margin-top:-6px;">Google syncs automatically once a Place ID is set in Assistant Settings. Zomato/Swiggy have no public rating API yet — log those manually here.</p>
+            <div id="ri-reviews-list" class="ba-muted">Loading…</div>
+            <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:10px;">
+              <div class="ba-field"><label class="ba-label">Platform</label>
+                <select class="ba-input" id="ri-review-platform">
+                  <option value="zomato">Zomato</option>
+                  <option value="swiggy">Swiggy</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+              <div class="ba-field"><label class="ba-label">Rating (0-5)</label><input class="ba-input" id="ri-review-rating" type="number" min="0.1" max="5" step="0.1" style="width:90px;"></div>
+              <div class="ba-field"><label class="ba-label">Review count</label><input class="ba-input" id="ri-review-count" type="number" min="0" style="width:110px;"></div>
+              <button class="ba-btn ba-btn-sm" onclick="logReviewManually()">Log</button>
+            </div>
+          </div>
         </section>
 
         <section class="dash-section" id="staff">
@@ -605,6 +623,11 @@
             <div class="ba-field"><label class="ba-label">Welcome Message</label><input class="ba-input" id="cfg-welcome"></div>
             <div class="ba-field"><label class="ba-label">WhatsApp Number (with country code, no +, e.g. 919876543210)</label><input class="ba-input" id="cfg-whatsapp"></div>
             <div class="ba-field"><label class="ba-label">Review Link (e.g. your Google Business review URL)</label><input class="ba-input" id="cfg-review-link"></div>
+            <div class="ba-field"><label class="ba-label">Google Place ID (for automatic review rating sync)</label><input class="ba-input" id="cfg-google-place-id"></div>
+            <div class="ba-field" style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="cfg-voice-notes-enabled" style="width:auto;">
+              <label class="ba-label" style="margin:0;" for="cfg-voice-notes-enabled">Enable voice-note transcription for the admin WhatsApp bot</label>
+            </div>
             <button class="ba-btn" onclick="saveSettings(event)">Save</button>
           </div>
         </section>
@@ -751,6 +774,8 @@
         document.getElementById('cfg-welcome').value = t.welcome_message || '';
         document.getElementById('cfg-whatsapp').value = t.whatsapp_number || '';
         document.getElementById('cfg-review-link').value = t.review_link || '';
+        document.getElementById('cfg-google-place-id').value = t.google_place_id || '';
+        document.getElementById('cfg-voice-notes-enabled').checked = !!t.voice_notes_enabled;
         document.getElementById('cfg-wa-phone-id').value = t.whatsapp_phone_number_id || '';
         document.getElementById('wa-status').innerText = t.whatsapp_phone_number_id
           ? 'Connected — customers can message this number and your assistant replies automatically.'
@@ -1017,6 +1042,8 @@
           welcome_message: document.getElementById('cfg-welcome').value.trim(),
           whatsapp_number: document.getElementById('cfg-whatsapp').value.trim(),
           review_link: document.getElementById('cfg-review-link').value.trim(),
+          google_place_id: document.getElementById('cfg-google-place-id').value.trim(),
+          voice_notes_enabled: document.getElementById('cfg-voice-notes-enabled').checked,
         }),
       });
       btn.innerText = 'Saved ✓';
@@ -1917,13 +1944,14 @@
     const CLASSIFICATION_PILL = { star: '⭐ Star', plowhorse: '🐴 Plowhorse', puzzle: '🧩 Puzzle', dog: '🐕 Dog' };
 
     async function loadRestaurantIntel() {
-      const [menuRes, menuRecsRes, reorderRes, reservationsRes, repeatRes, supplierRes] = await Promise.all([
+      const [menuRes, menuRecsRes, reorderRes, reservationsRes, repeatRes, supplierRes, reviewsRes] = await Promise.all([
         fetch(`/api/menu-engineering?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/menu-recommendations?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/reorder-suggestions?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/leads/upcoming-appointments?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/customer-behavior?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/supplier-intelligence?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/reviews?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
       ]);
 
       if (menuRes.ok) {
@@ -2001,7 +2029,34 @@
           : '';
       }
 
+      if (reviewsRes.ok) {
+        const data = await reviewsRes.json();
+        const listEl = document.getElementById('ri-reviews-list');
+        const platforms = Object.values(data.platforms || {});
+        listEl.innerHTML = platforms.length ? platforms.map(p => `
+          <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span>${escapeHtml(p.platform.charAt(0).toUpperCase() + p.platform.slice(1))}: ${p.rating}★${p.review_count != null ? ` (${p.review_count} reviews)` : ''}</span>
+            <span class="ba-muted">${p.source === 'google_places' ? 'auto-synced' : 'manually logged'}</span>
+          </div>`).join('') : 'No reviews logged yet.';
+      }
+
       loadDigitalGmBriefing();
+    }
+
+    async function logReviewManually() {
+      const platform = document.getElementById('ri-review-platform').value;
+      const rating = document.getElementById('ri-review-rating').value.trim();
+      const count = document.getElementById('ri-review-count').value.trim();
+      if (!rating || Number(rating) <= 0 || Number(rating) > 5) { alert('Enter a rating between 0 and 5.'); return; }
+      const res = await fetch(`/api/reviews/manual?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ platform, rating: Number(rating), review_count: count ? Number(count) : null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not log that review.'); return; }
+      document.getElementById('ri-review-rating').value = '';
+      document.getElementById('ri-review-count').value = '';
+      loadRestaurantIntel();
     }
 
     async function applyReorderSuggestion(buttonEl) {

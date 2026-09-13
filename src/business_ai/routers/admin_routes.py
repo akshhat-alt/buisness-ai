@@ -35,6 +35,7 @@ from business_ai.constants import (
 from business_ai.dependency_graph import compute_dependency_snapshot
 from business_ai.leads import Lead
 from business_ai.payments import PaymentLinkError
+from business_ai.reviews import GooglePlacesError, GooglePlacesReviewClient
 from business_ai.scorecard import build_weekly_scorecard_data, has_scorecard_content, render_weekly_scorecard_email, render_weekly_scorecard_whatsapp
 from business_ai.schemas import BillingLinkRequest, MarkPaidRequest
 from business_ai.tenant import TenantAction, TenantConfig, TenantNotFoundError, TenantStatus, UnauthorizedError, authorize
@@ -604,4 +605,42 @@ def register_admin(app: FastAPI, svc, ctx) -> None:
             if sent_count == 0:
                 skipped.append({"tenant_id": tenant.tenant_id, "reason": "no WhatsApp recipient reachable, flagged anyway"})
         return {"notified": notified, "skipped": skipped}
+
+    @app.post("/api/v1/admin/review-sync/run")
+    def admin_run_review_sync(authorization: str | None = Header(default=None)) -> dict:
+        """Phase 25 — pulls each active tenant's current Google rating/
+        review count and records it as a new snapshot (source=
+        "google_places"). Same one-job-per-cron-endpoint convention as
+        every other periodic job here — no in-process scheduler. Skips
+        gracefully, per-tenant, whenever the platform-level
+        GOOGLE_PLACES_API_KEY isn't configured or a tenant hasn't set
+        their own google_place_id — never fails the whole run over one
+        tenant's missing/invalid configuration."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        if not svc.settings.google_places_api_key:
+            return {"synced": [], "skipped": [{"tenant_id": "*", "reason": "GOOGLE_PLACES_API_KEY not configured on this platform"}]}
+
+        client = GooglePlacesReviewClient(api_key=svc.settings.google_places_api_key)
+        synced: list[str] = []
+        skipped: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            if not tenant.google_place_id:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no google_place_id configured"})
+                continue
+            try:
+                rating, review_count = client.fetch_rating(tenant.google_place_id)
+            except GooglePlacesError as exc:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": str(exc)})
+                continue
+            svc.review_store.record(
+                tenant_id=tenant.tenant_id, platform="google", rating=rating, review_count=review_count,
+                source="google_places",
+            )
+            synced.append(tenant.tenant_id)
+        return {"synced": synced, "skipped": skipped}
 

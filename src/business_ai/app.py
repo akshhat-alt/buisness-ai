@@ -68,6 +68,7 @@ from business_ai.payments import RazorpayClient
 from business_ai.purchases import PurchaseStore
 from business_ai.rate_limiting import FixedWindowRateLimiter, RateLimitMiddleware
 from business_ai.retrieval import OpenAIEmbeddingProvider, VectorStore
+from business_ai.reviews import ReviewStore
 from business_ai.routing_context import RouteContext
 from business_ai.shifts import ShiftStore
 from business_ai.suppliers import SupplierStore
@@ -94,6 +95,7 @@ from business_ai.routers.metrics_routes import register_metrics
 from business_ai.routers.ops_routes import register_ops
 from business_ai.routers.restaurant_routes import register_restaurant
 from business_ai.routers.revenue_radar_routes import register_revenue_radar
+from business_ai.routers.reviews_routes import register_reviews
 from business_ai.routers.scorecard_routes import register_scorecard
 from business_ai.routers.static_pages import register_static_pages
 from business_ai.routers.team_routes import register_team
@@ -139,6 +141,7 @@ class Services:
         self.supplier_store = SupplierStore(data_root / "suppliers.db")
         self.purchase_store = PurchaseStore(data_root / "purchases.db")
         self.wastage_store = WastageStore(data_root / "wastage.db")
+        self.review_store = ReviewStore(data_root / "reviews.db")
 
     def embeddings(self):
         return OpenAIEmbeddingProvider(model_name=self.settings.embedding_model, api_key=_openai_key())
@@ -262,6 +265,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     register_menu_engineering(app, svc, ctx)
     register_ops(app, svc, ctx)
     register_revenue_radar(app, svc, ctx)
+    register_reviews(app, svc, ctx)
     register_scorecard(app, svc, ctx)
     register_automation(app, svc, ctx)
     register_webhooks(app, svc, ctx)

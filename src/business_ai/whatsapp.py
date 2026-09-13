@@ -63,9 +63,18 @@ class IncomingWhatsAppMessage:
     phone_number_id: str  # the BUSINESS's WhatsApp number Meta routed this to
     wa_id: str  # the CUSTOMER's WhatsApp id (their phone number, digits only)
     message_id: str
-    text: str
+    text: str  # empty string for a media message with no caption
     contact_name: str | None
     timestamp: str
+    # Phase 25 — Perception & Input Expansion: media_type is None for a
+    # plain text message, or "audio"/"image"/"document" for a media
+    # message. media_id is Meta's opaque handle — pass it to
+    # WhatsAppClient.get_media_url() then download_media() to retrieve
+    # the actual bytes (Meta's two-step retrieval; the URL itself is
+    # short-lived and requires the same access token to fetch).
+    media_type: str | None = None
+    media_id: str | None = None
+    mime_type: str | None = None
 
 
 class WhatsAppClient:
@@ -145,6 +154,44 @@ class WhatsAppClient:
         payload = {"messaging_product": "whatsapp", "status": "read", "message_id": message_id}
         self._post(phone_number_id=phone_number_id, access_token=access_token, payload=payload)
 
+    def get_media_url(self, *, media_id: str, access_token: str) -> str:
+        """Step 1 of Meta's two-step media retrieval: exchange an opaque
+        media_id (from an inbound message) for a short-lived download
+        URL. That URL itself still requires the SAME access token as a
+        Bearer header to actually fetch — see download_media below."""
+        import json
+
+        url = f"{GRAPH_API_HOST}/{self._api_version}/{media_id}"
+        request = Request(url, headers={"Authorization": f"Bearer {access_token}"}, method="GET")
+        try:
+            with urlopen(request, timeout=15) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            raise WhatsAppSendError(f"WhatsApp media lookup failed ({exc.code}): {detail}") from exc
+        except URLError as exc:
+            raise WhatsAppSendError(f"Could not reach the WhatsApp API: {exc}") from exc
+        media_url = body.get("url")
+        if not media_url:
+            raise WhatsAppSendError("WhatsApp did not return a media download URL.")
+        return media_url
+
+    def download_media(self, *, media_url: str, access_token: str) -> bytes:
+        """Step 2: fetches the actual media bytes from the short-lived
+        URL get_media_url() returned. Kept as a separate call (not
+        folded into get_media_url) because a caller may want to check
+        the media's reported mime_type/size (from the same lookup
+        response) before deciding whether to download it at all."""
+        request = Request(media_url, headers={"Authorization": f"Bearer {access_token}"}, method="GET")
+        try:
+            with urlopen(request, timeout=30) as response:
+                return response.read()
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            raise WhatsAppSendError(f"WhatsApp media download failed ({exc.code}): {detail}") from exc
+        except URLError as exc:
+            raise WhatsAppSendError(f"Could not reach the WhatsApp API: {exc}") from exc
+
 
 class MetaEmbeddedSignupError(Exception):
     """Raised when Embedded Signup's OAuth code exchange fails."""
@@ -204,15 +251,22 @@ def verify_webhook_signature(*, raw_body: bytes, signature_header: str | None, a
     return hmac.compare_digest(expected, signature_header[len(prefix):])
 
 
-def parse_webhook_payload(payload: dict) -> list[IncomingWhatsAppMessage]:
-    """Extracts every inbound text message from a Meta webhook POST body.
+_MEDIA_MESSAGE_TYPES = frozenset({"audio", "image", "document"})
 
-    Deliberately tolerant of the shapes this app doesn't yet handle
-    (delivery/read status callbacks, non-text message types like images
-    or audio) — those are silently skipped, not errors, since V1 is a
-    text-only assistant channel. A malformed/unexpected payload shape
-    yields an empty list rather than raising, so one bad entry never
-    breaks processing of the others in the same delivery.
+
+def parse_webhook_payload(payload: dict) -> list[IncomingWhatsAppMessage]:
+    """Extracts every inbound text OR media message from a Meta webhook
+    POST body.
+
+    Phase 25 added audio/image/document extraction (voice notes, receipt
+    photos) alongside the original text-only handling — each yields a
+    message with media_type/media_id/mime_type set and text="" (or the
+    media's caption, if one was attached). Everything else this app
+    doesn't handle (delivery/read status callbacks, video/sticker/
+    location/contact messages) is still silently skipped, not an error.
+    A malformed/unexpected payload shape yields an empty list rather
+    than raising, so one bad entry never breaks processing of the
+    others in the same delivery.
     """
     messages: list[IncomingWhatsAppMessage] = []
     for entry in payload.get("entry", []) or []:
@@ -223,25 +277,37 @@ def parse_webhook_payload(payload: dict) -> list[IncomingWhatsAppMessage]:
                 continue
             contacts = {c.get("wa_id"): c for c in (value.get("contacts") or [])}
             for msg in value.get("messages", []) or []:
-                if msg.get("type") != "text":
-                    continue
-                text_body = (msg.get("text") or {}).get("body")
+                msg_type = msg.get("type")
                 wa_id = msg.get("from")
                 message_id = msg.get("id")
-                if not (text_body and wa_id and message_id):
+                if not (wa_id and message_id):
                     continue
                 contact = contacts.get(wa_id)
                 contact_name = (contact.get("profile") or {}).get("name") if contact else None
-                messages.append(
-                    IncomingWhatsAppMessage(
-                        phone_number_id=phone_number_id,
-                        wa_id=wa_id,
-                        message_id=message_id,
-                        text=text_body,
-                        contact_name=contact_name,
-                        timestamp=str(msg.get("timestamp") or ""),
+                timestamp = str(msg.get("timestamp") or "")
+
+                if msg_type == "text":
+                    text_body = (msg.get("text") or {}).get("body")
+                    if not text_body:
+                        continue
+                    messages.append(
+                        IncomingWhatsAppMessage(
+                            phone_number_id=phone_number_id, wa_id=wa_id, message_id=message_id,
+                            text=text_body, contact_name=contact_name, timestamp=timestamp,
+                        )
                     )
-                )
+                elif msg_type in _MEDIA_MESSAGE_TYPES:
+                    media = msg.get(msg_type) or {}
+                    media_id = media.get("id")
+                    if not media_id:
+                        continue
+                    messages.append(
+                        IncomingWhatsAppMessage(
+                            phone_number_id=phone_number_id, wa_id=wa_id, message_id=message_id,
+                            text=media.get("caption") or "", contact_name=contact_name, timestamp=timestamp,
+                            media_type=msg_type, media_id=media_id, mime_type=media.get("mime_type"),
+                        )
+                    )
     return messages
 
 

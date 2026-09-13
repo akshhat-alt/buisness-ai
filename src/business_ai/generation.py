@@ -294,6 +294,26 @@ class EmployeeCommandIntent(BaseModel):
 
 
 # ==============================================================================
+# Phase 25 — Perception & Input Expansion: receipt/invoice OCR
+# ==============================================================================
+# Extracted data is NEVER auto-logged — extract_receipt_data() only feeds
+# a SUGGESTED "log purchase ..." command back to the sender (see
+# admin_bot.py), who still sends it themselves to actually record the
+# purchase. This reuses the existing deterministic command grammar and
+# its unit-mismatch/never-invent-a-number handling end to end, rather
+# than building a second write path or a confirm/correct state machine.
+
+
+class ReceiptExtraction(BaseModel):
+    ingredient_name: str | None = None  # None = couldn't read a clear item name
+    quantity: float | None = None
+    unit: str | None = None
+    amount_inr: float | None = None
+    supplier_name: str | None = None  # None = no supplier name visible on the receipt
+    readable: bool  # False = the image doesn't look like a purchase receipt/invoice at all
+
+
+# ==============================================================================
 # OpenAI provider — structured JSON schema output (same reliable pattern Shri AI uses)
 # ==============================================================================
 
@@ -847,6 +867,93 @@ class OpenAIGenerationProvider:
         # Fail closed toward "other" — an unrecognized command gets the
         # help text, never a guessed action on unclear input.
         return EmployeeCommandIntent(intent="other")
+
+    def transcribe_voice_note(self, *, audio_bytes: bytes, mime_type: str) -> str:
+        """Phase 25 — Whisper transcription via the OpenAI API this app
+        already depends on (a new METHOD, not a new vendor relationship).
+        Gated behind TenantConfig.voice_notes_enabled at the caller —
+        this method itself has no opinion on that, it just transcribes
+        whatever bytes it's given. Raises on failure (network error,
+        unrecognized audio) rather than returning a guessed transcript —
+        the caller (admin_bot.py) catches this and asks the employee to
+        type instead, never silently drops or half-transcribes."""
+        import io
+
+        extension = (mime_type or "audio/ogg").split("/")[-1].split(";")[0] or "ogg"
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = f"voice_note.{extension}"
+        response = self._client.audio.transcriptions.create(model="whisper-1", file=audio_file)
+        return response.text.strip()
+
+    def extract_receipt_data(self, *, image_bytes: bytes, mime_type: str) -> ReceiptExtraction:
+        """Phase 25 — reads a photographed purchase receipt/invoice via
+        OpenAI's vision input (the same OpenAI key/model family this app
+        already uses for generation, no separate OCR vendor). Never
+        invents a field it can't actually read — every field is
+        Optional and left null rather than guessed, matching purchases.py/
+        wastage.py's own "never invent a number" discipline. The caller
+        NEVER logs a purchase directly from this — it only turns the
+        result into a suggested "log purchase ..." command text for the
+        sender to review and send themselves (see admin_bot.py)."""
+        import base64
+
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        system_prompt = (
+            "This image may be a photo of a purchase receipt or supplier invoice for a small "
+            "business (e.g. a restaurant buying ingredients). Extract ONLY what is clearly "
+            "legible in the image — never guess or infer a value that isn't actually visible. "
+            "If the image isn't a receipt/invoice at all, set readable to false and leave every "
+            "other field null. quantity and unit describe the single main line item's amount "
+            "(e.g. 10 kg) — if there are multiple line items, extract the first/largest one "
+            "only. amount_inr is the total amount paid, in rupees, as a plain number (no ₹ "
+            "symbol, no commas). supplier_name is the vendor/shop name printed on the receipt, "
+            "if visible."
+        )
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "ingredient_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "quantity": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+                "unit": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "amount_inr": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+                "supplier_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "readable": {"type": "boolean"},
+            },
+            "required": ["ingredient_name", "quantity", "unit", "amount_inr", "supplier_name", "readable"],
+        }
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model_name,
+                    temperature=0.0,
+                    max_tokens=300,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {"name": "receipt_extraction", "strict": True, "schema": schema},
+                    },
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}},
+                            ],
+                        },
+                    ],
+                )
+                content = response.choices[0].message.content
+                if not content:
+                    raise RuntimeError("OpenAI returned an empty receipt extraction.")
+                return ReceiptExtraction.model_validate(json.loads(content))
+            except Exception as exc:  # noqa: BLE001 - retry transient API errors
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(2**attempt)
+        # Fail closed toward "unreadable" rather than a guessed/partial
+        # extraction if the API call itself keeps failing.
+        return ReceiptExtraction(readable=False)
 
 
 # ==============================================================================

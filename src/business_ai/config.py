@@ -131,6 +131,16 @@ class Settings:
     # when a tenant hasn't set their own TenantConfig.winback_after_days.
     winback_default_days: int
 
+    # Phase 25 — Review aggregation (reviews.py). A PLATFORM-level
+    # credential, deliberately NOT "bring your own" like WhatsApp/
+    # Razorpay: a Google Cloud project + billing setup is a much higher-
+    # friction ask for a small business owner than WhatsApp's Meta
+    # Developer flow. Each tenant only brings their own `google_place_id`
+    # (TenantConfig). Unset = the automated Google Places sync cron
+    # skips every tenant gracefully; manual review logging (Zomato/
+    # Swiggy, or Google without this key) is completely unaffected.
+    google_places_api_key: str | None
+
     # Server
     port: int
 
@@ -182,6 +192,7 @@ def load_settings() -> Settings:
         digest_window_hours=_int_env("DIGEST_WINDOW_HOURS", 24),
         public_base_url=(os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None,
         winback_default_days=_int_env("WINBACK_DEFAULT_DAYS", 45),
+        google_places_api_key=(os.getenv("GOOGLE_PLACES_API_KEY") or "").strip() or None,
         port=_int_env("PORT", 8000),
         enabled=_bool_env("BUSINESS_AI_ENABLED", True),
     )
