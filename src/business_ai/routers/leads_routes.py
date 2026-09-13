@@ -186,6 +186,12 @@ def register_leads(app: FastAPI, svc, ctx) -> None:
                 key_id=tenant.razorpay_key_id or "", key_secret=tenant.razorpay_key_secret or "",
                 amount_inr=tenant.deposit_amount_inr, description=f"Booking deposit — {tenant.business_name}",
                 customer_name=lead.name, customer_phone=lead.phone if channel == "whatsapp" else None,
+                # Phase 18: correlates this payment link back to the exact
+                # lead for POST /api/webhooks/razorpay/{tenant_id} — a
+                # tenant with no webhook secret configured simply never
+                # receives this event; nothing about the manual
+                # request-and-confirm flow changes for them.
+                reference_id=lead_id,
             )
         except PaymentLinkError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -214,6 +220,50 @@ def register_leads(app: FastAPI, svc, ctx) -> None:
             raise HTTPException(status_code=502, detail=f"Could not send the deposit link: {exc}") from exc
         svc.lead_store.mark_deposit_link_sent(tenant_id, lead_id)
         return {"sent_to": lead.email, "channel": "email", "payment_url": payment_url}
+
+    @app.post("/api/leads/{lead_id}/nudge")
+    def nudge_lead(lead_id: str, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Phase 18 — a one-tap Revenue Radar recovery action: manually
+        re-engage a lead who showed buying intent but never booked,
+        on demand, using the EXACT same message the automated
+        reengagement cron sends (see admin_routes.py's
+        admin_run_reengagement) so a manual nudge and an automatic one
+        are indistinguishable to the customer. WhatsApp-only, like the
+        automated version — a lead with no WhatsApp number/connection
+        gets a clear error, not a silent no-op."""
+        principal = ctx._resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.VIEW_LEADS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        lead = svc.lead_store.get(tenant_id, lead_id)
+        if lead is None:
+            raise HTTPException(status_code=404, detail=f"No lead '{lead_id}' for this business.")
+        if not lead.phone:
+            raise HTTPException(status_code=400, detail="This lead has no WhatsApp number to nudge.")
+        if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
+            raise HTTPException(status_code=400, detail="Connect a WhatsApp number first.")
+
+        body = (
+            f"Hi! This is {tenant.assistant_name} from {tenant.business_name}. Just checking in on your "
+            "recent message — happy to help you book, or answer anything else!"
+        )
+        try:
+            svc.whatsapp_client().send_text(
+                phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                to=lead.phone, body=body,
+            )
+        except WhatsAppSendError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not send the nudge: {exc}") from exc
+        svc.lead_store.mark_reengaged(tenant_id, lead_id)
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="lead_nudged_manually",
+            target_type="lead", target_id=lead_id, metadata={},
+        )
+        return {"sent_to": lead.phone, "channel": "whatsapp"}
 
     @app.post("/api/leads/{lead_id}/deposit-paid")
     def mark_lead_deposit_paid(

@@ -488,12 +488,30 @@ def test_webhook_fails_closed_when_secret_not_configured(client_billing, service
 
 
 def test_webhook_ignores_irrelevant_event_type(client_webhook, services_webhook):
+    """A genuinely unrelated Razorpay event (not in the payment_link.*
+    family this webhook understands — see Phase 18's own scope note)
+    stays a safe, unactioned no-op."""
+    headers, tenant_id = _signup(client_webhook)
+    payload = _razorpay_webhook_payload(tenant_id=tenant_id)
+    payload["event"] = "payment.captured"
+    r = _signed_webhook_post(client_webhook, payload)
+    assert r.status_code == 200, r.text
+    assert r.json()["reason"] == "irrelevant_event"
+
+    tenant = client_webhook.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
+    assert tenant["billing_status"] == "unbilled"
+
+
+def test_webhook_acknowledges_a_recognized_non_paid_payment_link_event(client_webhook, services_webhook):
+    """Phase 18: payment_link.expired/cancelled/partially_paid are now
+    recognized (not "irrelevant") but correctly change no billing
+    state — there's nothing to reconcile beyond unbilled/invoiced/paid."""
     headers, tenant_id = _signup(client_webhook)
     payload = _razorpay_webhook_payload(tenant_id=tenant_id)
     payload["event"] = "payment_link.expired"
     r = _signed_webhook_post(client_webhook, payload)
     assert r.status_code == 200, r.text
-    assert r.json()["reason"] == "irrelevant_event"
+    assert r.json()["reason"] == "acknowledged_no_state_change"
 
     tenant = client_webhook.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
     assert tenant["billing_status"] == "unbilled"
@@ -519,12 +537,16 @@ def test_webhook_redelivery_is_idempotent(client_webhook, services_webhook):
 
 
 def test_webhook_ignores_unpaid_status(client_webhook, services_webhook):
+    """Phase 18: the reason string is now the more precise
+    "not_actually_paid" (a real, matched tenant whose link just isn't
+    paid yet) rather than the old conflated "no_matching_tenant_or_not_paid"
+    — the actual outcome (billing_status untouched) is unchanged."""
     headers, tenant_id = _signup(client_webhook)
     client_webhook.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
 
     r = _signed_webhook_post(client_webhook, _razorpay_webhook_payload(tenant_id=tenant_id, status="created"))
     assert r.status_code == 200, r.text
-    assert r.json()["reason"] == "no_matching_tenant_or_not_paid"
+    assert r.json()["reason"] == "not_actually_paid"
 
     tenant = client_webhook.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers).json()
     assert tenant["billing_status"] == "invoiced"

@@ -30,6 +30,7 @@ def export_tenant_data(svc, tenant_id: str) -> dict:
     tenant_dict = tenant.model_dump()
     tenant_dict.pop("whatsapp_access_token", None)
     tenant_dict.pop("razorpay_key_secret", None)
+    tenant_dict.pop("razorpay_webhook_secret", None)
 
     leads = svc.lead_store.list_for_tenant(tenant_id, limit=100000)
     employees = svc.employee_store.list_for_tenant(tenant_id, active_only=False)

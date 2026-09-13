@@ -5,7 +5,8 @@ encryption (see business_ai/secrets_vault.py).
 Two jobs, same mechanism:
   1. First-time encryption: every tenant registered before
      SECRET_ENCRYPTION_KEY existed has plaintext whatsapp_access_token/
-     razorpay_key_secret on disk. Run this once after setting the key to
+     razorpay_key_secret/razorpay_webhook_secret on disk. Run this once
+     after setting the key to
      encrypt them immediately, instead of waiting for each tenant's
      config to naturally be re-saved (the lazy-migration path
      TenantRegistry already handles on its own for any write).
@@ -36,7 +37,7 @@ from business_ai.constants import DATA_ROOT  # noqa: E402
 from business_ai.secrets_vault import decrypt_secret, encrypt_secret  # noqa: E402
 from business_ai.tenant import TenantRegistry  # noqa: E402
 
-SECRET_FIELDS = ("whatsapp_access_token", "razorpay_key_secret")
+SECRET_FIELDS = ("whatsapp_access_token", "razorpay_key_secret", "razorpay_webhook_secret")
 
 
 def main() -> int:

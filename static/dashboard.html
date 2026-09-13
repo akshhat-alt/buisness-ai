@@ -1570,12 +1570,46 @@
       if (radarRes.ok) {
         const radar = await radarRes.json();
         const parts = [];
-        if (radar.missed_buying_intent_leads.length) parts.push(`<div>• ${radar.missed_buying_intent_leads.length} lead(s) showed buying interest but never booked/paid.</div>`);
-        if (radar.unpaid_deposits.length) parts.push(`<div>• ${radar.unpaid_deposits.length} deposit link(s) sent and still unpaid.</div>`);
+        if (radar.missed_buying_intent_leads.length) {
+          parts.push(`<div style="margin-bottom:10px;"><b>${radar.missed_buying_intent_leads.length} lead(s) showed buying interest but never booked/paid:</b>` +
+            radar.missed_buying_intent_leads.map(l => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;">
+                <span>${escapeHtml(l.name || l.phone || l.email || l.lead_id)}</span>
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="nudgeLead('${escapeHtml(l.lead_id)}', this)">Nudge</button>
+              </div>`).join('') + `</div>`);
+        }
+        if (radar.unpaid_deposits.length) {
+          parts.push(`<div style="margin-bottom:10px;"><b>${radar.unpaid_deposits.length} deposit link(s) sent and still unpaid:</b>` +
+            radar.unpaid_deposits.map(l => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;">
+                <span>${escapeHtml(l.name || l.phone || l.email || l.lead_id)}</span>
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="resendDepositLink('${escapeHtml(l.lead_id)}', this)">Resend link</button>
+              </div>`).join('') + `</div>`);
+        }
         if (radar.no_show_appointments.length) parts.push(`<div>• ${radar.no_show_appointments.length} appointment(s) marked no-show.</div>`);
         if (radar.total_estimated_leakage_inr) parts.push(`<div>Estimated unpaid deposits: ~₹${radar.total_estimated_leakage_inr}.</div>`);
         radarEl.innerHTML = parts.length ? parts.join('') : `Nothing leaking in the last ${radar.window_days} days — nice.`;
       }
+    }
+
+    async function nudgeLead(leadId, buttonEl) {
+      buttonEl.disabled = true;
+      const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/nudge?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not send the nudge.'); buttonEl.disabled = false; return; }
+      buttonEl.textContent = 'Sent ✓';
+    }
+
+    async function resendDepositLink(leadId, buttonEl) {
+      buttonEl.disabled = true;
+      const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/deposit-link?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not resend the deposit link.'); buttonEl.disabled = false; return; }
+      buttonEl.textContent = 'Sent ✓';
     }
 
     async function loadAdminPanel() {

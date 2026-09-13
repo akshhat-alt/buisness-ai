@@ -131,7 +131,9 @@ src/business_ai/
                   redelivery idempotency (WhatsAppInboxStore), and
                   MetaEmbeddedSignupClient (one-click onboarding's OAuth
                   code exchange, gated behind WHATSAPP_APP_ID)
-  payments.py     Razorpay payment-link client (deposit links)
+  payments.py     Razorpay payment-link client (deposit links) +
+                  verify_razorpay_webhook_signature, shared by the
+                  platform webhook and Phase 18's per-tenant one
   employees.py    Admin WhatsApp bot: tenant-scoped employee roster/identity
   tasks.py        Admin WhatsApp bot: task assignment, status, approvals
   audit.py        Append-only audit log for admin-bot state changes
@@ -243,7 +245,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (564 tests) — see README.md
+tests/            pytest suite (581 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

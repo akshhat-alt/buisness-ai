@@ -130,6 +130,7 @@ class TenantConfigUpdate(BaseModel):
     review_link: str | None = None
     razorpay_key_id: str | None = None
     razorpay_key_secret: str | None = None
+    razorpay_webhook_secret: str | None = None
     deposit_amount_inr: int | None = None
     winback_after_days: int | None = None
 

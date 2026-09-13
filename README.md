@@ -1096,6 +1096,53 @@ new tests across `tests/test_menu.py` (12), `tests/test_inventory.py`
 `tests/test_admin_bot_restaurant.py` (15), and
 `tests/test_inventory_alert_cron.py` (4) — 564 total, all green.
 
+## What V1.23 adds: Full Revenue Completion (Phase 18)
+
+Closes the exact gap the original README named: "no payment-status
+webhook... the owner checks their own Razorpay dashboard for now."
+
+**A tenant's own deposit payments now reconcile automatically.** A new
+per-tenant webhook, `POST /api/webhooks/razorpay/{tenant_id}`, verified
+against a new `razorpay_webhook_secret` field the owner sets from their
+OWN Razorpay dashboard (encrypted at rest exactly like
+`razorpay_key_secret`/`whatsapp_access_token`, and correctly excluded
+from tenant data exports and covered by `scripts/rotate_secrets.py`).
+Deposit links now carry `reference_id=lead_id` when created, so a real
+`payment_link.paid` event auto-calls the exact same
+`LeadStore.mark_deposit_paid` an owner would otherwise call by hand —
+verified live with a real HMAC-signed webhook request that correctly
+moved a real lead to the `converted` stage.
+
+**Both webhooks (platform + per-tenant) now understand the full
+`payment_link.*` event family** — `paid` (as before), plus `expired`,
+`cancelled`, and `partially_paid` — not just the one event type. Scope
+stated honestly: `payment.*`/`refund.*`/`payment.dispute.*` events are
+deliberately NOT handled, since their payload shape isn't the same
+`payment_link.entity` structure this app can confidently correlate back
+to a tenant/lead without a live Razorpay account to verify the real
+shape against — guessing that mapping would risk silently mis-filing a
+real payment event, worse than not handling it at all.
+
+**Two new Revenue Radar recovery actions**: `POST /api/leads/{id}/nudge`
+(a one-tap manual re-engagement, sending the exact same message text as
+the automated reengagement cron) and reusing the existing
+`POST /api/leads/{id}/deposit-link` route to resend a deposit link —
+both now wired directly into the dashboard's Revenue Radar card as
+per-lead buttons instead of requiring a trip to WhatsApp or another
+dashboard section.
+
+Live-verified end to end against a real running server: a real lead was
+created, a real HMAC-SHA256-signed webhook request (computed the same
+way Razorpay itself would sign one) correctly auto-confirmed its
+deposit and moved it to the `converted` stage with a real audit-log
+entry; a wrong signature was correctly rejected; redelivery of the same
+event was correctly idempotent; the dashboard's new Nudge button
+rendered with the real lead's name and a working handler, correctly
+surfacing a clear "connect WhatsApp first" error rather than a silent
+no-op when no WhatsApp number is connected. 17 new tests across
+`tests/test_tenant_razorpay_webhook.py` (12) and 5 additions to
+`tests/test_automations.py` — 581 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1260,11 +1307,10 @@ before the prompt/schema was finalized.
   which needs per-tenant setup in Meta Business Manager, not built here.
 - **A tenant's Razorpay secret is stored in plaintext**, same trust
   model/limitation as the WhatsApp access token above.
-- **No payment-status webhook.** A deposit link is sent and tracked as
-  "sent", not "paid" — confirming an actual payment would need a
-  Razorpay webhook (signature verification, order reconciliation), which
-  is real additional scope not built for V1.3. The owner checks payment
-  status in their own Razorpay dashboard for now.
+- **~~No payment-status webhook~~ — closed in Phase 18** for a tenant
+  who sets their own `razorpay_webhook_secret`. A tenant who never sets
+  one keeps the original manual "mark paid" flow exactly as before,
+  unchanged — this is a strictly additive, opt-in capability.
 - **Appointments are single-timezone (IST), entered manually.** There's
   no per-tenant timezone config and no live calendar/slot booking yet —
   the owner types a date/time into the dashboard, which is treated as
@@ -1450,10 +1496,15 @@ before the prompt/schema was finalized.
   choice to avoid fabricating a pricing model that's a real business
   decision, not this app's to invent. Multiple tiers, if ever wanted, are
   a natural additive extension of the same mechanism.
-- **The Razorpay webhook only understands `payment_link.paid`.** Other
-  Razorpay event types (refunds, disputes, `payment.failed`) are neither
-  handled nor expected — Business AI's own billing has no refund/dispute
-  flow yet, so there's nothing for those events to update.
+- **The Razorpay webhooks understand the full `payment_link.*` event
+  family only** (Phase 18 widened this from just `payment_link.paid` to
+  also include `expired`/`cancelled`/`partially_paid`). `payment.*`/
+  `refund.*`/`payment.dispute.*` events are still neither handled nor
+  expected — a different, order-centric payload shape this app has no
+  verified way to correlate back to a tenant/lead without a live
+  Razorpay account to confirm the real shape against; Business AI's own
+  billing also has no refund/dispute flow for those events to update
+  even if they were parsed.
 - **The self-serve checkout link has no expiry/retry UI.** If a Razorpay
   payment link goes unpaid, the owner can click "Pay Now" again to
   generate a fresh one, but there's no reminder, no automatic re-send,
@@ -1645,3 +1696,18 @@ before the prompt/schema was finalized.
   commands and the same tradeoff: 100% predictable and free, but "log 10
   kg of chicken, four thousand two hundred rupees" in free-form natural
   language doesn't parse yet.
+- **A tenant's Razorpay webhook secret is opt-in and manual to set up**
+  (Phase 18) — there's no guided "connect webhook" wizard; an owner must
+  paste their webhook secret from their own Razorpay dashboard into
+  `PUT /api/tenant`, the same manual-credential-entry shape every other
+  bring-your-own-account integration in this app already has (WhatsApp,
+  their own Razorpay key/secret).
+- **Only the `payment_link.*` event family is understood, and only
+  correlates to a LEAD via `reference_id`.** A payment made through any
+  path OTHER than a deposit link this app itself created (e.g. a
+  tenant's own separately-created Razorpay payment page) has no
+  `reference_id` this app set and will never correlate to anything.
+- **The nudge/resend-deposit-link recovery actions are WhatsApp-only**,
+  matching the automated reengagement cron's own channel limitation — a
+  lead with only an email address gets a clear error, not an email
+  fallback.

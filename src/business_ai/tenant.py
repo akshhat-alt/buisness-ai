@@ -70,6 +70,13 @@ class TenantConfig(BaseModel):
     # Razorpay account, never through a Business AI-held balance.
     razorpay_key_id: str | None = None
     razorpay_key_secret: str | None = None
+    # Phase 18: a tenant's OWN Razorpay webhook secret (set once in their
+    # own Razorpay dashboard, pointing at POST /api/webhooks/razorpay/
+    # {tenant_id}) — closes the gap the original README explicitly named
+    # ("no payment-status webhook... the owner checks their own Razorpay
+    # dashboard for now"). None = reconciliation stays manual for this
+    # tenant, exactly as before this field existed; nothing breaks.
+    razorpay_webhook_secret: str | None = None
     deposit_amount_inr: int | None = None  # whole rupees; unset = deposit-link action is disabled
     # Customer win-back: how many days without a repeat visit counts as
     # "lapsed" for THIS business. None = platform default (config.
@@ -286,6 +293,7 @@ class TenantRegistry(SqliteStore):
             update={
                 "whatsapp_access_token": encrypt_secret(config.whatsapp_access_token, key=self._secret_encryption_key),
                 "razorpay_key_secret": encrypt_secret(config.razorpay_key_secret, key=self._secret_encryption_key),
+                "razorpay_webhook_secret": encrypt_secret(config.razorpay_webhook_secret, key=self._secret_encryption_key),
             }
         )
         with self._lock, self._db() as conn:
@@ -308,6 +316,7 @@ class TenantRegistry(SqliteStore):
             update={
                 "whatsapp_access_token": decrypt_secret(config.whatsapp_access_token, key=self._secret_encryption_key),
                 "razorpay_key_secret": decrypt_secret(config.razorpay_key_secret, key=self._secret_encryption_key),
+                "razorpay_webhook_secret": decrypt_secret(config.razorpay_webhook_secret, key=self._secret_encryption_key),
             }
         )
 

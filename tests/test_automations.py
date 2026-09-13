@@ -310,10 +310,66 @@ def test_deposit_link_sent_over_whatsapp(client_auto, services_auto):
     assert data["payment_url"] == "https://rzp.io/i/fake-deposit-link"
     assert len(services_auto.fake_razorpay_client.calls) == 1
     assert services_auto.fake_razorpay_client.calls[0]["amount_inr"] == 200
+    # Phase 18: the lead_id must be passed as reference_id so the
+    # tenant's own Razorpay webhook can correlate a paid event back to
+    # this exact lead — see webhook_routes.py's receive_tenant_razorpay_webhook.
+    assert services_auto.fake_razorpay_client.calls[0]["reference_id"] == lead.lead_id
     assert "fake-deposit-link" in services_auto.fake_whatsapp_client.sent[0]["body"]
 
     leads = client_auto.get(f"/api/leads?tenant_id={tenant_id}", headers=headers).json()["leads"]
     assert leads[0]["deposit_link_sent_at"] is not None
+
+
+def test_nudge_lead_sends_the_same_message_as_automated_reengagement(client_auto, services_auto):
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    _connect_whatsapp(client_auto, headers, tenant_id)
+    lead = _make_lead(services_auto, tenant_id)
+
+    r = client_auto.post(f"/api/leads/{lead.lead_id}/nudge?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["channel"] == "whatsapp"
+    assert "checking in on your recent message" in services_auto.fake_whatsapp_client.sent[0]["body"]
+
+    leads = client_auto.get(f"/api/leads?tenant_id={tenant_id}", headers=headers).json()["leads"]
+    assert leads[0]["reengaged_at"] is not None
+
+    audit = services_auto.audit_log.list_for_tenant(tenant_id, action="lead_nudged_manually")
+    assert len(audit) == 1
+
+
+def test_nudge_lead_without_whatsapp_number_is_a_clear_error(client_auto, services_auto):
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    _connect_whatsapp(client_auto, headers, tenant_id)
+    lead = services_auto.lead_store.create(tenant_id=tenant_id, session_id="s-email-only", email="a@example.com")
+
+    r = client_auto.post(f"/api/leads/{lead.lead_id}/nudge?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 400
+
+
+def test_nudge_lead_without_whatsapp_connected_is_a_clear_error(client_auto, services_auto):
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    lead = _make_lead(services_auto, tenant_id)
+
+    r = client_auto.post(f"/api/leads/{lead.lead_id}/nudge?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 400
+
+
+def test_nudge_lead_is_tenant_isolated(client_auto, services_auto):
+    headers, tenant_id = _signup(client_auto)
+    _activate(client_auto, headers, tenant_id, services_auto.settings.admin_secret)
+    _connect_whatsapp(client_auto, headers, tenant_id)
+    lead = _make_lead(services_auto, tenant_id)
+
+    signup_b = client_auto.post(
+        "/api/auth/signup",
+        json={"email": "nudge-other@example.com", "password": "secret123", "name": "Bob", "business_name": "Other Nudge Biz"},
+    )
+    headers_b = {"Authorization": f"Bearer {signup_b.json()['access_token']}"}
+    r = client_auto.post(f"/api/leads/{lead.lead_id}/nudge?tenant_id={tenant_id}", headers=headers_b)
+    assert r.status_code == 403
 
 
 def test_deposit_link_requires_amount_configured(client_auto, services_auto):

@@ -1,6 +1,19 @@
 """Public inbound webhooks other than WhatsApp's (which lives in
-routers/admin_bot.py) — currently just Razorpay's platform-subscription
-payment confirmation (Phase 9 extraction from app.py).
+routers/admin_bot.py): Razorpay's platform-subscription payment
+confirmation (Phase 9 extraction from app.py), plus Phase 18's per-
+tenant deposit-payment reconciliation.
+
+Scope, stated honestly: both webhooks here understand the full
+`payment_link.*` event family (`paid`, `expired`, `cancelled`,
+`partially_paid`) — every event Razorpay fires against a payment link,
+all sharing the exact same `payload.payment_link.entity` shape this
+codebase already correlates by `reference_id`. `payment.*`/`refund.*`/
+`payment.dispute.*` events are deliberately NOT handled: those carry a
+different, order-centric payload shape this app has no way to
+confidently correlate back to a tenant/lead without a live Razorpay
+account to verify the real shape against — guessing that mapping would
+risk silently mis-filing a real payment event, which is worse than not
+handling it. See README's Known Limitations for this stated boundary.
 """
 
 from __future__ import annotations
@@ -15,6 +28,12 @@ from business_ai.payments import verify_razorpay_webhook_signature
 from business_ai.tenant import TenantNotFoundError
 
 logger = logging.getLogger(__name__)
+
+# The full payment_link.* lifecycle — every event Razorpay fires against
+# a payment link, all sharing payload.payment_link.entity's shape.
+_PAYMENT_LINK_EVENTS = frozenset({
+    "payment_link.paid", "payment_link.expired", "payment_link.cancelled", "payment_link.partially_paid",
+})
 
 
 def register_webhooks(app: FastAPI, svc, ctx) -> None:
@@ -44,20 +63,36 @@ def register_webhooks(app: FastAPI, svc, ctx) -> None:
         except (UnicodeDecodeError, ValueError):
             return {"status": "ignored", "reason": "invalid_json"}
 
-        if payload.get("event") != "payment_link.paid":
+        event = payload.get("event")
+        if event not in _PAYMENT_LINK_EVENTS:
             return {"status": "ignored", "reason": "irrelevant_event"}
 
         link_entity = payload.get("payload", {}).get("payment_link", {}).get("entity", {})
         target_tenant_id = link_entity.get("reference_id")
-        if not target_tenant_id or link_entity.get("status") != "paid":
-            return {"status": "ignored", "reason": "no_matching_tenant_or_not_paid"}
+        if not target_tenant_id:
+            return {"status": "ignored", "reason": "no_matching_tenant"}
 
         try:
-            tenant = svc.tenant_registry.get_config(target_tenant_id)
+            svc.tenant_registry.get_config(target_tenant_id)
         except TenantNotFoundError:
             logger.warning("Razorpay webhook referenced unknown tenant_id %s", target_tenant_id)
             return {"status": "ignored", "reason": "unknown_tenant"}
 
+        if event != "payment_link.paid":
+            # expired/cancelled/partially_paid: nothing to reconcile for
+            # platform billing (no separate state beyond "unbilled/
+            # invoiced/paid" exists to move to) — audit-logged for
+            # visibility, same "acknowledge, don't invent a new state
+            # machine" discipline as the per-tenant webhook below.
+            svc.audit_log.record(
+                tenant_id=target_tenant_id, actor_employee_id=None, action="platform_payment_link_event",
+                target_type="tenant", target_id=target_tenant_id, metadata={"event": event},
+            )
+            return {"status": "ok", "reason": "acknowledged_no_state_change"}
+
+        tenant = svc.tenant_registry.get_config(target_tenant_id)
+        if link_entity.get("status") != "paid":
+            return {"status": "ignored", "reason": "not_actually_paid"}
         if tenant.billing_status == "paid":
             return {"status": "ok", "reason": "already_paid"}
 
@@ -71,4 +106,67 @@ def register_webhooks(app: FastAPI, svc, ctx) -> None:
         )
         logger.info("Platform subscription payment auto-confirmed for tenant %s", target_tenant_id)
         return {"status": "ok", "billing_status": updated.billing_status}
+
+    @app.post("/api/webhooks/razorpay/{tenant_id}")
+    async def receive_tenant_razorpay_webhook(tenant_id: str, req: Request) -> dict:
+        """Phase 18: a tenant's OWN Razorpay account webhook — set up
+        once in THEIR Razorpay dashboard, verified against THEIR OWN
+        `razorpay_webhook_secret` (never the platform's), closing the
+        gap the original README named explicitly ("no payment-status
+        webhook... the owner checks their own Razorpay dashboard for
+        now"). Correlates via `reference_id` = the lead_id set when the
+        deposit link was created (see leads_routes.py's
+        send_deposit_link) — auto-confirms the SAME
+        `LeadStore.mark_deposit_paid` an owner would otherwise have to
+        call by hand via `POST /api/leads/{id}/deposit-paid`."""
+        try:
+            tenant = svc.tenant_registry.get_config(tenant_id)
+        except TenantNotFoundError:
+            raise HTTPException(status_code=404, detail="Unknown tenant.")
+
+        raw_body = await req.body()
+        signature = req.headers.get("x-razorpay-signature")
+        if not tenant.razorpay_webhook_secret or not verify_razorpay_webhook_signature(
+            raw_body=raw_body, signature_header=signature, webhook_secret=tenant.razorpay_webhook_secret
+        ):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature.")
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            return {"status": "ignored", "reason": "invalid_json"}
+
+        event = payload.get("event")
+        if event not in _PAYMENT_LINK_EVENTS:
+            return {"status": "ignored", "reason": "irrelevant_event"}
+
+        link_entity = payload.get("payload", {}).get("payment_link", {}).get("entity", {})
+        lead_id = link_entity.get("reference_id")
+        if not lead_id:
+            return {"status": "ignored", "reason": "no_matching_lead"}
+        lead = svc.lead_store.get(tenant_id, lead_id)
+        if lead is None:
+            logger.warning("Tenant Razorpay webhook for %s referenced unknown lead_id %s", tenant_id, lead_id)
+            return {"status": "ignored", "reason": "unknown_lead"}
+
+        if event != "payment_link.paid":
+            svc.audit_log.record(
+                tenant_id=tenant_id, actor_employee_id=None, action="deposit_payment_link_event",
+                target_type="lead", target_id=lead_id, metadata={"event": event},
+            )
+            return {"status": "ok", "reason": "acknowledged_no_state_change"}
+
+        if link_entity.get("status") != "paid":
+            return {"status": "ignored", "reason": "not_actually_paid"}
+        if lead.deposit_paid_at:
+            return {"status": "ok", "reason": "already_paid"}
+
+        amount_paise = link_entity.get("amount_paid") or link_entity.get("amount") or 0
+        svc.lead_store.mark_deposit_paid(tenant_id, lead_id, amount_paise // 100)
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="deposit_payment_confirmed",
+            target_type="lead", target_id=lead_id, metadata={"amount_inr": amount_paise // 100},
+        )
+        logger.info("Deposit payment auto-confirmed for tenant %s lead %s", tenant_id, lead_id)
+        return {"status": "ok", "reason": "deposit_confirmed"}
 
