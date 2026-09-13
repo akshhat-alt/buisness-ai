@@ -387,18 +387,24 @@
             <div style="margin-top:16px; display:flex; flex-direction:column; gap:8px; max-width:520px;">
               <input class="ba-input" id="new-rule-name" placeholder="Rule name (e.g. Chase overdue tasks)">
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <select class="ba-input" id="new-rule-trigger" style="flex:1; min-width:220px;">
+                <select class="ba-input" id="new-rule-trigger" style="flex:1; min-width:220px;" onchange="onAutomationRuleFormChange()">
                   <option value="task_overdue">Task overdue by at least (hours)</option>
                   <option value="negative_feedback_unresolved">Negative feedback unresolved for at least (hours)</option>
                   <option value="recurring_feedback_theme">Feedback theme repeated at least (count)</option>
                   <option value="deposit_unpaid_after_appointment">Deposit unpaid after appointment by at least (hours)</option>
+                  <option value="low_stock">Ingredient below its par level (restaurant)</option>
                 </select>
                 <input class="ba-input" type="number" min="1" id="new-rule-threshold" placeholder="Threshold" style="max-width:110px;" value="24">
               </div>
-              <select class="ba-input" id="new-rule-action">
+              <select class="ba-input" id="new-rule-action" onchange="onAutomationRuleFormChange()">
                 <option value="notify_owner">Notify me on WhatsApp</option>
                 <option value="create_task">Create a follow-up task</option>
+                <option value="message_lead">Message the customer directly</option>
               </select>
+              <textarea class="ba-input" id="new-rule-message" placeholder="Message to send the customer, e.g. Hi {name}, just checking in on your deposit!" style="display:none; min-height:60px;"></textarea>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input class="ba-input" type="number" min="1" id="new-rule-escalate" placeholder="Re-notify after (hours) — optional" style="max-width:220px;">
+              </div>
               <button class="ba-btn ba-btn-sm" onclick="addAutomationRule()" style="align-self:flex-start;">Create Rule</button>
             </div>
             <div id="automation-rule-status" class="ba-muted" style="margin-top:6px;"></div>
@@ -1320,12 +1326,25 @@
     const AUTOMATION_TRIGGER_PARAM_KEY = {
       task_overdue: 'hours', negative_feedback_unresolved: 'hours',
       recurring_feedback_theme: 'min_count', deposit_unpaid_after_appointment: 'hours',
+      // low_stock has no threshold param — it reads each ingredient's own
+      // par_level (set from the Restaurant section), never omitted.
     };
     const AUTOMATION_TRIGGER_LABELS = {
       task_overdue: 'Task overdue', negative_feedback_unresolved: 'Feedback unresolved',
       recurring_feedback_theme: 'Recurring feedback', deposit_unpaid_after_appointment: 'Deposit unpaid',
+      low_stock: 'Ingredient low on stock',
     };
-    const AUTOMATION_ACTION_LABELS = { notify_owner: 'Notify owner (WhatsApp)', create_task: 'Create follow-up task' };
+    const AUTOMATION_ACTION_LABELS = {
+      notify_owner: 'Notify owner (WhatsApp)', create_task: 'Create follow-up task',
+      message_lead: 'Message the customer',
+    };
+
+    function onAutomationRuleFormChange() {
+      const triggerType = document.getElementById('new-rule-trigger').value;
+      const actionType = document.getElementById('new-rule-action').value;
+      document.getElementById('new-rule-threshold').style.display = AUTOMATION_TRIGGER_PARAM_KEY[triggerType] ? '' : 'none';
+      document.getElementById('new-rule-message').style.display = actionType === 'message_lead' ? '' : 'none';
+    }
     const AUTOMATION_STATUS_PILL = { success: 'converted', failed: 'awaiting_payment', given_up: 'lost' };
     let automationRuleNames = {};
 
@@ -1377,22 +1396,37 @@
       const triggerType = document.getElementById('new-rule-trigger').value;
       const threshold = Number(document.getElementById('new-rule-threshold').value);
       const actionType = document.getElementById('new-rule-action').value;
-      if (!name || !threshold || threshold <= 0) {
-        statusEl.textContent = 'Enter a rule name and a positive threshold.';
+      const message = document.getElementById('new-rule-message').value.trim();
+      const escalateHours = Number(document.getElementById('new-rule-escalate').value);
+      if (!name) {
+        statusEl.textContent = 'Enter a rule name.';
         return;
       }
       const paramKey = AUTOMATION_TRIGGER_PARAM_KEY[triggerType];
+      if (paramKey && (!threshold || threshold <= 0)) {
+        statusEl.textContent = 'Enter a positive threshold for this trigger.';
+        return;
+      }
+      if (actionType === 'message_lead' && !message) {
+        statusEl.textContent = 'Enter the message to send the customer.';
+        return;
+      }
+      const triggerParams = paramKey ? { [paramKey]: threshold } : {};
+      const actionParams = actionType === 'message_lead' ? { message } : {};
       try {
         const res = await fetch(`/api/automation/rules?tenant_id=${encodeURIComponent(tenantId)}`, {
           method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
-            name, trigger_type: triggerType, trigger_params: { [paramKey]: threshold },
-            action_type: actionType, action_params: {},
+            name, trigger_type: triggerType, trigger_params: triggerParams,
+            action_type: actionType, action_params: actionParams,
+            escalate_after_hours: escalateHours > 0 ? escalateHours : null,
           }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Could not create the rule.');
         document.getElementById('new-rule-name').value = '';
+        document.getElementById('new-rule-message').value = '';
+        document.getElementById('new-rule-escalate').value = '';
         statusEl.textContent = '';
         loadAutomationRules();
       } catch (e) { statusEl.textContent = e.message; }

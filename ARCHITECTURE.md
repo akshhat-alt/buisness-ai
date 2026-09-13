@@ -144,7 +144,13 @@ src/business_ai/
   automation.py   Automation Engine: owner-configured trigger/condition/
                   action rules (AutomationRuleStore) and their execution
                   history (AutomationRunStore) — evaluated by app.py's
-                  admin/automation/run cron endpoint, never a scheduler
+                  admin/automation/run cron endpoint, never a scheduler.
+                  Phase 19 added a low_stock trigger, a message_lead
+                  action, and an opt-in escalate_after_hours re-fire
+                  field generalized across every trigger type; low_stock
+                  rules also fire eagerly and synchronously from
+                  admin_bot.py right after a real WhatsApp depletion
+                  event (dish sale / wastage), not only from the cron
   storage.py      Phase 9: SqliteStore, the shared connection-management
                   base every store above inherits (WAL, busy timeout,
                   thread lock) — one place to change if the storage
@@ -245,7 +251,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (581 tests) — see README.md
+tests/            pytest suite (593 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

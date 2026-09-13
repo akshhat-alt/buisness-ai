@@ -835,36 +835,82 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 and l.deposit_link_sent_at and not l.deposit_paid_at and not l.appointment_outcome
             ]
 
+        if rule.trigger_type == TriggerType.LOW_STOCK:
+            return [
+                (
+                    "inventory_item", f"inventory:{item.ingredient_key}",
+                    {"ingredient_name": item.ingredient_name, "quantity_on_hand": item.quantity_on_hand, "par_level": item.par_level},
+                )
+                for item in svc.inventory_store.list_low_stock(tenant.tenant_id)
+            ]
+
         return []
 
-    def _render_automation_notification(rule: AutomationRule, target_type: str, target_id: str, metadata: dict) -> str:
+    def _render_automation_notification(
+        rule: AutomationRule, target_type: str, target_id: str, metadata: dict, *, is_escalation: bool = False
+    ) -> str:
         custom = rule.action_params.get("message")
         if custom:
             try:
-                return custom.format(**metadata)
+                message = custom.format(**metadata)
             except (KeyError, IndexError):
-                return custom
-        if rule.trigger_type == TriggerType.TASK_OVERDUE:
-            return f'🤖 Automation "{rule.name}": task "{metadata.get("title", target_id)}" is overdue.'
-        if rule.trigger_type == TriggerType.NEGATIVE_FEEDBACK_UNRESOLVED:
-            return f'🤖 Automation "{rule.name}": unresolved negative feedback ({metadata.get("theme", "unknown theme")}) needs attention.'
-        if rule.trigger_type == TriggerType.RECURRING_FEEDBACK_THEME:
-            return f'🤖 Automation "{rule.name}": recurring feedback theme "{metadata.get("theme", "?")}" reported {metadata.get("count", "?")} times.'
-        if rule.trigger_type == TriggerType.DEPOSIT_UNPAID_AFTER_APPOINTMENT:
+                message = custom
+        elif rule.trigger_type == TriggerType.TASK_OVERDUE:
+            message = f'🤖 Automation "{rule.name}": task "{metadata.get("title", target_id)}" is overdue.'
+        elif rule.trigger_type == TriggerType.NEGATIVE_FEEDBACK_UNRESOLVED:
+            message = f'🤖 Automation "{rule.name}": unresolved negative feedback ({metadata.get("theme", "unknown theme")}) needs attention.'
+        elif rule.trigger_type == TriggerType.RECURRING_FEEDBACK_THEME:
+            message = f'🤖 Automation "{rule.name}": recurring feedback theme "{metadata.get("theme", "?")}" reported {metadata.get("count", "?")} times.'
+        elif rule.trigger_type == TriggerType.DEPOSIT_UNPAID_AFTER_APPOINTMENT:
             who = metadata.get("name") or "A customer"
-            return f'🤖 Automation "{rule.name}": {who}\'s deposit is still unpaid after their appointment.'
-        return f'🤖 Automation "{rule.name}" triggered.'
+            message = f'🤖 Automation "{rule.name}": {who}\'s deposit is still unpaid after their appointment.'
+        elif rule.trigger_type == TriggerType.LOW_STOCK:
+            message = (
+                f'🤖 Automation "{rule.name}": {metadata.get("ingredient_name", target_id)} is low on stock '
+                f'({metadata.get("quantity_on_hand", "?")} on hand, par level {metadata.get("par_level", "?")}).'
+            )
+        else:
+            message = f'🤖 Automation "{rule.name}" triggered.'
+        if is_escalation:
+            return f"⏰ Still unresolved — {message}"
+        return message
 
-    def _execute_automation_action(tenant: TenantConfig, rule: AutomationRule, target_type: str, target_id: str, metadata: dict) -> None:
+    def _execute_automation_action(
+        tenant: TenantConfig, rule: AutomationRule, target_type: str, target_id: str, metadata: dict, *, is_escalation: bool = False
+    ) -> None:
         """Raises on failure — the caller records the run row either way.
-        Both action types reuse existing, already-tested capabilities
-        (management WhatsApp push, task creation); this function adds no
-        new side-effect mechanism of its own."""
+        All three action types reuse existing, already-tested capabilities
+        (management WhatsApp push, task creation, single-lead WhatsApp
+        send); this function adds no new side-effect mechanism of its own."""
         if rule.action_type == ActionType.NOTIFY_OWNER:
-            message = _render_automation_notification(rule, target_type, target_id, metadata)
+            message = _render_automation_notification(rule, target_type, target_id, metadata, is_escalation=is_escalation)
             sent = _notify_management_whatsapp(tenant, message)
             if sent == 0:
                 raise RuntimeError("No reachable WhatsApp recipient for owner notification.")
+            return
+
+        if rule.action_type == ActionType.MESSAGE_LEAD:
+            if target_type != "lead":
+                raise RuntimeError(f"message_lead action requires a lead target, got {target_type!r}.")
+            lead = svc.lead_store.get(tenant.tenant_id, target_id)
+            if not lead:
+                raise RuntimeError(f"Lead {target_id} not found.")
+            if not lead.phone:
+                raise RuntimeError(f"Lead {target_id} has no phone number on file.")
+            if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
+                raise RuntimeError("WhatsApp is not connected for this tenant.")
+            template = rule.action_params.get("message", "")
+            try:
+                body = template.format(**metadata)
+            except (KeyError, IndexError):
+                body = template
+            try:
+                svc.whatsapp_client().send_text(
+                    phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                    to=lead.phone, body=body,
+                )
+            except WhatsAppSendError as exc:
+                raise RuntimeError(f"WhatsApp send failed: {exc}") from exc
             return
 
         if rule.action_type == ActionType.CREATE_TASK:
@@ -890,14 +936,23 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
 
         raise RuntimeError(f"Unknown action type: {rule.action_type}")
 
+    def _hours_since(iso_timestamp: str) -> float:
+        parsed = datetime.strptime(iso_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - parsed).total_seconds() / 3600.0
+
     def _fire_automation_rule(tenant: TenantConfig, rule: AutomationRule) -> dict:
         """Evaluate one rule against current state and, for every matching
         target not already successfully handled (or given up on), execute
         the action exactly once — recording a run row whether it succeeds
-        or fails. A recurring-feedback-theme target is the one exception
-        allowed to re-fire after a prior success: only when its count has
-        grown since the last successful alert, so a still-recurring issue
-        can escalate again without ever spamming on an unchanged count."""
+        or fails. Two independent conditions allow a re-fire after a prior
+        success — a still-recurring feedback theme whose count has grown
+        since the last successful alert (the original, always-on
+        behavior), or — for ANY trigger type, opt-in via
+        rule.escalate_after_hours — the target is still true and at least
+        that many hours have passed since the last successful fire. Either
+        one is "re-insisting to the same already-notified roster," never
+        notifying a new person, so both reuse the identical execute/record
+        path as a first-time fire."""
         fired: list[str] = []
         given_up: list[str] = []
         failed: list[str] = []
@@ -910,14 +965,21 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
         for target_type, target_id, metadata in candidates:
             history = svc.automation_run_store.history_for_target(tenant.tenant_id, rule.rule_id, target_id)
             successes = [r for r in history if r.status == RunStatus.SUCCESS.value]
+            is_escalation = False
 
             if successes:
-                if rule.trigger_type != TriggerType.RECURRING_FEEDBACK_THEME:
-                    continue  # one-shot trigger: never refire once handled
                 last_success = max(successes, key=lambda r: r.created_at)
-                if metadata.get("count", 0) <= last_success.metadata.get("count", 0):
-                    continue  # no growth since the last time this fired
-                # else: the theme kept recurring since the last alert — refire
+                theme_grew = (
+                    rule.trigger_type == TriggerType.RECURRING_FEEDBACK_THEME
+                    and metadata.get("count", 0) > last_success.metadata.get("count", 0)
+                )
+                hours_elapsed = (
+                    rule.escalate_after_hours is not None
+                    and _hours_since(last_success.created_at) >= rule.escalate_after_hours
+                )
+                if not (theme_grew or hours_elapsed):
+                    continue  # one-shot (or not yet due to re-fire): skip
+                is_escalation = not theme_grew  # a real count-growth refire keeps its own wording
             else:
                 if any(r.status == RunStatus.GIVEN_UP.value for r in history):
                     given_up.append(target_id)
@@ -934,7 +996,7 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                     continue
 
             try:
-                _execute_automation_action(tenant, rule, target_type, target_id, metadata)
+                _execute_automation_action(tenant, rule, target_type, target_id, metadata, is_escalation=is_escalation)
             except Exception as exc:
                 svc.automation_run_store.record(
                     tenant_id=tenant.tenant_id, rule_id=rule.rule_id, trigger_type=rule.trigger_type.value,
@@ -957,6 +1019,23 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             fired.append(target_id)
 
         return {"fired": fired, "given_up": given_up, "failed": failed}
+
+    def _fire_low_stock_rules_now(tenant: TenantConfig) -> None:
+        """Event-driven firing: rather than waiting for the next external
+        cron tick, call this right after a real depletion event (a
+        WhatsApp dish-sale or wastage command actually reduced stock) so a
+        low-stock alert can reach the owner immediately. Safe to call
+        eagerly and repeatedly — same fail-closed gating and the same
+        history-based dedup as the cron path (admin_run_automation), so an
+        already-notified ingredient is never re-announced by this call."""
+        if not tenant.automation_enabled:
+            return
+        rules = [
+            r for r in svc.automation_rule_store.list_for_tenant(tenant.tenant_id, enabled_only=True)
+            if r.trigger_type == TriggerType.LOW_STOCK
+        ]
+        for rule in rules:
+            _fire_automation_rule(tenant, rule)
 
     _TIMELINE_DESCRIPTIONS = {
         "employee_added": "{actor} added an employee to the roster",
@@ -1253,6 +1332,8 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 target_type="business_metric", target_id=metric.metric_id,
                 metadata={"menu_item_id": menu_item.menu_item_id, "quantity": quantity, "amount_inr": amount},
             )
+            if depleted_any:
+                _fire_low_stock_rules_now(tenant)
             reply(f"✅ Logged sale: {quantity}x {menu_item.name} — ₹{amount}." + (" Stock updated." if depleted_any else ""))
             return True
 
@@ -1333,6 +1414,7 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 target_type="wastage_entry", target_id=entry.wastage_id,
                 metadata={"ingredient_name": ingredient, "quantity": quantity, "reason": entry.reason},
             )
+            _fire_low_stock_rules_now(tenant)
             reply(
                 f"✅ Logged waste: {quantity:g}{unit} {ingredient} ({entry.reason})"
                 + (f" — est. ₹{estimated_cost}" if estimated_cost else "") + "."

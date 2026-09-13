@@ -62,6 +62,15 @@ class TriggerType(str, Enum):
     # deposit_paid_at nor appointment_outcome has been confirmed yet.
     # Target: lead.
     DEPOSIT_UNPAID_AFTER_APPOINTMENT = "deposit_unpaid_after_appointment"
+    # Phase 19: an ingredient's quantity_on_hand is below its configured
+    # par_level (see inventory.py — Phase 17). Target: a synthetic
+    # "inventory:<ingredient_key>" id, the same shape as the dependency-
+    # scan's own dedup targets. The first genuinely new trigger type
+    # added since Phase 6 — proves the enum-based pattern generalizes by
+    # simply adding a value, without needing a generic condition DSL
+    # (see this module's own docstring for why that's deliberately not
+    # built).
+    LOW_STOCK = "low_stock"
 
 
 class ActionType(str, Enum):
@@ -72,6 +81,15 @@ class ActionType(str, Enum):
     # Reuses TaskStore.create — assigns to action_params["assigned_to_employee_id"]
     # if set, else the tenant's first owner-role employee.
     CREATE_TASK = "create_task"
+    # Phase 19: the one action type this engine's own documentation named
+    # as a real gap — messages the CUSTOMER/lead directly (never the
+    # owner), reusing the exact WhatsApp send call already used by
+    # leads_routes.py's nudge/deposit-link routes. Only valid for a
+    # lead-targeted trigger (DEPOSIT_UNPAID_AFTER_APPOINTMENT today).
+    # action_params["message"] is REQUIRED — there's no sensible generic
+    # default for what to say to a real customer, unlike NOTIFY_OWNER's
+    # auto-rendered internal alert text.
+    MESSAGE_LEAD = "message_lead"
 
 
 class RunStatus(str, Enum):
@@ -89,6 +107,15 @@ class AutomationRule(BaseModel):
     action_type: ActionType
     action_params: dict[str, Any] = {}
     enabled: bool = True
+    # Phase 19 — generalizes RECURRING_FEEDBACK_THEME's own "re-fire if
+    # it's grown since last time" idea to every trigger type: when set,
+    # a rule that already fired successfully for a target can fire AGAIN
+    # if the target STILL matches its trigger condition at least this
+    # many hours after the LAST successful fire — an escalation (re-
+    # insisting to the same owner/manager roster _notify_management_
+    # whatsapp already reaches), not a new recipient. None (the default)
+    # keeps every existing rule's exact one-shot-until-resolved behavior.
+    escalate_after_hours: float | None = None
     created_by_employee_id: str | None = None
     created_at: str
     updated_at: str
@@ -139,6 +166,13 @@ class AutomationRuleStore(SqliteStore):
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_automation_rules_tenant ON automation_rules(tenant_id)")
+            # Additive column (Phase 19) — guarded ALTER TABLE self-heals
+            # an existing database that predates it, same pattern as
+            # analytics.py's/metrics.py's own additive columns.
+            try:
+                conn.execute("ALTER TABLE automation_rules ADD COLUMN escalate_after_hours REAL")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             conn.commit()
 
     def _row_to_rule(self, row: sqlite3.Row) -> AutomationRule:
@@ -147,6 +181,11 @@ class AutomationRuleStore(SqliteStore):
         data["action_params"] = json.loads(data.pop("action_params_json") or "{}")
         data["enabled"] = bool(data["enabled"])
         return AutomationRule(**data)
+
+    @staticmethod
+    def _validate(action_type: ActionType, action_params: dict[str, Any]) -> None:
+        if action_type == ActionType.MESSAGE_LEAD and not action_params.get("message"):
+            raise ValueError('action_params["message"] is required for the message_lead action.')
 
     def create(
         self,
@@ -158,9 +197,11 @@ class AutomationRuleStore(SqliteStore):
         action_type: ActionType,
         action_params: dict[str, Any],
         created_by_employee_id: str | None = None,
+        escalate_after_hours: float | None = None,
     ) -> AutomationRule:
         if not name or not name.strip():
             raise ValueError("A rule name is required.")
+        self._validate(action_type, action_params)
         now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         rule = AutomationRule(
             rule_id=f"rule_{secrets.token_hex(8)}",
@@ -171,6 +212,7 @@ class AutomationRuleStore(SqliteStore):
             action_type=action_type,
             action_params=action_params,
             enabled=True,
+            escalate_after_hours=escalate_after_hours,
             created_by_employee_id=created_by_employee_id,
             created_at=now_iso,
             updated_at=now_iso,
@@ -180,14 +222,15 @@ class AutomationRuleStore(SqliteStore):
                 """
                 INSERT INTO automation_rules (
                     rule_id, tenant_id, name, trigger_type, trigger_params_json,
-                    action_type, action_params_json, enabled, created_by_employee_id,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    action_type, action_params_json, enabled, escalate_after_hours,
+                    created_by_employee_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rule.rule_id, rule.tenant_id, rule.name, rule.trigger_type.value,
                     json.dumps(rule.trigger_params), rule.action_type.value, json.dumps(rule.action_params),
-                    int(rule.enabled), rule.created_by_employee_id, rule.created_at, rule.updated_at,
+                    int(rule.enabled), rule.escalate_after_hours,
+                    rule.created_by_employee_id, rule.created_at, rule.updated_at,
                 ),
             )
             conn.commit()
@@ -215,18 +258,19 @@ class AutomationRuleStore(SqliteStore):
         if rule is None:
             return None
         updated = rule.model_copy(update={**fields, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+        self._validate(updated.action_type, updated.action_params)
         with self._lock, self._db() as conn:
             conn.execute(
                 """
                 UPDATE automation_rules SET
                     name = ?, trigger_type = ?, trigger_params_json = ?,
-                    action_type = ?, action_params_json = ?, enabled = ?, updated_at = ?
+                    action_type = ?, action_params_json = ?, enabled = ?, escalate_after_hours = ?, updated_at = ?
                 WHERE tenant_id = ? AND rule_id = ?
                 """,
                 (
                     updated.name, updated.trigger_type.value, json.dumps(updated.trigger_params),
                     updated.action_type.value, json.dumps(updated.action_params), int(updated.enabled),
-                    updated.updated_at, tenant_id, rule_id,
+                    updated.escalate_after_hours, updated.updated_at, tenant_id, rule_id,
                 ),
             )
             conn.commit()

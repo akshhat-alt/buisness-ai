@@ -403,3 +403,203 @@ def test_only_platform_admin_can_run_automation_cron(client_wa, services_wa):
     headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
     r = client_wa.post("/api/v1/admin/automation/run", headers=headers)
     assert r.status_code == 403, r.text
+
+
+# ------------------------------------------------------------------ Phase 19: LOW_STOCK trigger
+
+
+def _backdate_run_created_at(services, run_id, created_at_iso):
+    with services.automation_run_store._db() as conn:
+        conn.execute(
+            "UPDATE automation_runs SET created_at = ? WHERE run_id = ?", (created_at_iso, run_id)
+        )
+        conn.commit()
+
+
+def test_low_stock_rule_notifies_owner_via_whatsapp(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    admin_headers = _admin_headers(client_wa, services_wa)
+
+    services_wa.inventory_store.adjust_quantity(tenant_id, "Paneer", delta=500, unit="g")
+    services_wa.inventory_store.set_par_level(tenant_id, "Paneer", par_level=1000, unit="g")
+    _create_rule(
+        client_wa, headers, tenant_id, name="Chase low stock",
+        trigger_type="low_stock", trigger_params={},
+    )
+
+    result = _run_cron(client_wa, admin_headers)
+    assert len(result["processed"][tenant_id]["fired"]) == 1
+    body = services_wa.fake_whatsapp_client.sent[0]["body"]
+    assert "Paneer" in body
+    assert "low on stock" in body
+
+    # Above par level -> no longer a candidate, no refire.
+    services_wa.inventory_store.adjust_quantity(tenant_id, "Paneer", delta=600, unit="g")
+    services_wa.fake_whatsapp_client.sent.clear()
+    result2 = _run_cron(client_wa, admin_headers)
+    assert tenant_id not in result2["processed"]
+
+
+# ------------------------------------------------------------------ Phase 19: MESSAGE_LEAD action
+
+
+def test_message_lead_action_sends_directly_to_the_customer(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    admin_headers = _admin_headers(client_wa, services_wa)
+
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000011111", phone="919000011111", name="Priya",
+    )
+    _set_lead_appointment_and_deposit_link(services_wa, tenant_id, lead.lead_id, _iso_hours_ago(5))
+    _create_rule(
+        client_wa, headers, tenant_id, name="Nudge unpaid deposits",
+        trigger_type="deposit_unpaid_after_appointment", trigger_params={"hours": 2},
+        action_type="message_lead", action_params={"message": "Hi {name}, just checking in on your deposit!"},
+    )
+
+    result = _run_cron(client_wa, admin_headers)
+    assert len(result["processed"][tenant_id]["fired"]) == 1
+    sent = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == "919000011111"]
+    assert len(sent) == 1
+    assert sent[0]["body"] == "Hi Priya, just checking in on your deposit!"
+
+
+def test_message_lead_action_fails_gracefully_without_phone(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    admin_headers = _admin_headers(client_wa, services_wa)
+
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_no_phone", phone=None, email="nophone@example.com", name="No Phone",
+    )
+    _set_lead_appointment_and_deposit_link(services_wa, tenant_id, lead.lead_id, _iso_hours_ago(5))
+    _create_rule(
+        client_wa, headers, tenant_id, name="Nudge unpaid deposits",
+        trigger_type="deposit_unpaid_after_appointment", trigger_params={"hours": 2},
+        action_type="message_lead", action_params={"message": "Hi there!"},
+    )
+
+    result = _run_cron(client_wa, admin_headers)
+    assert len(result["processed"][tenant_id]["failed"]) == 1
+    runs = services_wa.automation_run_store.list_for_tenant(tenant_id)
+    assert runs[0].status == "failed"
+    assert "no phone" in runs[0].error.lower()
+
+
+def test_message_lead_action_fails_gracefully_without_whatsapp_connected(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    admin_headers = _admin_headers(client_wa, services_wa)
+
+    lead = services_wa.lead_store.create(
+        tenant_id=tenant_id, session_id="wa_919000022222", phone="919000022222", name="Neha",
+    )
+    _set_lead_appointment_and_deposit_link(services_wa, tenant_id, lead.lead_id, _iso_hours_ago(5))
+    services_wa.tenant_registry.update_config(tenant_id, whatsapp_phone_number_id="")
+    _create_rule(
+        client_wa, headers, tenant_id, name="Nudge unpaid deposits",
+        trigger_type="deposit_unpaid_after_appointment", trigger_params={"hours": 2},
+        action_type="message_lead", action_params={"message": "Hi there!"},
+    )
+
+    result = _run_cron(client_wa, admin_headers)
+    assert len(result["processed"][tenant_id]["failed"]) == 1
+    runs = services_wa.automation_run_store.list_for_tenant(tenant_id)
+    assert "whatsapp is not connected" in runs[0].error.lower()
+
+
+def test_message_lead_action_rejects_a_non_lead_target(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    admin_headers = _admin_headers(client_wa, services_wa)
+
+    task = services_wa.task_store.create(
+        tenant_id=tenant_id, title="Overdue thing",
+        assigned_to_employee_id=ravi["employee_id"], assigned_by_employee_id=ravi["employee_id"],
+    )
+    _backdate_task_due(services_wa, tenant_id, task.task_id, _iso_hours_ago(5))
+    _create_rule(
+        client_wa, headers, tenant_id, trigger_params={"hours": 2},
+        action_type="message_lead", action_params={"message": "Hi there!"},
+    )
+
+    result = _run_cron(client_wa, admin_headers)
+    assert len(result["processed"][tenant_id]["failed"]) == 1
+    runs = services_wa.automation_run_store.list_for_tenant(tenant_id)
+    assert "requires a lead target" in runs[0].error.lower()
+
+
+def test_creating_message_lead_rule_without_a_message_is_rejected(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    r = client_wa.post(
+        f"/api/automation/rules?tenant_id={tenant_id}",
+        json={
+            "name": "Broken rule", "trigger_type": "deposit_unpaid_after_appointment",
+            "action_type": "message_lead", "action_params": {},
+        },
+        headers=headers,
+    )
+    assert r.status_code == 400, r.text
+
+
+def test_removing_the_message_from_a_message_lead_rule_via_update_is_rejected(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    rule = _create_rule(
+        client_wa, headers, tenant_id, name="Nudge unpaid deposits",
+        trigger_type="deposit_unpaid_after_appointment",
+        action_type="message_lead", action_params={"message": "Hi there!"},
+    )
+    r = client_wa.patch(
+        f"/api/automation/rules/{rule['rule_id']}?tenant_id={tenant_id}",
+        json={"action_params": {}}, headers=headers,
+    )
+    assert r.status_code == 400, r.text
+
+
+# ------------------------------------------------------------------ Phase 19: escalate_after_hours
+
+
+def test_escalate_after_hours_allows_a_generic_refire(client_wa, services_wa):
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    admin_headers = _admin_headers(client_wa, services_wa)
+
+    task = services_wa.task_store.create(
+        tenant_id=tenant_id, title="Still not done",
+        assigned_to_employee_id=ravi["employee_id"], assigned_by_employee_id=ravi["employee_id"],
+    )
+    _backdate_task_due(services_wa, tenant_id, task.task_id, _iso_hours_ago(50))
+    _create_rule(
+        client_wa, headers, tenant_id, trigger_params={"hours": 2}, escalate_after_hours=24,
+    )
+
+    _run_cron(client_wa, admin_headers)
+    assert len(services_wa.fake_whatsapp_client.sent) == 1
+
+    # Immediately again: not due yet (0h since the last success < 24h).
+    _run_cron(client_wa, admin_headers)
+    assert len(services_wa.fake_whatsapp_client.sent) == 1
+
+    # Backdate the one successful run 25h into the past -> due to escalate.
+    run = services_wa.automation_run_store.list_for_tenant(tenant_id)[0]
+    _backdate_run_created_at(services_wa, run.run_id, _iso_hours_ago(25))
+    _run_cron(client_wa, admin_headers)
+    assert len(services_wa.fake_whatsapp_client.sent) == 2
+    assert "still unresolved" in services_wa.fake_whatsapp_client.sent[1]["body"].lower()
+
+
+def test_without_escalate_after_hours_a_one_shot_trigger_never_refires(client_wa, services_wa):
+    """Regression guard for the Phase 19 generalization: leaving
+    escalate_after_hours unset (the default for every pre-Phase-19 rule)
+    must keep the exact original one-shot-until-resolved behavior."""
+    headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    admin_headers = _admin_headers(client_wa, services_wa)
+
+    task = services_wa.task_store.create(
+        tenant_id=tenant_id, title="Still not done",
+        assigned_to_employee_id=ravi["employee_id"], assigned_by_employee_id=ravi["employee_id"],
+    )
+    _backdate_task_due(services_wa, tenant_id, task.task_id, _iso_hours_ago(50))
+    _create_rule(client_wa, headers, tenant_id, trigger_params={"hours": 2})
+
+    _run_cron(client_wa, admin_headers)
+    run = services_wa.automation_run_store.list_for_tenant(tenant_id)[0]
+    _backdate_run_created_at(services_wa, run.run_id, _iso_hours_ago(1000))
+    _run_cron(client_wa, admin_headers)
+    assert len(services_wa.fake_whatsapp_client.sent) == 1

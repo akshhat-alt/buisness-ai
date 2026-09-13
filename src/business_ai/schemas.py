@@ -102,6 +102,7 @@ class CreateAutomationRuleRequest(BaseModel):
     trigger_params: dict = {}
     action_type: ActionType
     action_params: dict = {}
+    escalate_after_hours: float | None = None
 
 
 class UpdateAutomationRuleRequest(BaseModel):
@@ -109,6 +110,7 @@ class UpdateAutomationRuleRequest(BaseModel):
     trigger_params: dict | None = None
     action_params: dict | None = None
     enabled: bool | None = None
+    escalate_after_hours: float | None = None
 
 
 class AutomationKillSwitchRequest(BaseModel):

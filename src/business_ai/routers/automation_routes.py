@@ -44,6 +44,7 @@ def register_automation(app: FastAPI, svc, ctx) -> None:
                 tenant_id=tenant_id, name=request.name, trigger_type=request.trigger_type,
                 trigger_params=request.trigger_params, action_type=request.action_type,
                 action_params=request.action_params, created_by_employee_id=principal.principal_id,
+                escalate_after_hours=request.escalate_after_hours,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -71,7 +72,10 @@ def register_automation(app: FastAPI, svc, ctx) -> None:
             if existing is None:
                 raise HTTPException(status_code=404, detail="Unknown rule_id for this business.")
             return existing.model_dump()
-        updated = svc.automation_rule_store.update(tenant_id, rule_id, **fields)
+        try:
+            updated = svc.automation_rule_store.update(tenant_id, rule_id, **fields)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if updated is None:
             raise HTTPException(status_code=404, detail="Unknown rule_id for this business.")
         svc.audit_log.record(

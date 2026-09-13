@@ -1143,6 +1143,70 @@ no-op when no WhatsApp number is connected. 17 new tests across
 `tests/test_tenant_razorpay_webhook.py` (12) and 5 additions to
 `tests/test_automations.py` — 581 total, all green.
 
+## What V1.24 adds: Automation Engine 2.0 (Phase 19)
+
+Generalizes the Automation Engine to cover the Restaurant vertical and
+close the one gap its own Known Limitations section named: no action
+that messages the customer directly.
+
+**A fifth trigger type, `low_stock`.** Fires when any ingredient's
+`quantity_on_hand` drops below its configured `par_level` (Phase 17) —
+same synthetic `inventory:<ingredient_key>` target-id/dedup shape as
+every other trigger, so an already-alerted ingredient is never
+re-announced until it's restocked. **Event-driven, not just cron-driven:**
+a real WhatsApp `log sale`/`log waste` command that actually depletes
+stock below par now fires any enabled `low_stock` rule immediately, in
+the same request, reusing the identical `_fire_automation_rule`
+history-based dedup the external cron uses — an owner finds out the
+moment the depletion happens, not up to a cron interval later.
+
+**A third action type, `message_lead`.** Messages the CUSTOMER directly
+over WhatsApp (every existing action type only ever notified the owner
+or created an internal task) — reusing the exact single-lead send call
+already used by the manual Nudge button (Phase 18) and the verified-
+outcome ping (Phase 9). Scoped honestly: only valid when the rule's
+trigger targets a lead (`deposit_unpaid_after_appointment` today);
+`action_params["message"]` is required at creation and can't be emptied
+out from under an existing `message_lead` rule via `PATCH` either — both
+paths now reject the edit with a 400 rather than leaving a rule that
+would silently fail every time it fires. Missing phone, no WhatsApp
+connected, or a non-lead target all fail the run cleanly (recorded,
+retried, eventually given up on) — never a silent no-op, never a crash.
+
+**`escalate_after_hours` generalizes the one re-fire exception that used
+to be special-cased to `recurring_feedback_theme`'s count-growth
+logic.** Set it on any rule and a target that already fired successfully
+can fire again — worded as "⏰ Still unresolved" rather than a fresh
+alert — once it's been that many hours since the last successful fire
+AND the underlying condition is still true. Left unset (the default,
+and every rule created before this phase), a rule keeps its exact
+original one-shot-until-resolved behavior — this is a strictly additive,
+opt-in generalization, not a change to existing rules' behavior.
+
+The dashboard's existing automation-rule builder (Phase 6) now exposes
+all of this: a `low_stock` trigger option (no threshold field needed —
+it reads each ingredient's own par level), a `message_lead` action with
+its own message textarea, and an optional "re-notify after (hours)"
+field wired to `escalate_after_hours` on every rule, not just the two
+new types.
+
+Live-verified against a real running server: creating a `low_stock` rule
+and then sending a real `log sale`/`log waste` WhatsApp command that
+crossed an ingredient's par level correctly fired the alert in that same
+request with no cron tick; a `message_lead` rule correctly delivered a
+templated message to a real lead's own WhatsApp number and correctly
+failed closed (recorded, not silently dropped) when the lead had no
+phone and separately when the tenant had no WhatsApp connected; an
+`escalate_after_hours` rule correctly did not re-fire immediately after
+its first success, then correctly re-fired once its one successful run
+was backdated past the configured threshold, worded as an escalation
+rather than a fresh alert; a pre-existing `task_overdue` rule with
+`escalate_after_hours` left unset was confirmed to keep its exact
+original one-shot behavior even after its one successful run was
+backdated 1000 hours — the regression guard for every rule created
+before this phase. 12 new tests across `tests/test_automation.py` (9)
+and `tests/test_admin_bot_restaurant.py` (3) — 593 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1224,7 +1288,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-564 tests (and rising — see each phase's own "What Vx.x adds" section
+593 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written
@@ -1452,13 +1516,15 @@ before the prompt/schema was finalized.
   given point fairly clearly at a specific fix — a deliberate trade-off
   (erring toward not inventing a fix over being maximally useful), not
   a bug.
-- **The Automation Engine has four trigger types and two action types,
+- **The Automation Engine has five trigger types and three action types,
   not an arbitrary rule builder.** Deliberately scoped to what's real and
-  reusable today (task/feedback/deposit conditions; WhatsApp-notify and
-  create-task actions) rather than a generic condition/action DSL nobody
-  asked for yet. Notably, there's no "send the customer a WhatsApp
-  message" action — that would duplicate the existing reengagement/
-  reminder/winback cron jobs, which already own that responsibility.
+  reusable today (task/feedback/deposit/low-stock conditions; WhatsApp-
+  notify-owner, create-task, and message-the-customer actions) rather
+  than a generic condition/action DSL nobody asked for yet. `message_lead`
+  (Phase 19) is scoped to lead-targeted triggers only — it does not
+  duplicate the existing reengagement/reminder/winback cron jobs, which
+  own their own specific messages; it's for a rule an owner configures
+  themselves.
 - **No per-rule scheduling or priority.** All of a tenant's enabled rules
   are evaluated every time the cron endpoint is hit, in creation order;
   there's no way to run one rule hourly and another daily, or to make one
@@ -1711,3 +1777,21 @@ before the prompt/schema was finalized.
   matching the automated reengagement cron's own channel limitation — a
   lead with only an email address gets a clear error, not an email
   fallback.
+- **`message_lead` (Phase 19) only ever works for a lead-targeted
+  trigger** — `deposit_unpaid_after_appointment` today. Attaching it to
+  a task/feedback/inventory rule fails every run cleanly (wrong-target-
+  type error, recorded and eventually given up on) rather than silently
+  messaging the wrong kind of target; a future lead-shaped trigger (e.g.
+  a stale/unconverted lead) would automatically become eligible for it
+  with no change to the action itself.
+- **`escalate_after_hours` re-fires on a fixed interval, not a curve.**
+  Set it to 24 and a still-true condition re-alerts every 24 hours
+  exactly, forever, until resolved — there's no backoff (escalating
+  faster the longer it's ignored) or cap (giving up after N escalations)
+  yet, both natural extensions of the same field if a real tenant needs
+  them.
+- **`low_stock` needs a par level set first** (`set_par_level`, via the
+  Restaurant section of the dashboard or the API) — an ingredient with
+  no par level configured is invisible to this trigger by design (Phase
+  17's own `list_low_stock` only returns `par_level > 0` rows), not a
+  bug in the automation engine layered on top of it.

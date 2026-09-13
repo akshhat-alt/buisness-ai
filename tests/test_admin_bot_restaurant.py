@@ -241,3 +241,79 @@ def test_inventory_command_all_clear_when_nothing_low(client_wa, services_wa):
     _send(client_wa, wa_id=OWNER_WA, text="inventory", message_id="wamid.inv3")
     reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
     assert "Nothing below par level" in reply
+
+
+# ------------------------------------------------------------------ Phase 19: event-driven LOW_STOCK firing
+
+
+def test_dish_sale_depletion_that_crosses_par_level_fires_low_stock_immediately(client_wa, services_wa):
+    """No cron tick needed: a real WhatsApp sale that depletes an
+    ingredient below its par level should fire a LOW_STOCK automation
+    rule right away, using the exact same _fire_automation_rule/dedup
+    path the cron endpoint uses."""
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    services_wa.menu_store.create_item(tenant_id=tenant_id, name="Butter Chicken", price_inr=350)
+    item = services_wa.menu_store.find_by_name(tenant_id, "Butter Chicken")
+    services_wa.menu_store.set_recipe(tenant_id, item.menu_item_id, [
+        {"ingredient_name": "Chicken", "quantity": 200, "unit": "g"},
+    ])
+    services_wa.inventory_store.adjust_quantity(tenant_id, "Chicken", delta=500, unit="g")
+    services_wa.inventory_store.set_par_level(tenant_id, "Chicken", par_level=400, unit="g")
+    services_wa.automation_rule_store.create(
+        tenant_id=tenant_id, name="Chase low stock", trigger_type="low_stock", trigger_params={},
+        action_type="notify_owner", action_params={},
+    )
+
+    _send(client_wa, wa_id=OWNER_WA, text="log sale butter chicken", message_id="wamid.evt1")
+
+    # 500g - 200g = 300g, below the 400g par level -> should have fired
+    # in the very same request, with no cron tick in between.
+    alert = [m for m in services_wa.fake_whatsapp_client.sent if "low on stock" in m["body"]]
+    assert len(alert) == 1
+    assert "Chicken" in alert[0]["body"]
+    runs = services_wa.automation_run_store.list_for_tenant(tenant_id)
+    assert any(r.trigger_type == "low_stock" and r.status == "success" for r in runs)
+
+
+def test_wastage_that_crosses_par_level_fires_low_stock_immediately(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    services_wa.inventory_store.adjust_quantity(tenant_id, "Paneer", delta=500, unit="g")
+    services_wa.inventory_store.set_par_level(tenant_id, "Paneer", par_level=400, unit="g")
+    services_wa.automation_rule_store.create(
+        tenant_id=tenant_id, name="Chase low stock", trigger_type="low_stock", trigger_params={},
+        action_type="notify_owner", action_params={},
+    )
+
+    _send(client_wa, wa_id=OWNER_WA, text="log waste 200 g paneer: spoiled", message_id="wamid.evt2")
+
+    alert = [m for m in services_wa.fake_whatsapp_client.sent if "low on stock" in m["body"]]
+    assert len(alert) == 1
+    assert "paneer" in alert[0]["body"].lower()
+
+
+def test_dish_sale_depletion_that_stays_above_par_level_does_not_fire(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    services_wa.menu_store.create_item(tenant_id=tenant_id, name="Lassi", price_inr=80)
+    item = services_wa.menu_store.find_by_name(tenant_id, "Lassi")
+    services_wa.menu_store.set_recipe(tenant_id, item.menu_item_id, [
+        {"ingredient_name": "Yogurt", "quantity": 100, "unit": "g"},
+    ])
+    services_wa.inventory_store.adjust_quantity(tenant_id, "Yogurt", delta=5000, unit="g")
+    services_wa.inventory_store.set_par_level(tenant_id, "Yogurt", par_level=100, unit="g")
+    services_wa.automation_rule_store.create(
+        tenant_id=tenant_id, name="Chase low stock", trigger_type="low_stock", trigger_params={},
+        action_type="notify_owner", action_params={},
+    )
+
+    _send(client_wa, wa_id=OWNER_WA, text="log sale lassi", message_id="wamid.evt3")
+
+    assert not any("low on stock" in m["body"] for m in services_wa.fake_whatsapp_client.sent)
