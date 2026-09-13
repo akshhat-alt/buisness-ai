@@ -75,6 +75,7 @@ from business_ai.generation import (
     validate_llm_draft,
 )
 from business_ai.ingestion import IngestionError, SourceStore, extract_pdf_text, fetch_website_text, ingest_text
+from business_ai.customer_intelligence import build_repeat_customer_report, render_repeat_customers_whatsapp
 from business_ai.inventory import UnitMismatchError
 from business_ai.leads import Lead, LeadStore, lead_stage
 from business_ai.menu_engineering import (
@@ -83,10 +84,13 @@ from business_ai.menu_engineering import (
     render_menu_engineering_whatsapp,
     render_reorder_suggestions_whatsapp,
 )
+from business_ai.supplier_intelligence import build_supplier_intelligence_report, render_supplier_intelligence_whatsapp
 from business_ai.payments import PaymentLinkError, RazorpayClient, verify_razorpay_webhook_signature
+from business_ai.purchases import PurchaseUnitMismatchError
 from business_ai.retrieval import OpenAIEmbeddingProvider, RetrievalEngine, VectorStore
 from business_ai.revenue_radar import compute_revenue_leakage, render_revenue_radar_whatsapp
 from business_ai.security import InvalidTenantIdError, UnsafeUrlError, validate_tenant_id
+from business_ai.shifts import Shift
 from business_ai.tasks import Task, TaskStore
 from business_ai.tenant import (
     TenantAction,
@@ -147,6 +151,21 @@ _ADMIN_LOG_PURCHASE_RE = re.compile(
 # "log waste 500 g paneer: spoiled" — colon-separated optional reason,
 # the same idiom already established by "approve sop <theme>: <text>".
 _ADMIN_LOG_WASTE_RE = re.compile(r"^log\s+waste\s+([\d.]+)\s+(\S+)\s+([^:]+?)(?:\s*:\s*(.+))?$", re.IGNORECASE)
+# Phase 23 (Restaurant Operations Intelligence): "reserve John Smith
+# 9876543210 for 4 on 2026-09-20 19:00" — a table reservation is a Lead
+# with an appointment_at + party_size; fixed literal markers ("for",
+# "on") bound the free-text name on one side and hand the rest of the
+# string to _parse_appointment_to_utc on the other, the same
+# last-field-eats-rest-of-string idiom "assign <task> to <name> by
+# <date>" already uses for its own trailing date clause.
+_ADMIN_RESERVE_RE = re.compile(r"^reserve\s+(.+?)\s+(\d{7,15})\s+for\s+(\d+)\s+on\s+(.+)$", re.IGNORECASE)
+# "schedule Ravi 2026-09-20 09:00-17:00 kitchen" — fixed-order structured
+# fields, same idiom as the reservation grammar above; role/station label
+# is free text and optional.
+_ADMIN_SCHEDULE_SHIFT_RE = re.compile(
+    r"^schedule\s+(.+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})(?:\s+(.+))?$", re.IGNORECASE
+)
+_ADMIN_CANCEL_SHIFT_RE = re.compile(r"^cancel\s+shift\s+(\S+)$", re.IGNORECASE)
 
 _FEEDBACK_THEME_LABELS = {
     "equipment_or_supplies": "Equipment/supplies",
@@ -190,6 +209,14 @@ def _admin_bot_help_text() -> str:
         "• inventory / stock — items below par level (owner/manager)\n"
         "• food cost / menu engineering — dish profitability breakdown (owner/manager)\n"
         "• reorder / restock suggestions — ingredients running low repeatedly (owner/manager)\n"
+        "• reserve <name> <phone> for <party size> on <date> <time> — book a table\n"
+        "• reservations / bookings — upcoming reservations (owner/manager)\n"
+        "• schedule <name> <YYYY-MM-DD> <start>-<end> [role] (owner/manager)\n"
+        "• cancel shift <id> (owner/manager)\n"
+        "• my shifts — your own upcoming shifts\n"
+        "• shifts / shifts today — today's full schedule (owner/manager)\n"
+        "• repeat customers / returning customers — visit history (owner/manager)\n"
+        "• supplier spend — spend and purchases by supplier (owner/manager)\n"
         "\nOr just type naturally — I'll do my best to understand "
         "(except money/outcome confirmations, which always need the exact commands above)."
     )
@@ -498,6 +525,13 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
         if not short_id:
             return None
         matches = [t for t in svc.task_store.list_for_tenant(tenant_id) if t.task_id.lower().endswith(short_id)]
+        return matches[0] if len(matches) == 1 else None
+
+    def _find_shift_by_short_id(tenant_id: str, short_id: str) -> Shift | None:
+        short_id = short_id.strip().lower()
+        if not short_id:
+            return None
+        matches = [s for s in svc.shift_store.list_for_tenant(tenant_id) if s.shift_id.lower().endswith(short_id)]
         return matches[0] if len(matches) == 1 else None
 
     def _find_lead_by_short_id(tenant_id: str, short_id: str) -> Lead | None:
@@ -1272,6 +1306,120 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             reply(f"✅ Recorded {lead.name or lead.phone or lead.email}'s appointment as {outcome.replace('_', ' ')}.")
             return True
 
+        reserve_match = _ADMIN_RESERVE_RE.match(raw)
+        if reserve_match:
+            name, phone, party_size_text, when_text = reserve_match.groups()
+            try:
+                appointment_utc = _parse_appointment_to_utc(when_text.strip())
+            except ValueError:
+                reply('Couldn\'t read that date/time. Try "reserve John Smith 9876543210 for 4 on 2026-09-20 19:00".')
+                return True
+            lead = svc.lead_store.create(
+                tenant_id=tenant.tenant_id, session_id=f"reservation_{secrets.token_hex(8)}",
+                name=name.strip(), phone=phone, source="reservation",
+            )
+            svc.lead_store.set_appointment(tenant.tenant_id, lead.lead_id, appointment_utc, party_size=int(party_size_text))
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="reservation_created",
+                target_type="lead", target_id=lead.lead_id,
+                metadata={"party_size": int(party_size_text), "appointment_at": appointment_utc},
+            )
+            reply(
+                f"✅ Reserved a table for {name.strip()} (party of {party_size_text}) at "
+                f"{_format_appointment_ist(appointment_utc)}."
+            )
+            return True
+
+        if clean in ("reservations", "bookings", "reservations today"):
+            if not can_manage:
+                reply("Only an owner or manager can view reservations.")
+                return True
+            upcoming = svc.lead_store.list_upcoming_appointments(tenant.tenant_id, within_hours=24)
+            if not upcoming:
+                reply("No reservations in the next 24 hours.")
+                return True
+            lines = ["📅 Reservations in the next 24 hours:"]
+            for lead in upcoming:
+                party_note = f", party of {lead.party_size}" if lead.party_size else ""
+                lines.append(f"• {lead.name or lead.phone or 'Unnamed'}{party_note} — {_format_appointment_ist(lead.appointment_at)}")
+            reply("\n".join(lines))
+            return True
+
+        schedule_match = _ADMIN_SCHEDULE_SHIFT_RE.match(raw)
+        if schedule_match:
+            if not can_manage:
+                reply("Only an owner or manager can schedule shifts.")
+                return True
+            name_fragment, shift_date, start_time, end_time, role_label = schedule_match.groups()
+            target = _find_employee_by_name(tenant.tenant_id, name_fragment.strip())
+            if target is None:
+                reply(f'Couldn\'t find exactly one team member matching "{name_fragment.strip()}".')
+                return True
+            shift = svc.shift_store.create(
+                tenant_id=tenant.tenant_id, employee_id=target.employee_id, shift_date=shift_date,
+                start_time=start_time, end_time=end_time, role_label=(role_label or "").strip(),
+                created_by_employee_id=employee.employee_id,
+            )
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="shift_scheduled",
+                target_type="shift", target_id=shift.shift_id,
+                metadata={"employee_id": target.employee_id, "shift_date": shift_date},
+            )
+            reply(f"✅ Scheduled {target.name} for {shift_date} {start_time}-{end_time}" + (f" ({role_label.strip()})" if role_label else "") + ".")
+            if target.employee_id != employee.employee_id:
+                _send_admin_bot_message(
+                    tenant, target.whatsapp_number,
+                    f"🗓️ You're scheduled for {shift_date} {start_time}-{end_time}" + (f" ({role_label.strip()})" if role_label else "") + ".",
+                )
+            return True
+
+        cancel_shift_match = _ADMIN_CANCEL_SHIFT_RE.match(raw)
+        if cancel_shift_match:
+            if not can_manage:
+                reply("Only an owner or manager can cancel a shift.")
+                return True
+            shift = _find_shift_by_short_id(tenant.tenant_id, cancel_shift_match.group(1))
+            if shift is None:
+                reply(f'Couldn\'t find a shift matching "{cancel_shift_match.group(1)}".')
+                return True
+            svc.shift_store.delete(tenant.tenant_id, shift.shift_id)
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="shift_cancelled",
+                target_type="shift", target_id=shift.shift_id, metadata={},
+            )
+            reply(f"🗑️ Cancelled the {shift.shift_date} {shift.start_time}-{shift.end_time} shift.")
+            return True
+
+        if clean == "my shifts":
+            upcoming = svc.shift_store.list_for_tenant(tenant.tenant_id, employee_id=employee.employee_id)
+            today = time.strftime("%Y-%m-%d", time.gmtime())
+            upcoming = [s for s in upcoming if s.shift_date >= today]
+            if not upcoming:
+                reply("You have no upcoming shifts scheduled.")
+                return True
+            lines = ["🗓️ Your upcoming shifts:"]
+            for s in upcoming[:10]:
+                lines.append(f"• {s.shift_date} {s.start_time}-{s.end_time}" + (f" ({s.role_label})" if s.role_label else ""))
+            reply("\n".join(lines))
+            return True
+
+        if clean in ("shifts today", "shifts"):
+            if not can_manage:
+                reply("Only an owner or manager can view the full shift schedule.")
+                return True
+            today = time.strftime("%Y-%m-%d", time.gmtime())
+            todays_shifts = svc.shift_store.list_for_tenant(tenant.tenant_id, shift_date=today)
+            if not todays_shifts:
+                reply("No shifts scheduled for today.")
+                return True
+            employees_by_id = {e.employee_id: e for e in svc.employee_store.list_for_tenant(tenant.tenant_id)}
+            lines = ["🗓️ Today's shifts:"]
+            for s in todays_shifts:
+                who = employees_by_id[s.employee_id].name if s.employee_id in employees_by_id else "(former employee)"
+                lines.append(f"• {who}: {s.start_time}-{s.end_time}" + (f" ({s.role_label})" if s.role_label else ""))
+            reply("\n".join(lines))
+            return True
+
         # Dish-name lookup takes precedence over the generic numeric
         # grammar for "log sale ..." — checked FIRST, matching ANY text
         # (including one that starts with a digit, e.g. a real menu item
@@ -1398,11 +1546,16 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 return True
             # Best-effort cost estimate from this ingredient's own average
             # purchase price — honestly ₹0 when there's no purchase
-            # history yet, never a guessed number (same discipline as
-            # Revenue Radar's "estimated" figure).
-            purchase_summary = svc.purchase_store.sum_for_ingredient(tenant.tenant_id, ingredient)
+            # history yet, or when its purchase history mixes
+            # incompatible units and can't be averaged, never a guessed
+            # number (same discipline as Revenue Radar's "estimated"
+            # figure).
+            try:
+                purchase_summary = svc.purchase_store.sum_for_ingredient(tenant.tenant_id, ingredient)
+            except PurchaseUnitMismatchError:
+                purchase_summary = None
             estimated_cost = 0
-            if purchase_summary["total_quantity"] > 0:
+            if purchase_summary and purchase_summary["total_quantity"] > 0:
                 estimated_cost = round(purchase_summary["total_amount_inr"] / purchase_summary["total_quantity"] * quantity)
             # Adjust inventory FIRST — same reasoning as the purchase
             # handler above: never record a wastage entry that doesn't
@@ -1496,6 +1649,24 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 tenant.tenant_id, inventory_store=svc.inventory_store, automation_run_store=svc.automation_run_store,
             )
             reply(render_reorder_suggestions_whatsapp(report))
+            return True
+
+        if clean in ("repeat customers", "returning customers"):
+            if not can_manage:
+                reply("Only an owner or manager can view repeat customers.")
+                return True
+            report = build_repeat_customer_report(tenant.tenant_id, lead_store=svc.lead_store)
+            reply(render_repeat_customers_whatsapp(report))
+            return True
+
+        if clean in ("supplier spend", "suppliers spend"):
+            if not can_manage:
+                reply("Only an owner or manager can view supplier spend.")
+                return True
+            report = build_supplier_intelligence_report(
+                tenant.tenant_id, supplier_store=svc.supplier_store, purchase_store=svc.purchase_store,
+            )
+            reply(render_supplier_intelligence_whatsapp(report))
             return True
 
         if clean == "timeline":

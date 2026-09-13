@@ -286,6 +286,21 @@
             </div>
             <div id="task-status" class="ba-muted" style="margin-top:6px;"></div>
           </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Shifts <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— today</span></h3>
+            <table class="ba-table" id="shifts-table"><thead><tr><th>Employee</th><th>Time</th><th>Role</th><th></th></tr></thead><tbody></tbody></table>
+            <div id="shifts-empty" class="ba-muted" style="display:none;">No shifts scheduled today.</div>
+            <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+              <select class="ba-input" id="new-shift-employee" style="max-width:160px;"></select>
+              <input class="ba-input" type="date" id="new-shift-date" style="max-width:150px;">
+              <input class="ba-input" type="time" id="new-shift-start" style="max-width:110px;">
+              <input class="ba-input" type="time" id="new-shift-end" style="max-width:110px;">
+              <input class="ba-input" id="new-shift-role" placeholder="Role (optional)" style="max-width:140px;">
+              <button class="ba-btn ba-btn-sm" onclick="addShift()">Schedule</button>
+            </div>
+            <div id="shift-status" class="ba-muted" style="margin-top:6px;"></div>
+          </div>
         </section>
 
         <section class="dash-section" id="health">
@@ -517,6 +532,23 @@
             <p class="ba-muted" style="margin-top:-6px;">Ingredients that have run low repeatedly — a suggested, conservative par-level increase, never applied automatically.</p>
             <div id="ri-reorder-list" class="ba-muted">Loading…</div>
           </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Reservations <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— next 24 hours</span></h3>
+            <div id="ri-reservations-list" class="ba-muted">Loading…</div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Repeat Customers</h3>
+            <p class="ba-muted" style="margin-top:-6px;">Customers with 2+ confirmed completed visits — never an estimate, only what's actually been recorded.</p>
+            <div id="ri-repeat-customers-list" class="ba-muted">Loading…</div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Supplier Spend</h3>
+            <table class="ba-table" id="ri-supplier-table"><thead><tr><th>Supplier</th><th>Spend</th><th>Purchases</th><th>Ingredients</th></tr></thead><tbody></tbody></table>
+            <div id="ri-supplier-unattributed" class="ba-muted" style="margin-top:8px;"></div>
+          </div>
         </section>
 
         <section class="dash-section" id="staff">
@@ -727,10 +759,11 @@
           <td>${escapeHtml(lead.phone || '—')}</td>
           <td>${escapeHtml(lead.email || '—')}</td><td>${escapeHtml((lead.message || '').slice(0, 60))}</td>
           <td>${lead.appointment_at
-            ? `<div>${escapeHtml(formatAppointment(lead.appointment_at))}</div><button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="showApptInput('${escapeHtml(lead.lead_id)}')">Reschedule</button>`
+            ? `<div>${escapeHtml(formatAppointment(lead.appointment_at))}${lead.party_size ? ` · party of ${lead.party_size}` : ''}</div><button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="showApptInput('${escapeHtml(lead.lead_id)}')">Reschedule</button>`
             : ''
           }<div id="appt-form-${escapeHtml(lead.lead_id)}" style="${lead.appointment_at ? 'display:none;' : ''} margin-top:4px;">
               <input class="ba-input" type="datetime-local" id="appt-input-${escapeHtml(lead.lead_id)}" style="margin-bottom:4px; max-width:180px; font-size:.82rem;">
+              <input class="ba-input" type="number" min="1" id="appt-party-${escapeHtml(lead.lead_id)}" placeholder="Party size" style="margin-bottom:4px; max-width:100px; font-size:.82rem;">
               <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="setAppointment('${escapeHtml(lead.lead_id)}')">Save</button>
             </div></td>
           <td>
@@ -1061,10 +1094,13 @@
     async function setAppointment(leadId) {
       const input = document.getElementById(`appt-input-${leadId}`);
       if (!input.value) { alert('Pick a date and time first.'); return; }
+      const partySizeInput = document.getElementById(`appt-party-${leadId}`);
+      const body = { appointment_at: input.value };
+      if (partySizeInput && partySizeInput.value.trim()) body.party_size = parseInt(partySizeInput.value, 10);
       try {
         const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/appointment?tenant_id=${encodeURIComponent(tenantId)}`, {
           method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ appointment_at: input.value }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to save the appointment.');
@@ -1134,6 +1170,8 @@
           : `<tr><td colspan="4" class="ba-muted" style="text-align:center; padding:20px;">No employees added yet.</td></tr>`;
         document.getElementById('new-task-assignee').innerHTML = rosterCache.map(e => `<option value="${escapeHtml(e.employee_id)}">${escapeHtml(e.name)}</option>`).join('')
           || '<option value="">Add an employee first</option>';
+        document.getElementById('new-shift-employee').innerHTML = rosterCache.map(e => `<option value="${escapeHtml(e.employee_id)}">${escapeHtml(e.name)}</option>`).join('')
+          || '<option value="">Add an employee first</option>';
       }
 
       const taskRes = await fetch(`/api/tasks?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -1146,6 +1184,66 @@
           <td>${t.due_at ? escapeHtml(t.due_at.slice(0, 10)) : '—'}</td><td>${escapeHtml(t.status)}</td></tr>`).join('')
           : `<tr><td colspan="4" class="ba-muted" style="text-align:center; padding:20px;">No open tasks — assign one from here or over WhatsApp.</td></tr>`;
       }
+
+      loadShifts();
+    }
+
+    async function loadShifts() {
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await fetch(`/api/shifts?tenant_id=${encodeURIComponent(tenantId)}&shift_date=${today}`, { headers: BizAuth.getAuthHeaders() });
+      const tbody = document.querySelector('#shifts-table tbody');
+      const emptyEl = document.getElementById('shifts-empty');
+      if (!res.ok) return;
+      const data = await res.json();
+      const rosterById = Object.fromEntries(rosterCache.map(e => [e.employee_id, e.name]));
+      if (!data.shifts.length) {
+        tbody.innerHTML = '';
+        emptyEl.style.display = 'block';
+      } else {
+        emptyEl.style.display = 'none';
+        tbody.innerHTML = data.shifts.map(s => `
+          <tr>
+            <td>${escapeHtml(rosterById[s.employee_id] || '—')}</td>
+            <td>${escapeHtml(s.start_time)}-${escapeHtml(s.end_time)}</td>
+            <td>${escapeHtml(s.role_label || '—')}</td>
+            <td><button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="deleteShift('${escapeHtml(s.shift_id)}')">Cancel</button></td>
+          </tr>`).join('');
+      }
+    }
+
+    async function addShift() {
+      const statusEl = document.getElementById('shift-status');
+      const employeeId = document.getElementById('new-shift-employee').value;
+      const shiftDate = document.getElementById('new-shift-date').value;
+      const startTime = document.getElementById('new-shift-start').value;
+      const endTime = document.getElementById('new-shift-end').value;
+      const roleLabel = document.getElementById('new-shift-role').value.trim();
+      if (!employeeId || !shiftDate || !startTime || !endTime) {
+        statusEl.innerText = 'Employee, date, start, and end time are all required.';
+        return;
+      }
+      try {
+        const res = await fetch(`/api/shifts?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ employee_id: employeeId, shift_date: shiftDate, start_time: startTime, end_time: endTime, role_label: roleLabel }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not schedule the shift.');
+        statusEl.innerText = 'Scheduled.';
+        document.getElementById('new-shift-date').value = '';
+        document.getElementById('new-shift-start').value = '';
+        document.getElementById('new-shift-end').value = '';
+        document.getElementById('new-shift-role').value = '';
+        loadShifts();
+      } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
+    }
+
+    async function deleteShift(shiftId) {
+      if (!confirm('Cancel this shift?')) return;
+      const res = await fetch(`/api/shifts/${encodeURIComponent(shiftId)}?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'DELETE', headers: BizAuth.getAuthHeaders(),
+      });
+      if (res.ok) loadShifts();
     }
 
     async function addEmployee() {
@@ -1789,9 +1887,12 @@
     const CLASSIFICATION_PILL = { star: '⭐ Star', plowhorse: '🐴 Plowhorse', puzzle: '🧩 Puzzle', dog: '🐕 Dog' };
 
     async function loadRestaurantIntel() {
-      const [menuRes, reorderRes] = await Promise.all([
+      const [menuRes, reorderRes, reservationsRes, repeatRes, supplierRes] = await Promise.all([
         fetch(`/api/menu-engineering?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/reorder-suggestions?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/leads/upcoming-appointments?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/customer-behavior?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/supplier-intelligence?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
       ]);
 
       if (menuRes.ok) {
@@ -1822,6 +1923,37 @@
             <span>${escapeHtml(s.ingredient_name)}: ${s.par_level}${escapeHtml(s.unit)} → ${s.suggested_par_level}${escapeHtml(s.unit)} <span class="ba-muted">(low ${s.low_stock_trigger_count}x)</span></span>
             <button class="ba-btn ba-btn-secondary ba-btn-sm" data-ingredient="${escapeHtml(s.ingredient_name)}" data-unit="${escapeHtml(s.unit)}" data-par-level="${s.suggested_par_level}" onclick="applyReorderSuggestion(this)">Apply</button>
           </div>`).join('') : 'Nothing running low repeatedly right now.';
+      }
+
+      if (reservationsRes.ok) {
+        const data = await reservationsRes.json();
+        const listEl = document.getElementById('ri-reservations-list');
+        listEl.innerHTML = data.leads.length ? data.leads.map(l => `
+          <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span>${escapeHtml(l.name || l.phone || 'Unnamed')}${l.party_size ? ` · party of ${l.party_size}` : ''}</span>
+            <span class="ba-muted">${escapeHtml(formatAppointment(l.appointment_at))}</span>
+          </div>`).join('') : 'No reservations in the next 24 hours.';
+      }
+
+      if (repeatRes.ok) {
+        const report = await repeatRes.json();
+        const listEl = document.getElementById('ri-repeat-customers-list');
+        listEl.innerHTML = report.repeat_customers.length ? report.repeat_customers.map(c => `
+          <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span>${escapeHtml(c.name || c.phone)}</span>
+            <span class="ba-muted">${c.visit_count} visits${c.confirmed_revenue_inr ? `, ₹${c.confirmed_revenue_inr} confirmed` : ''}</span>
+          </div>`).join('') : 'No repeat customers yet — a customer needs 2+ visits confirmed as completed.';
+      }
+
+      if (supplierRes.ok) {
+        const report = await supplierRes.json();
+        document.querySelector('#ri-supplier-table tbody').innerHTML = report.suppliers.length ? report.suppliers.map(s => `
+          <tr><td>${escapeHtml(s.name)}</td><td>₹${s.total_spend_inr}</td><td>${s.purchase_count}</td><td>${s.distinct_ingredients}</td></tr>`).join('')
+          : '<tr><td colspan="4" class="ba-muted" style="text-align:center; padding:12px;">No purchases logged yet.</td></tr>';
+        const unattrEl = document.getElementById('ri-supplier-unattributed');
+        unattrEl.innerText = report.unattributed_purchase_count
+          ? `⚠️ ₹${report.unattributed_spend_inr} across ${report.unattributed_purchase_count} purchase(s) had no matching supplier on file.`
+          : '';
       }
     }
 

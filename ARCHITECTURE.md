@@ -114,7 +114,12 @@ src/business_ai/
   generation.py   Prompts, abstention gate, LLM call, citation validator
   ingestion.py    SSRF-safe website fetch, PDF text extraction, SourceStore
   leads.py        Lead capture (SQLite) + appointment/reminder/reengagement/
-                  winback/deposit tracking fields and query methods
+                  winback/deposit tracking fields and query methods.
+                  Phase 23 added party_size (a restaurant reservation IS
+                  a Lead with an appointment) and
+                  list_upcoming_appointments (the reservations-book
+                  window query, same shape as list_for_reminders/
+                  list_for_winback below)
   analytics.py    Conversation turn logging + summary (SQLite)
   email_sender.py  Thin Resend API client — the one place any HTML
                   email actually gets sent from
@@ -234,6 +239,26 @@ src/business_ai/
                   history (the reorder-suggestion idea explicitly
                   deferred from Phase 20's design decision — see
                   README's V1.25 section)
+  shifts.py       Phase 23 (Restaurant Operations Intelligence):
+                  ShiftStore — staff working-hours scheduling, genuinely
+                  new (EmployeeStore's "roster" is only who works here,
+                  never when); one flat table, same SqliteStore pattern
+                  as tasks.py
+  customer_intelligence.py  Phase 23: pure data-assembly + render over
+                  LeadStore data, same shape as scorecard.py/
+                  revenue_radar.py — no new store. Groups leads by phone
+                  (not session_id — a staff-logged reservation and an
+                  organic WhatsApp lead don't share one) to find repeat
+                  customers (2+ CONFIRMED completed visits), with their
+                  owner-confirmed deposit total as the only revenue
+                  figure — dish sales aren't linked to a customer
+  supplier_intelligence.py  Phase 23: pure data-assembly + render over
+                  SupplierStore/PurchaseStore data, same shape as above
+                  — total spend/purchase count/distinct ingredients per
+                  supplier, with an explicit "unattributed spend" total
+                  for purchases whose supplier name never matched
+                  (surfacing find_by_name's exact-match-only gap, not
+                  fixing it — see README's Known Limitations)
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -281,8 +306,16 @@ src/business_ai/
                   only feedback/SOP routes, matching its own docstring.
                   Phase 22 added menu_engineering_routes.py
                   (GET /api/menu-engineering, GET /api/reorder-suggestions,
-                  both VIEW_INVENTORY-gated, both pure reads) — see
-                  app.py's create_app() for wiring
+                  both VIEW_INVENTORY-gated, both pure reads). Phase 23
+                  added shift routes to team_routes.py (POST/GET/DELETE
+                  /api/shifts, MANAGE_SHIFTS/VIEW_SHIFTS-gated),
+                  GET /api/customer-behavior to leads_routes.py
+                  (VIEW_LEADS-gated) alongside a new
+                  GET /api/leads/upcoming-appointments and party_size on
+                  the existing appointment route, and
+                  GET /api/supplier-intelligence to restaurant_routes.py
+                  (VIEW_INVENTORY-gated) — see app.py's create_app() for
+                  wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -293,7 +326,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (644 tests) — see README.md
+tests/            pytest suite (699 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

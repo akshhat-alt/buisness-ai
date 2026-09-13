@@ -8,6 +8,7 @@ import time
 
 from fastapi import FastAPI, Header, HTTPException
 
+from business_ai.customer_intelligence import build_repeat_customer_report
 from business_ai.email_sender import EmailSendError
 from business_ai.formatting import _format_appointment_ist, _parse_appointment_to_utc
 from business_ai.leads import Lead, lead_stage
@@ -123,6 +124,23 @@ def register_leads(app: FastAPI, svc, ctx) -> None:
             raise HTTPException(status_code=502, detail=f"Could not send the review request: {exc}") from exc
         return {"sent_to": lead.email, "channel": "email"}
 
+    @app.get("/api/leads/upcoming-appointments")
+    def list_upcoming_appointments(
+        tenant_id: str, authorization: str | None = Header(default=None), within_hours: float = 24,
+    ) -> dict:
+        """Phase 23's reservations-book view — any lead with a future
+        appointment inside the window that hasn't been confirmed as any
+        outcome yet. Gated the same as viewing leads themselves."""
+        principal = ctx._resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_LEADS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        leads = svc.lead_store.list_upcoming_appointments(tenant_id, within_hours=within_hours)
+        return {"leads": [lead.model_dump() for lead in leads]}
+
     @app.put("/api/leads/{lead_id}/appointment")
     def set_lead_appointment(
         lead_id: str, request: AppointmentRequest, tenant_id: str, authorization: str | None = Header(default=None)
@@ -143,7 +161,7 @@ def register_leads(app: FastAPI, svc, ctx) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="appointment_at must be a valid date/time.") from exc
 
-        updated = svc.lead_store.set_appointment(tenant_id, lead_id, appointment_utc)
+        updated = svc.lead_store.set_appointment(tenant_id, lead_id, appointment_utc, party_size=request.party_size)
         if updated is None:
             raise HTTPException(status_code=404, detail=f"No lead '{lead_id}' for this business.")
         return updated.model_dump()
@@ -319,4 +337,20 @@ def register_leads(app: FastAPI, svc, ctx) -> None:
             target_type="lead", target_id=lead_id, metadata={"outcome": request.outcome},
         )
         return updated.model_dump()
+
+    @app.get("/api/customer-behavior")
+    def get_customer_behavior(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Phase 23: repeat-customer intelligence, pure computation over
+        leads that already exist — gated the same as viewing leads
+        themselves, since this is just a different lens on the same
+        data a caller can already see row by row."""
+        principal = ctx._resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_LEADS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        report = build_repeat_customer_report(tenant_id, lead_store=svc.lead_store)
+        return report.model_dump()
 

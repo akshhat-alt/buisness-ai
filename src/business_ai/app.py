@@ -69,6 +69,7 @@ from business_ai.purchases import PurchaseStore
 from business_ai.rate_limiting import FixedWindowRateLimiter, RateLimitMiddleware
 from business_ai.retrieval import OpenAIEmbeddingProvider, VectorStore
 from business_ai.routing_context import RouteContext
+from business_ai.shifts import ShiftStore
 from business_ai.suppliers import SupplierStore
 from business_ai.tasks import TaskStore
 from business_ai.tenant import TenantRegistry
@@ -123,6 +124,7 @@ class Services:
         self.whatsapp_inbox = WhatsAppInboxStore(data_root / "whatsapp_inbox.db")
         self.employee_store = EmployeeStore(data_root / "employees.db")
         self.task_store = TaskStore(data_root / "tasks.db")
+        self.shift_store = ShiftStore(data_root / "shifts.db")
         self.audit_log = AuditLogStore(data_root / "audit.db")
         self.feedback_store = FeedbackStore(data_root / "feedback.db")
         self.sop_store = SopStore(data_root / "sops.db")

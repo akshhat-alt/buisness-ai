@@ -1445,6 +1445,74 @@ or a guessed number. 7 new tests across `tests/test_purchases.py` (4),
 `tests/test_menu_engineering.py` (2), and `tests/test_admin_bot_restaurant.py`
 (1) — 651 total, all green.
 
+## What V1.28 adds: Restaurant Operations Intelligence (Phase 23)
+
+Four related capabilities, reusing existing infrastructure everywhere
+one already fit rather than inventing parallel systems.
+
+**Reservations reuse the Lead/appointment system that already
+existed** — a table booking IS a Lead with an `appointment_at`, plus one
+new optional field, `party_size`. The existing `PUT
+/api/leads/{id}/appointment` route (Phase 9) now accepts it alongside
+the date/time, and a new WhatsApp `reserve <name> <phone> for <party
+size> on <date> <time>` command gives restaurant staff the same quick,
+on-the-floor logging capability they already have for sales/purchases/
+waste — closing the gap that appointment-setting was previously
+dashboard/API-only. `reservations`/`bookings` (owner/manager) lists what's
+coming up in the next 24 hours, reusing the exact `list_for_reminders`/
+`list_for_winback` window-query shape Phase 2's automations already use.
+
+**Staff shift scheduling is genuinely new** — nothing in this codebase
+tracked working hours before this; `EmployeeStore`'s "roster" is only
+who works here, never when. A new `ShiftStore` (`shifts.py`), one flat
+table exactly like `tasks.py`'s own shape, with a new `schedule <name>
+<date> <start>-<end> [role]` / `cancel shift <id>` / `my shifts` /
+`shifts today` WhatsApp grammar and matching REST routes
+(`POST`/`GET`/`DELETE /api/shifts`) and dashboard card. Gated by two new
+paired actions, `MANAGE_SHIFTS`/`VIEW_SHIFTS`, deliberately mirroring
+`ASSIGN_TASK`/`VIEW_TASKS` exactly: scheduling is a day-to-day
+owner+manager decision, not an owner-only lever like `MANAGE_EMPLOYEES`,
+and every roster member can see their own shifts.
+
+**Repeat-customer detection is pure computation over Lead data that
+already existed** — no new store. A phone number (not `session_id`,
+which a staff-logged reservation and an organic WhatsApp lead don't
+share) identifies the same real customer across every lead row; a
+customer with 2+ CONFIRMED completed visits (never a mere booking, and
+never a no-show/cancellation) is a repeat customer, with their
+owner-confirmed deposit total as their only revenue figure — never an
+estimate, since dish-level sales aren't linked to a specific customer in
+this app (a real, stated scope boundary, not an oversight — see Known
+Limitations). `GET /api/customer-behavior`, `repeat customers`
+(WhatsApp), and a new dashboard card.
+
+**Supplier intelligence is pure computation over Purchase/Supplier data
+that already existed** — total spend, purchase count, and distinct
+ingredients per supplier, deliberately NOT price-trend-per-ingredient or
+delivery-reliability scoring (this app has no promised/actual delivery
+date on a Purchase record, so "on-time %" isn't a real, derivable number
+yet — inventing one would be exactly the kind of guess this codebase
+has never allowed). Purchases with no matched `supplier_id` are shown as
+an explicit "unattributed" total rather than silently dropped, since
+that number is itself a signal that WhatsApp's `log purchase ... from
+<supplier>` name-matching (exact match only, confirmed during this
+phase's own inspection) is failing more often than the owner might
+realize. `GET /api/supplier-intelligence`, `supplier spend` (WhatsApp),
+and a new dashboard card.
+
+Live-verified against the real running app, including real signed
+WhatsApp webhook requests: `reserve` created a real reservation with the
+correct party size, visible through the real upcoming-appointments API;
+`schedule` created a real shift and correctly notified the employee;
+real completed-appointment history produced a real repeat-customer
+match through both the API and the WhatsApp command; a real purchase
+against a real supplier produced the correct spend total through both
+surfaces. 48 new tests across six new files (`tests/test_shifts.py`,
+`tests/test_shift_routes.py`, `tests/test_customer_intelligence.py`,
+`tests/test_supplier_intelligence.py`,
+`tests/test_operations_intelligence_routes.py`,
+`tests/test_admin_bot_operations.py`) — 699 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1526,7 +1594,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-651 tests (and rising — see each phase's own "What Vx.x adds" section
+699 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written
@@ -2090,3 +2158,41 @@ before the prompt/schema was finalized.
   not a real forecasting model** — no seasonality, no day-of-week
   pattern, no trend detection. It's the honest floor a real forecast
   would build on, named "baseline" so it's never mistaken for one.
+- **There is still no live calendar/slot booking for reservations
+  (Phase 23)** — the same deliberately-deferred scope boundary the
+  original appointment system (Phase 9) already named. `party_size` and
+  the `reserve` WhatsApp command make taking a reservation faster; they
+  don't add table-availability checking, double-booking prevention, or
+  a visual calendar — an owner can still double-book two reservations at
+  the same time, exactly as they always could with regular appointments.
+- **Shift scheduling has no conflict detection** — `ShiftStore.create`
+  will happily schedule the same employee for two overlapping shifts, or
+  a shift outside their normal working pattern; there's no availability/
+  time-off concept yet. It's a shared logbook of who's working when, not
+  a constraint-solving scheduler.
+- **Repeat-customer detection only ever counts a phone-identified
+  customer's CONFIRMED completed visits, never dish-level spend** — this
+  app has no field linking a `BusinessMetric` sale row to the specific
+  customer who bought it (a dish sale is logged by an employee about a
+  walk-in, not tied to a lead/session), so "this repeat customer's
+  lifetime spend" only ever means their confirmed deposit total, which
+  will read as ₹0 for a repeat customer whose visits never involved a
+  deposit. Not an estimate standing in for a real number — an honest
+  gap, stated rather than papered over.
+- **Supplier intelligence has no price-trend-per-ingredient or
+  delivery-reliability scoring** — deliberately out of scope for this
+  phase; `Purchase` has no promised/actual delivery date field at all,
+  so an "on-time %" would have to be invented from nothing. Spend
+  totals and purchase counts are the only numbers this app can actually
+  back up today.
+- **Supplier name-matching for WhatsApp's `log purchase ... from
+  <supplier>` is still exact-match-only** (`SupplierStore.find_by_name`,
+  unchanged since Phase 17) — confirmed during this phase's own
+  inspection to be a real, silent failure mode: a typo or punctuation
+  difference between what's typed and what's on file means the purchase
+  still records, just with no supplier link, and the employee gets no
+  indication the match failed. Phase 23's own "unattributed spend" total
+  on the Supplier Spend card is the first place this failure becomes
+  visible to an owner at all; fixing the matching itself (fuzzy/
+  substring matching, or an inline "create this supplier?" prompt) is a
+  real, separately-scoped improvement, not done here.

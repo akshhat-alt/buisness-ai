@@ -46,6 +46,7 @@ class GapPublishRequest(BaseModel):
 
 class AppointmentRequest(BaseModel):
     appointment_at: str = Field(min_length=1)  # ISO 8601 datetime, e.g. "2026-09-20T16:00:00"
+    party_size: int | None = Field(default=None, gt=0)  # Phase 23 — a restaurant reservation's guest count
 
 
 class DepositPaidRequest(BaseModel):
@@ -88,6 +89,14 @@ class CreateTaskRequest(BaseModel):
 
 class RejectTaskRequest(BaseModel):
     reason: str | None = None
+
+
+class CreateShiftRequest(BaseModel):
+    employee_id: str
+    shift_date: str = Field(min_length=1)  # "YYYY-MM-DD"
+    start_time: str = Field(min_length=1)  # "HH:MM"
+    end_time: str = Field(min_length=1)  # "HH:MM"
+    role_label: str = ""
 
 
 class LogMetricRequest(BaseModel):

@@ -47,6 +47,12 @@ class Lead(BaseModel):
     deposit_paid_amount_inr: int | None = None
     appointment_outcome: str | None = None  # "completed" | "no_show" | "cancelled"
     appointment_outcome_at: str | None = None
+    # Phase 23 (Restaurant Operations Intelligence) — a restaurant
+    # reservation IS a Lead with an appointment; the one thing a salon/
+    # coaching appointment never needed and a table booking always does
+    # is how many guests. Optional and generically named (not
+    # restaurant-specific) since any business could plausibly use it.
+    party_size: int | None = None
 
 
 def lead_stage(lead: Lead) -> str:
@@ -121,6 +127,10 @@ class LeadStore(SqliteStore):
                     pass  # column already exists
             try:
                 conn.execute("ALTER TABLE leads ADD COLUMN deposit_paid_amount_inr INTEGER")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            try:
+                conn.execute("ALTER TABLE leads ADD COLUMN party_size INTEGER")
             except sqlite3.OperationalError:
                 pass  # column already exists
             conn.commit()
@@ -203,21 +213,49 @@ class LeadStore(SqliteStore):
             row = conn.execute("SELECT COUNT(*) as c FROM leads WHERE tenant_id = ?", (tenant_id,)).fetchone()
             return row["c"] if row else 0
 
-    def set_appointment(self, tenant_id: str, lead_id: str, appointment_at: str) -> Lead | None:
+    def set_appointment(
+        self, tenant_id: str, lead_id: str, appointment_at: str, *, party_size: int | None = None,
+    ) -> Lead | None:
         """A new appointment date invalidates any reminder/win-back marker
         tied to the previous one — otherwise a rescheduled customer could
         silently never get a reminder for their new slot, or get a
-        win-back nudge despite having just rebooked."""
+        win-back nudge despite having just rebooked. party_size is
+        optional and only ever overwritten when explicitly given —
+        omitting it on a reschedule keeps whatever was already recorded
+        rather than blanking out a real reservation's guest count."""
         with self._lock, self._db() as conn:
-            cur = conn.execute(
-                "UPDATE leads SET appointment_at = ?, reminder_sent_at = NULL, winback_sent_at = NULL "
-                "WHERE tenant_id = ? AND lead_id = ?",
-                (appointment_at, tenant_id, lead_id),
-            )
+            if party_size is not None:
+                cur = conn.execute(
+                    "UPDATE leads SET appointment_at = ?, party_size = ?, reminder_sent_at = NULL, winback_sent_at = NULL "
+                    "WHERE tenant_id = ? AND lead_id = ?",
+                    (appointment_at, party_size, tenant_id, lead_id),
+                )
+            else:
+                cur = conn.execute(
+                    "UPDATE leads SET appointment_at = ?, reminder_sent_at = NULL, winback_sent_at = NULL "
+                    "WHERE tenant_id = ? AND lead_id = ?",
+                    (appointment_at, tenant_id, lead_id),
+                )
             conn.commit()
             if cur.rowcount == 0:
                 return None
         return self.get(tenant_id, lead_id)
+
+    def list_upcoming_appointments(self, tenant_id: str, *, within_hours: float = 24 * 7) -> list[Lead]:
+        """Every lead with a future appointment inside the window, not yet
+        confirmed as any outcome — the reservations-book view for
+        restaurant staff (Phase 23), same window-query shape as
+        list_for_reminders/list_for_winback below."""
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        until_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + within_hours * 3600))
+        with self._lock, self._db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM leads WHERE tenant_id = ? AND appointment_at IS NOT NULL "
+                "AND appointment_at >= ? AND appointment_at <= ? AND appointment_outcome IS NULL "
+                "ORDER BY appointment_at ASC",
+                (tenant_id, now_iso, until_iso),
+            ).fetchall()
+            return [Lead(**dict(r)) for r in rows]
 
     def _mark(self, tenant_id: str, lead_id: str, column: str) -> None:
         now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

@@ -9,7 +9,13 @@ from fastapi import FastAPI, Header, HTTPException
 
 from business_ai.employees import normalize_whatsapp_number
 from business_ai.formatting import _parse_appointment_to_utc, _short_task_id
-from business_ai.schemas import CreateEmployeeRequest, CreateTaskRequest, RejectTaskRequest, UpdateEmployeeRequest
+from business_ai.schemas import (
+    CreateEmployeeRequest,
+    CreateShiftRequest,
+    CreateTaskRequest,
+    RejectTaskRequest,
+    UpdateEmployeeRequest,
+)
 from business_ai.tenant import TenantAction, TenantNotFoundError, UnauthorizedError, authorize
 
 
@@ -190,3 +196,68 @@ def register_team(app: FastAPI, svc, ctx) -> None:
             target_type="task", target_id=task_id, metadata={"reason": request.reason, "via": "api"},
         )
         return updated.model_dump()
+
+    # -------------------------------------------------------------- shifts (Phase 23)
+    @app.post("/api/shifts")
+    def create_shift(request: CreateShiftRequest, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = ctx._resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.MANAGE_SHIFTS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        employee = svc.employee_store.get(tenant_id, request.employee_id)
+        if employee is None:
+            raise HTTPException(status_code=404, detail="Unknown employee_id for this business.")
+        try:
+            shift = svc.shift_store.create(
+                tenant_id=tenant_id, employee_id=request.employee_id, shift_date=request.shift_date,
+                start_time=request.start_time, end_time=request.end_time, role_label=request.role_label,
+                created_by_employee_id=principal.principal_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="shift_scheduled",
+            target_type="shift", target_id=shift.shift_id,
+            metadata={"employee_id": employee.employee_id, "shift_date": shift.shift_date},
+        )
+        due_note = f"{shift.shift_date} {shift.start_time}-{shift.end_time}"
+        ctx._send_admin_bot_message(
+            tenant, employee.whatsapp_number,
+            f"🗓️ You're scheduled for {due_note}" + (f" ({shift.role_label})" if shift.role_label else "") + ".",
+        )
+        return shift.model_dump()
+
+    @app.get("/api/shifts")
+    def list_shifts(
+        tenant_id: str, authorization: str | None = Header(default=None),
+        employee_id: str | None = None, shift_date: str | None = None,
+    ) -> dict:
+        principal = ctx._resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_SHIFTS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"shifts": [s.model_dump() for s in svc.shift_store.list_for_tenant(tenant_id, employee_id=employee_id, shift_date=shift_date)]}
+
+    @app.delete("/api/shifts/{shift_id}")
+    def delete_shift(shift_id: str, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = ctx._resolve(authorization)
+        try:
+            authorize(principal, TenantAction.MANAGE_SHIFTS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        deleted = svc.shift_store.delete(tenant_id, shift_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Unknown shift_id for this business.")
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="shift_cancelled",
+            target_type="shift", target_id=shift_id, metadata={},
+        )
+        return {"deleted": True}

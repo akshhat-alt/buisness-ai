@@ -21,6 +21,7 @@ from business_ai.schemas import (
     SetRecipeRequest,
     UpdateMenuItemRequest,
 )
+from business_ai.supplier_intelligence import build_supplier_intelligence_report
 from business_ai.suppliers import SupplierStore
 from business_ai.tenant import TenantAction, TenantNotFoundError, UnauthorizedError, authorize
 
@@ -189,3 +190,16 @@ def register_restaurant(app: FastAPI, svc, ctx) -> None:
             metadata={"ingredient_name": item.ingredient_name, "par_level": request.par_level},
         )
         return item.model_dump()
+
+    # -------------------------------------------------------------- supplier intelligence (Phase 23)
+    @app.get("/api/supplier-intelligence")
+    def get_supplier_intelligence(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = ctx._resolve(authorization)
+        try:
+            authorize(principal, TenantAction.VIEW_INVENTORY, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        report = build_supplier_intelligence_report(tenant_id, supplier_store=svc.supplier_store, purchase_store=svc.purchase_store)
+        return report.model_dump()

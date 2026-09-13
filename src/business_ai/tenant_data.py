@@ -40,6 +40,7 @@ def export_tenant_data(svc, tenant_id: str) -> dict:
         "leads": [{**lead.model_dump(), "stage": lead_stage(lead)} for lead in leads],
         "employees": [e.model_dump() for e in employees],
         "tasks": [t.model_dump() for t in svc.task_store.list_for_tenant(tenant_id)],
+        "shifts": [s.model_dump() for s in svc.shift_store.list_for_tenant(tenant_id)],
         "feedback": [f.model_dump() for f in svc.feedback_store.list_for_tenant(tenant_id)],
         "sop_notes": [s.model_dump() for s in svc.sop_store.list_for_tenant(tenant_id)],
         "automation_rules": [r.model_dump() for r in svc.automation_rule_store.list_for_tenant(tenant_id)],
@@ -68,6 +69,7 @@ def delete_tenant_data(svc, tenant_id: str) -> dict:
     deleted = {
         "leads": svc.lead_store.delete_for_tenant(tenant_id),
         "tasks": svc.task_store.delete_for_tenant(tenant_id),
+        "shifts": svc.shift_store.delete_for_tenant(tenant_id),
         "employees": svc.employee_store.delete_for_tenant(tenant_id),
         "feedback": svc.feedback_store.delete_for_tenant(tenant_id),
         "sop_notes": svc.sop_store.delete_for_tenant(tenant_id),

@@ -185,6 +185,14 @@ class TenantAction(str, Enum):
     # at all, identical shape to Phase 12's financial log commands.
     MANAGE_MENU = "manage_menu"
     VIEW_INVENTORY = "view_inventory"
+    # Phase 23 (Restaurant Operations Intelligence) — see shifts.py.
+    # Same pairing as ASSIGN_TASK/VIEW_TASKS: scheduling is a day-to-day
+    # operating decision (owner+manager), not an owner-only lever like
+    # MANAGE_EMPLOYEES; every roster member can see their OWN shifts
+    # (enforced by row-scoping in the route/WhatsApp handler, not by this
+    # action, matching VIEW_TASKS' own precedent).
+    MANAGE_SHIFTS = "manage_shifts"
+    VIEW_SHIFTS = "view_shifts"
 
 
 OWNER_ACTIONS = frozenset(
@@ -207,6 +215,8 @@ OWNER_ACTIONS = frozenset(
         TenantAction.VIEW_FINANCIALS,
         TenantAction.MANAGE_MENU,
         TenantAction.VIEW_INVENTORY,
+        TenantAction.MANAGE_SHIFTS,
+        TenantAction.VIEW_SHIFTS,
     }
 )
 
@@ -235,6 +245,7 @@ STAFF_ACTIONS = frozenset(
         TenantAction.VIEW_ANALYTICS,
         TenantAction.VIEW_TASKS,
         TenantAction.UPDATE_TASK_STATUS,
+        TenantAction.VIEW_SHIFTS,
     }
 )
 
