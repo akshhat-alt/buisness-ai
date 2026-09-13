@@ -152,19 +152,22 @@ def test_webhook_secret_is_encrypted_at_rest_when_key_configured(tmp_path, setti
     svc.generator = lambda: FakeGenerator()
     client = TestClient(create_app(svc))
 
-    signup = client.post(
-        "/api/auth/signup",
-        json={"email": "enc-owner@example.com", "password": "secret123", "name": "Owner", "business_name": "Enc Biz"},
-    )
-    headers = {"Authorization": f"Bearer {signup.json()['access_token']}"}
-    tenant_id = signup.json()["tenant_id"]
-    client.put(f"/api/tenant?tenant_id={tenant_id}", json={"razorpay_webhook_secret": TENANT_WEBHOOK_SECRET}, headers=headers)
+    try:
+        signup = client.post(
+            "/api/auth/signup",
+            json={"email": "enc-owner@example.com", "password": "secret123", "name": "Owner", "business_name": "Enc Biz"},
+        )
+        headers = {"Authorization": f"Bearer {signup.json()['access_token']}"}
+        tenant_id = signup.json()["tenant_id"]
+        client.put(f"/api/tenant?tenant_id={tenant_id}", json={"razorpay_webhook_secret": TENANT_WEBHOOK_SECRET}, headers=headers)
 
-    with svc.tenant_registry._lock, svc.tenant_registry._db() as conn:
-        raw_row = conn.execute("SELECT config_json FROM tenants WHERE tenant_id = ?", (tenant_id,)).fetchone()
-    assert TENANT_WEBHOOK_SECRET not in raw_row["config_json"]
-    assert "enc:v1:" in raw_row["config_json"]
+        with svc.tenant_registry._lock, svc.tenant_registry._db() as conn:
+            raw_row = conn.execute("SELECT config_json FROM tenants WHERE tenant_id = ?", (tenant_id,)).fetchone()
+        assert TENANT_WEBHOOK_SECRET not in raw_row["config_json"]
+        assert "enc:v1:" in raw_row["config_json"]
 
-    # But an authorized read still gets the real plaintext back.
-    r = client.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers)
-    assert r.json()["razorpay_webhook_secret"] == TENANT_WEBHOOK_SECRET
+        # But an authorized read still gets the real plaintext back.
+        r = client.get(f"/api/tenant?tenant_id={tenant_id}", headers=headers)
+        assert r.json()["razorpay_webhook_secret"] == TENANT_WEBHOOK_SECRET
+    finally:
+        svc.vector_store.close()

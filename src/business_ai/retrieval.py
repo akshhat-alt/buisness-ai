@@ -234,6 +234,17 @@ class VectorStore:
             raise UnboundTenantError("tenant_id is required.")
         self._collection.delete(where={"tenant_id": tenant_id})
 
+    def close(self) -> None:
+        """Release the underlying chromadb System (and its OS threads).
+
+        chromadb's PersistentClient shares one System per persist_directory
+        through a process-wide registry that nothing ever garbage-collects;
+        without this, each VectorStore instantiation leaks that System's
+        thread pool for the rest of the process's life. Safe to call more
+        than once — chromadb's own close() is idempotent.
+        """
+        self._client.close()
+
 
 # ==============================================================================
 # Retrieval engine

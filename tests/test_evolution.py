@@ -420,10 +420,11 @@ def sandbox_setup(tmp_path):
     versions = EvolutionVersionStore(tmp_path / "evolution_versions.db")
     evaluations = EvolutionEvaluationStore(tmp_path / "evolution_evaluations.db")
     proposals = EvolutionProposalStore(tmp_path / "evolution_proposals.db")
-    return {
+    yield {
         "vector_store": vector_store, "embeddings": embeddings, "analytics": analytics,
         "versions": versions, "evaluations": evaluations, "proposals": proposals,
     }
+    vector_store.close()
 
 
 def _make_proposal(sandbox_setup, tone_text: str):

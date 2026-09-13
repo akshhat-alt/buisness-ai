@@ -50,7 +50,8 @@ def services_dissatisfied(tmp_path, settings):
     fake_sender = FakeEmailSender()
     svc.email_sender = lambda: fake_sender
     svc.fake_email_sender = fake_sender
-    return svc
+    yield svc
+    svc.vector_store.close()
 
 
 @pytest.fixture()

@@ -117,7 +117,8 @@ def services(tmp_path: Path, settings) -> Services:
     svc = Services(settings, data_root=tmp_path)
     svc.embeddings = lambda: HashEmbeddingProvider()
     svc.generator = lambda: FakeGenerator()
-    return svc
+    yield svc
+    svc.vector_store.close()
 
 
 @pytest.fixture()
@@ -179,7 +180,8 @@ def services_with_email(tmp_path: Path, settings) -> Services:
     fake_sender = FakeEmailSender()
     svc.email_sender = lambda: fake_sender
     svc.fake_email_sender = fake_sender  # test-only handle to inspect .sent
-    return svc
+    yield svc
+    svc.vector_store.close()
 
 
 @pytest.fixture()

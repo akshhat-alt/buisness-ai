@@ -72,7 +72,8 @@ def tight_client(tmp_path, settings):
     svc.generator = lambda: FakeGenerator()
     from fastapi.testclient import TestClient
 
-    return TestClient(create_app(svc))
+    yield TestClient(create_app(svc))
+    svc.vector_store.close()
 
 
 def test_ip_rate_limit_returns_429_when_exceeded(tight_client):

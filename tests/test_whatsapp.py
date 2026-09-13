@@ -59,7 +59,8 @@ def services_wa(tmp_path, settings):
     fake_wa = FakeWhatsAppClient()
     svc.whatsapp_client = lambda: fake_wa
     svc.fake_whatsapp_client = fake_wa
-    return svc
+    yield svc
+    svc.vector_store.close()
 
 
 @pytest.fixture()

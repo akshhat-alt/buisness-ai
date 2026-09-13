@@ -61,7 +61,8 @@ def services_auto(tmp_path, settings):
     fake_rzp = FakeRazorpayClient()
     svc.razorpay_client = lambda: fake_rzp
     svc.fake_razorpay_client = fake_rzp
-    return svc
+    yield svc
+    svc.vector_store.close()
 
 
 @pytest.fixture()

@@ -57,7 +57,8 @@ def services_full(tmp_path, settings):
     fake_email = FakeEmailSender()
     svc.email_sender = lambda: fake_email
     svc.fake_email_sender = fake_email
-    return svc
+    yield svc
+    svc.vector_store.close()
 
 
 @pytest.fixture()
