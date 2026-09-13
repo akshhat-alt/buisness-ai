@@ -221,6 +221,19 @@ src/business_ai/
                   honestly-estimated cost (0 when there's no purchase
                   history for that ingredient yet, never guessed);
                   depletes InventoryStore the same way a sale does
+  menu_engineering.py  Phase 22 (Restaurant Profitability Intelligence):
+                  pure data-assembly + render over menu/purchases/
+                  metrics/inventory/automation-run stores, same shape
+                  as scorecard.py/revenue_radar.py — no new store. Food
+                  cost/profit/the four-quadrant menu-engineering
+                  classification (per-unit contribution margin, not
+                  aggregate profit dollars — the real methodology) and a
+                  trailing-average demand-forecast baseline for every
+                  active dish; separately, reorder suggestions reusing
+                  automation.py's own AutomationRunStore low_stock
+                  history (the reorder-suggestion idea explicitly
+                  deferred from Phase 20's design decision — see
+                  README's V1.25 section)
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -265,8 +278,11 @@ src/business_ai/
                   dead code, silently shadowed by insights_routes.py's
                   copies the whole time (Starlette matches routes in
                   registration order); feedback_routes.py now contains
-                  only feedback/SOP routes, matching its own docstring —
-                  see app.py's create_app() for wiring
+                  only feedback/SOP routes, matching its own docstring.
+                  Phase 22 added menu_engineering_routes.py
+                  (GET /api/menu-engineering, GET /api/reorder-suggestions,
+                  both VIEW_INVENTORY-gated, both pure reads) — see
+                  app.py's create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -277,7 +293,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (620 tests) — see README.md
+tests/            pytest suite (644 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

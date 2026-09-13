@@ -77,6 +77,12 @@ from business_ai.generation import (
 from business_ai.ingestion import IngestionError, SourceStore, extract_pdf_text, fetch_website_text, ingest_text
 from business_ai.inventory import UnitMismatchError
 from business_ai.leads import Lead, LeadStore, lead_stage
+from business_ai.menu_engineering import (
+    build_menu_engineering_report,
+    build_reorder_suggestions,
+    render_menu_engineering_whatsapp,
+    render_reorder_suggestions_whatsapp,
+)
 from business_ai.payments import PaymentLinkError, RazorpayClient, verify_razorpay_webhook_signature
 from business_ai.retrieval import OpenAIEmbeddingProvider, RetrievalEngine, VectorStore
 from business_ai.revenue_radar import compute_revenue_leakage, render_revenue_radar_whatsapp
@@ -182,6 +188,8 @@ def _admin_bot_help_text() -> str:
         "• log purchase <qty> <unit> <ingredient> ₹<amount> [from <supplier>]\n"
         "• log waste <qty> <unit> <ingredient> [: <reason>]\n"
         "• inventory / stock — items below par level (owner/manager)\n"
+        "• food cost / menu engineering — dish profitability breakdown (owner/manager)\n"
+        "• reorder / restock suggestions — ingredients running low repeatedly (owner/manager)\n"
         "\nOr just type naturally — I'll do my best to understand "
         "(except money/outcome confirmations, which always need the exact commands above)."
     )
@@ -1468,6 +1476,26 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             window_label = "today" if svc.settings.digest_window_hours <= 24 else f"the last {svc.settings.digest_window_hours}h"
             snapshot = _business_health_snapshot(tenant, window_hours=svc.settings.digest_window_hours)
             reply(_render_business_health(snapshot, window_label=window_label))
+            return True
+
+        if clean in ("food cost", "menu engineering"):
+            if not can_manage:
+                reply("Only an owner or manager can view menu engineering.")
+                return True
+            report = build_menu_engineering_report(
+                tenant.tenant_id, menu_store=svc.menu_store, purchase_store=svc.purchase_store, metric_store=svc.metric_store,
+            )
+            reply(render_menu_engineering_whatsapp(report))
+            return True
+
+        if clean in ("reorder", "restock suggestions"):
+            if not can_manage:
+                reply("Only an owner or manager can view reorder suggestions.")
+                return True
+            report = build_reorder_suggestions(
+                tenant.tenant_id, inventory_store=svc.inventory_store, automation_run_store=svc.automation_run_store,
+            )
+            reply(render_reorder_suggestions_whatsapp(report))
             return True
 
         if clean == "timeline":

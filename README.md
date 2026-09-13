@@ -1363,6 +1363,67 @@ appeared in that same unified inbox alongside it. 16 new tests across
 `tests/test_approvals.py` (12, new file) and `tests/test_metrics_routes.py`
 (4) — 620 total, all green.
 
+## What V1.27 adds: Restaurant Profitability Intelligence (Phase 22)
+
+Pure derived computation over data that already exists — no new logging
+mechanism, no new SQLite table — following the exact
+`scorecard.py`/`revenue_radar.py` shape (stores as keyword function
+args, Pydantic models only for output). This is also where the
+reorder-suggestion idea explicitly deferred from Phase 20 lands, exactly
+where planned.
+
+**Food cost, dish profitability, and the classic menu-engineering
+matrix** — `GET /api/menu-engineering`, the `food cost`/`menu
+engineering` WhatsApp command, and a new dashboard section
+(Restaurant Intelligence). For each active dish: recipe cost (reusing
+the identical average-price-from-purchase-history technique
+`wastage.py`'s cost estimate already uses), food-cost %, profit over a
+30-day window, and a classification into the real industry terms —
+⭐ Star (popular + profitable), 🐴 Plowhorse (popular, thin margin),
+🧩 Puzzle (rarely ordered, fat margin), 🐕 Dog (neither) — plus a simple
+demand-forecast **baseline** (a trailing daily average projected 7 days
+forward; deliberately not a real forecasting model, "baseline" is the
+honest word for what it is).
+
+**Two honesty rules enforced throughout, matching this codebase's
+existing "never invent a number" discipline**: a dish with no recipe
+reports its cost as unknown, not ₹0; a recipe where even ONE ingredient
+has no purchase history reports the WHOLE recipe's cost as unknown
+rather than a silently-too-low partial total. And classification
+compares each dish's PER-UNIT contribution margin (price minus cost),
+not aggregate profit dollars — the actual textbook menu-engineering
+methodology, and the only way a rarely-ordered but fat-margin dish (a
+real Puzzle) doesn't get miscounted as a low-margin Dog just because it
+sold few units. A live-caught bug during this phase's own testing: the
+first implementation used total window profit for classification and
+produced exactly that miscount — fixed before it shipped.
+
+**Reorder suggestions** — `GET /api/reorder-suggestions`, the
+`reorder`/`restock suggestions` WhatsApp command, and an "Apply" button
+in the same new dashboard section that calls the existing (Phase 17)
+`POST /api/inventory/par-level` route directly. Reuses Phase 19's own
+automation-run history: an ingredient that has genuinely triggered a
+`low_stock` alert at least twice gets a conservative, bounded +25%
+par-level suggestion — never auto-applied, always a one-tap owner
+decision. Counts every recorded run regardless of success/failure (a
+failed WhatsApp send doesn't mean the stock problem wasn't real), and
+can only ever suggest for an ingredient that already has a real,
+owner-configured par level — `list_low_stock`'s own filter already
+guarantees a low_stock run can't exist otherwise.
+
+Gated by `VIEW_INVENTORY`, the same owner+manager tier already gating
+every other menu/inventory read — no new permission introduced.
+
+Live-verified against the real running app: a real menu item with a
+real recipe and real purchase history produced the correct food-cost %
+and profit through the live HTTP API; a real `low_stock` rule fired
+twice through the real automation cron produced a real reorder
+suggestion, which was then applied through the existing par-level route
+and persisted; both new WhatsApp commands processed correctly against a
+real signed webhook request. 24 new tests across `tests/test_menu_engineering.py`
+(14, new file), `tests/test_menu_engineering_routes.py` (6, new file),
+and `tests/test_admin_bot_restaurant.py` (4) — 644 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1444,7 +1505,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-620 tests (and rising — see each phase's own "What Vx.x adds" section
+644 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written
@@ -1609,11 +1670,14 @@ before the prompt/schema was finalized.
   text (keeping only the aggregated theme counts) is a recommended,
   not-yet-built privacy hardening step given this data is about people,
   not just business operations.
-- **No sales/expense/inventory data model exists, so no such reports
-  exist.** The scorecard and digest report real task/feedback/customer
-  data only — never a fabricated or estimated revenue/inventory number.
-  Building a manual metrics ledger (and PDF/CSV report export) was
-  deliberately deferred this sprint rather than shipped half-real.
+- ~~No sales/expense/inventory data model exists~~ — **stale as of
+  Phase 12** (`BusinessMetricStore`) **and Phase 17**
+  (menu/inventory/purchases/wastage); left here, struck through rather
+  than deleted, as a marker of how far this app has moved since the
+  early phases this section's surrounding text was written for. The
+  scorecard, digest, Financial Truth Layer, and Phase 22's food-cost/
+  menu-engineering intelligence all report real logged data only —
+  never a fabricated or estimated number.
 - **The admin bot's LLM calls (feedback classification, the extended
   action brief) draw from the same OpenAI budget as everything else** —
   there's no separate quota/rate-limit dimension for admin-bot usage yet.
@@ -1994,3 +2058,24 @@ before the prompt/schema was finalized.
   record as an `Employee`'s WhatsApp roster identity, so there's no
   employee_id to attribute it to without the same linking work named
   above.
+- **`PurchaseStore.sum_for_ingredient` (and therefore Phase 22's food-
+  cost calculation) is unit-naive** — it averages `amount_inr` over
+  `quantity` regardless of the unit each purchase was logged in, so a
+  purchase logged in "kg" and another in "g" for the same ingredient
+  would silently mix into one meaningless average. `InventoryStore`
+  itself already fails closed on exactly this (`UnitMismatchError`);
+  `PurchaseStore` doesn't have the equivalent guard yet. Pre-existing
+  since Phase 17, surfaced (not introduced) by Phase 22 actually reading
+  this data for the first time — a real gap worth closing in a future
+  pass, not a Phase 22 regression.
+- **Menu-engineering classification needs real comparative data to mean
+  anything** — a tenant with only one or two active dishes, or with
+  sales concentrated in one short burst, gets a technically-computed but
+  not very meaningful Star/Plowhorse/Puzzle/Dog label (everything looks
+  "average" relative to a population of one). No minimum-dish-count
+  guard exists yet, matching the same honestly-stated limitation
+  Revenue Radar's trend percentages already carry at low volume.
+- **The demand-forecast baseline is a trailing daily average, explicitly
+  not a real forecasting model** — no seasonality, no day-of-week
+  pattern, no trend detection. It's the honest floor a real forecast
+  would build on, named "baseline" so it's never mistaken for one.

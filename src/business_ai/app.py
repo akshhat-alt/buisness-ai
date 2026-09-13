@@ -88,6 +88,7 @@ from business_ai.routers.feedback_routes import register_feedback
 from business_ai.routers.insights_routes import register_insights
 from business_ai.routers.knowledge_routes import register_knowledge
 from business_ai.routers.leads_routes import register_leads
+from business_ai.routers.menu_engineering_routes import register_menu_engineering
 from business_ai.routers.metrics_routes import register_metrics
 from business_ai.routers.ops_routes import register_ops
 from business_ai.routers.restaurant_routes import register_restaurant
@@ -256,6 +257,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     register_evolution(app, svc, ctx)
     register_metrics(app, svc, ctx)
     register_restaurant(app, svc, ctx)
+    register_menu_engineering(app, svc, ctx)
     register_ops(app, svc, ctx)
     register_revenue_radar(app, svc, ctx)
     register_scorecard(app, svc, ctx)

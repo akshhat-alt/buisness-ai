@@ -61,3 +61,16 @@ EVOLUTION_MONITORING_REGRESSION_DELTA = 0.15  # a 15-point rise in dissatisfacti
 # ingredient gets re-flagged daily rather than going quiet for a week
 # while the kitchen keeps running short.
 INVENTORY_ALERT_RENOTIFY_HOURS = 24
+
+# Phase 22 — Restaurant Profitability Intelligence (menu_engineering.py).
+# A trailing window, not all-time, so a dish's classification reflects
+# recent demand, not a stale average from months ago.
+MENU_ENGINEERING_WINDOW_DAYS = 30
+# An ingredient must have genuinely triggered a low_stock alert at least
+# this many times before a reorder suggestion fires — one alert could be
+# a one-off order spike, not evidence the par level itself is too low.
+REORDER_SUGGESTION_MIN_TRIGGER_COUNT = 2
+# A conservative, bounded bump — never a wild jump — matching the same
+# "small, reviewable adjustment" philosophy as Self-Evolution's own
+# proposals; the owner still reviews and applies it, never auto-adopted.
+REORDER_SUGGESTION_INCREASE_PCT = 0.25

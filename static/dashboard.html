@@ -109,6 +109,7 @@
     <a href="#automation">Automation</a>
     <a href="#evolution">Self-Evolution</a>
     <a href="#business-intel">Business Intel</a>
+    <a href="#restaurant-intel">Restaurant Intel</a>
     <a href="#staff">Staff Assistant</a>
     <a href="#whatsapp">WhatsApp</a>
     <a href="#growth">Deposits</a>
@@ -127,6 +128,7 @@
       <a class="dash-nav-link" href="#automation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg> Automation</a>
       <a class="dash-nav-link" href="#evolution"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg> Self-Evolution</a>
       <a class="dash-nav-link" href="#business-intel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg> Business Intel</a>
+      <a class="dash-nav-link" href="#restaurant-intel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7a4 4 0 0 0 4 4v9M7 2v6M11 2v6M15 2c-1.5 1.5-1.5 4-1.5 4s2.5 0 4-1.5S19 0 19 0s-2.5 0-4 1.5S15 2 15 2ZM15 6v15"/></svg> Restaurant Intel</a>
       <a class="dash-nav-link" href="#staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Staff Assistant</a>
       <a class="dash-nav-link" href="#whatsapp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> WhatsApp</a>
       <a class="dash-nav-link" href="#growth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Deposits</a>
@@ -498,6 +500,25 @@
           </div>
         </section>
 
+        <section class="dash-section" id="restaurant-intel">
+          <div class="dash-section-head">
+            <h2>Restaurant Intelligence</h2>
+            <p class="ba-muted" style="margin:0;">Food cost and dish profitability, computed from your own logged sales, recipes, and purchases — nothing estimated. Empty until dishes have both a recipe and purchase history behind them.</p>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Menu Engineering <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— last 30 days</span></h3>
+            <table class="ba-table" id="ri-menu-table"><thead><tr><th>Dish</th><th>Sold</th><th>Food cost</th><th>Profit</th><th>Classification</th></tr></thead><tbody></tbody></table>
+            <div id="ri-menu-empty" class="ba-muted" style="display:none;">No active menu items yet — add one from the Restaurant setup screen (API/dashboard-driven, see docs).</div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Reorder Suggestions</h3>
+            <p class="ba-muted" style="margin-top:-6px;">Ingredients that have run low repeatedly — a suggested, conservative par-level increase, never applied automatically.</p>
+            <div id="ri-reorder-list" class="ba-muted">Loading…</div>
+          </div>
+        </section>
+
         <section class="dash-section" id="staff">
           <div class="dash-section-head">
             <h2>Staff Assistant</h2>
@@ -587,8 +608,8 @@
     // login would just get a wall of 403s, so hide the nav entirely
     // rather than show a broken section.
     if (role !== 'owner') {
-      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#command-center"], a[href="#automation"], a[href="#business-map"], a[href="#evolution"], a[href="#business-intel"]').forEach(el => el.remove());
-      ['team', 'health', 'command-center', 'automation', 'business-map', 'evolution', 'business-intel'].forEach(id => {
+      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#command-center"], a[href="#automation"], a[href="#business-map"], a[href="#evolution"], a[href="#business-intel"], a[href="#restaurant-intel"]').forEach(el => el.remove());
+      ['team', 'health', 'command-center', 'automation', 'business-map', 'evolution', 'business-intel', 'restaurant-intel'].forEach(id => {
         const section = document.getElementById(id);
         if (section) section.remove();
       });
@@ -741,6 +762,7 @@
         loadAutomationRules().then(loadAutomationRuns);
         loadEvolution();
         loadBusinessIntel();
+        loadRestaurantIntel();
       }
 
       const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -1762,6 +1784,58 @@
         if (radar.total_estimated_leakage_inr) parts.push(`<div>Estimated unpaid deposits: ~₹${radar.total_estimated_leakage_inr}.</div>`);
         radarEl.innerHTML = parts.length ? parts.join('') : `Nothing leaking in the last ${radar.window_days} days — nice.`;
       }
+    }
+
+    const CLASSIFICATION_PILL = { star: '⭐ Star', plowhorse: '🐴 Plowhorse', puzzle: '🧩 Puzzle', dog: '🐕 Dog' };
+
+    async function loadRestaurantIntel() {
+      const [menuRes, reorderRes] = await Promise.all([
+        fetch(`/api/menu-engineering?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/reorder-suggestions?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+      ]);
+
+      if (menuRes.ok) {
+        const report = await menuRes.json();
+        const tbody = document.querySelector('#ri-menu-table tbody');
+        const emptyEl = document.getElementById('ri-menu-empty');
+        if (!report.dishes.length) {
+          tbody.innerHTML = '';
+          emptyEl.style.display = 'block';
+        } else {
+          emptyEl.style.display = 'none';
+          tbody.innerHTML = report.dishes.map(d => `
+            <tr>
+              <td>${escapeHtml(d.name)}</td>
+              <td>${d.quantity_sold}</td>
+              <td>${d.food_cost_pct != null ? d.food_cost_pct.toFixed(0) + '%' : '<span class="ba-muted">unknown</span>'}</td>
+              <td>${d.profit_inr != null ? '₹' + Math.round(d.profit_inr) : '<span class="ba-muted">—</span>'}</td>
+              <td>${CLASSIFICATION_PILL[d.classification] || '<span class="ba-muted">not enough data</span>'}</td>
+            </tr>`).join('');
+        }
+      }
+
+      if (reorderRes.ok) {
+        const report = await reorderRes.json();
+        const listEl = document.getElementById('ri-reorder-list');
+        listEl.innerHTML = report.suggestions.length ? report.suggestions.map(s => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;">
+            <span>${escapeHtml(s.ingredient_name)}: ${s.par_level}${escapeHtml(s.unit)} → ${s.suggested_par_level}${escapeHtml(s.unit)} <span class="ba-muted">(low ${s.low_stock_trigger_count}x)</span></span>
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" data-ingredient="${escapeHtml(s.ingredient_name)}" data-unit="${escapeHtml(s.unit)}" data-par-level="${s.suggested_par_level}" onclick="applyReorderSuggestion(this)">Apply</button>
+          </div>`).join('') : 'Nothing running low repeatedly right now.';
+      }
+    }
+
+    async function applyReorderSuggestion(buttonEl) {
+      const { ingredient, unit, parLevel } = buttonEl.dataset;
+      buttonEl.disabled = true;
+      const res = await fetch(`/api/inventory/par-level?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ ingredient_name: ingredient, par_level: Number(parLevel), unit }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not update the par level.'); buttonEl.disabled = false; return; }
+      buttonEl.textContent = 'Applied ✓';
+      loadRestaurantIntel();
     }
 
     async function logMetric() {
