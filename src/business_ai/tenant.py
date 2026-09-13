@@ -111,6 +111,16 @@ class TenantConfig(BaseModel):
     # back just because the switch flips off; an owner who wants that
     # uses the explicit manual rollback endpoint).
     evolution_enabled: bool = False
+    # Phase 20 — per-tenant overrides of evolution.py's global detection/
+    # monitoring constants ("more configurable levers"). None (the
+    # default for every tenant, including every one that existed before
+    # this phase) means "use the platform default from constants.py" —
+    # these are optional sensitivity dials, not required configuration.
+    # Bounds are enforced at the API layer (schemas.TenantConfigUpdate),
+    # not here, so a value already in the database is trusted as-is.
+    evolution_dissatisfaction_threshold: float | None = None
+    evolution_lookback_hours: int | None = None
+    evolution_regression_delta: float | None = None
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
 

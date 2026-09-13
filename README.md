@@ -1207,6 +1207,85 @@ backdated 1000 hours — the regression guard for every rule created
 before this phase. 12 new tests across `tests/test_automation.py` (9)
 and `tests/test_admin_bot_restaurant.py` (3) — 593 total, all green.
 
+## What V1.25 adds: Self-Evolution Expansion (Phase 20)
+
+Deepens the ONE thing Self-Evolution already does — proposing reviewable
+assistant-tone adjustments — rather than widening it to configuration
+that doesn't fit its conversation-replay sandbox. See "A scoping
+decision" below for why "reorder par levels" and "automation threshold
+tuning" from the original roadmap sketch aren't part of this phase.
+
+**Themed, LLM-drafted proposals.** Detection itself is unchanged and
+still 100% deterministic (see V1.16's own description) — a failure
+signal fires exactly as it always did. What's new is WHAT the resulting
+draft says: once a signal fires, this pulls the actual customer
+questions that showed dissatisfaction in that window
+(`AnalyticsStore.list_recent_dissatisfied_queries`, a new sibling of the
+existing `list_recent_answered_queries`) and asks a new narrow LLM
+method, `draft_tone_adjustment`, to name the common theme and draft tone
+guidance tailored to it — "refund policy confusion" gets different
+guidance than "unclear pricing answers," instead of every proposal
+suggesting the same generic acknowledge-before-answering text. The
+theme appears directly in the proposal's rationale, so an owner sees
+*why* a change is being suggested, not just the resulting text.
+
+**The safety boundary gets stronger, not weaker, from adding an LLM
+step.** The LLM-drafted text is pre-validated through
+`validate_behavior_payload` — the exact same single choke point every
+version has always passed through — before it's ever used; on ANY
+failure (no OpenAI access, a malformed response, or content the safety
+filter rejects for being oversized or containing a banned pattern) this
+falls back to the original deterministic `DEFAULT_TONE_SUGGESTION` text,
+never to a half-applied or unvalidated draft. Sandbox evaluation and the
+owner-approval gate are completely unchanged — an LLM only ever drafts
+what a candidate SAYS; it never gains a new way to make a candidate
+live.
+
+**More configurable levers.** Three new optional per-tenant settings —
+dissatisfaction-rate threshold, conversation-history lookback window,
+and auto-rollback regression sensitivity — override the platform
+defaults from `constants.py` for a single business, bounded at the API
+layer (`schemas.TenantConfigUpdate`) so a malformed value can never
+reach evolution.py's rate comparisons. Every tenant that existed before
+this phase keeps the exact same platform-default behavior with zero
+action required (all three default to `None`, meaning "use the platform
+default").
+
+**A scoping decision, made during this phase's own design step, not
+before it:** the original roadmap sketch also named "more CONFIG_TYPES:
+automation thresholds, reorder par levels" for this phase. Building
+that surfaced a real architectural mismatch: Self-Evolution's sandbox
+specifically shadow-replays real customer CONVERSATIONS through
+retrieval+generation to catch a regression before it reaches anyone —
+there is nothing to shadow-replay for "should this ingredient's par
+level be higher" or "should this automation rule's threshold change."
+Forcing those through the same version/proposal/sandbox lineage built
+for conversational behavior would be exactly the kind of unnecessary,
+ill-fitting architecture this project has deliberately avoided at every
+other phase boundary (see V1.22's WhatsApp-vs-dashboard reasoning for
+menu setup). The genuinely valuable piece of that idea — noticing an
+ingredient keeps triggering `low_stock` alerts and suggesting a higher
+par level — is real and is planned for Phase 22 (Restaurant
+Profitability Intelligence) as a simple one-tap recommendation reusing
+Phase 19's own automation-run history, not a new Self-Evolution config
+type. "Automation threshold tuning" is deferred with no target phase
+yet: there is no existing, honest, already-recorded signal for whether a
+rule's timing is miscalibrated (as opposed to just working as designed)
+without first building an owner feedback loop on alert usefulness, which
+doesn't exist yet — building detection for a signal that doesn't exist
+would be exactly the "meaningless feature" this project has been asked
+to avoid.
+
+Live-verified against the real running app: a real tenant's
+dissatisfaction threshold was lowered via `PUT /api/tenant`, confirmed
+to correctly fire a proposal the platform default would have missed on
+the same data, then confirmed to correctly reject an out-of-range value
+(150%) with a 422; a themed proposal was confirmed to carry its LLM-
+drafted theme text through to the stored candidate's rationale exactly
+as an owner would see it in the dashboard. 11 new tests across
+`tests/test_evolution.py` (7) and `tests/test_evolution_cron.py` (4) —
+604 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1288,7 +1367,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-593 tests (and rising — see each phase's own "What Vx.x adds" section
+604 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written
@@ -1636,12 +1715,17 @@ before the prompt/schema was finalized.
   interrupting pushes for the most unambiguous risk, at the cost of an
   owner only discovering a concentration risk if they open the Business
   Map themselves.
-- **Self-evolution's only lever is one plain-text tone-guidance string**
-  (Phase 11). The approved roadmap scoped this deliberately narrow —
-  escalation windows, reminder timing, and other numeric tenant config
-  are natural extensions of the exact same versioned-config pattern, but
-  weren't built now; adding one means adding it explicitly to
-  `evolution.CONFIG_TYPES` with its own bounds, not a generic "any
+- **Self-evolution's only versioned/proposable CONFIG_TYPE is one
+  plain-text tone-guidance string** (Phase 11) — Phase 20 added
+  per-tenant sensitivity SETTINGS (dissatisfaction threshold, lookback
+  window, regression delta) but deliberately did not add a second
+  CONFIG_TYPE, having concluded during that phase's own design step that
+  automation-rule thresholds and inventory par levels don't fit the
+  conversation-replay sandbox this pattern is built around (see V1.25's
+  own "scoping decision" above) — adding a genuinely conversational
+  second CONFIG_TYPE remains a natural extension of the exact same
+  pattern if one is ever needed, explicitly added to
+  `evolution.CONFIG_TYPES` with its own bounds, never a generic "any
   setting" path.
 - **Failure detection is a single fixed threshold on one metric**
   (dissatisfaction rate over a 2-week window), not a themed/root-cause
@@ -1795,3 +1879,17 @@ before the prompt/schema was finalized.
   no par level configured is invisible to this trigger by design (Phase
   17's own `list_low_stock` only returns `par_level > 0` rows), not a
   bug in the automation engine layered on top of it.
+- **The LLM-drafted theme (Phase 20) is a label for the owner's benefit,
+  not a stored taxonomy.** Unlike `FeedbackStore`'s fixed
+  `FEEDBACK_THEMES` enum (internal employee feedback), a dissatisfied-
+  customer-question theme is free text the LLM names fresh each time a
+  proposal is generated — there's no theme aggregation/trend view across
+  proposals over time, since there's no fixed vocabulary to aggregate
+  against yet.
+- **The three Self-Evolution sensitivity settings can be set but not
+  explicitly cleared back to "platform default" from the dashboard** —
+  same pre-existing limitation as every other optional `PUT /api/tenant`
+  field (e.g. secrets); leaving the field blank keeps whatever was last
+  saved rather than sending an explicit "unset" signal. An owner who
+  wants the platform default back today sets the field to that default's
+  own value.

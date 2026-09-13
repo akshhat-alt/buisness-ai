@@ -161,6 +161,101 @@ def test_evolution_monitor_requires_platform_admin(client, owner_session):
     assert r.status_code == 403
 
 
+def test_evolution_scan_uses_a_lower_per_tenant_threshold(client, owner_session, activate_tenant, services, admin_headers):
+    """Phase 20: a tenant with a custom, more sensitive
+    evolution_dissatisfaction_threshold gets a proposal even when the
+    platform default threshold wouldn't have fired for the same data."""
+    headers, tenant_id = _setup_active_tenant_with_turns(
+        client, owner_session, activate_tenant, services, total=20, dissatisfied=2,  # 10% — below the 20% default
+    )
+    client.post(f"/api/tenant/evolution-toggle?tenant_id={tenant_id}", json={"enabled": True}, headers=headers)
+    r_default = client.post("/api/v1/admin/evolution-scan/run", headers=admin_headers)
+    assert not any(p["tenant_id"] == tenant_id for p in r_default.json()["proposed"])
+
+    r = client.put(f"/api/tenant?tenant_id={tenant_id}", json={"evolution_dissatisfaction_threshold": 0.05}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["evolution_dissatisfaction_threshold"] == 0.05
+
+    r_custom = client.post("/api/v1/admin/evolution-scan/run", headers=admin_headers)
+    assert any(p["tenant_id"] == tenant_id for p in r_custom.json()["proposed"])
+
+
+def test_evolution_scan_rejects_an_out_of_range_threshold(client, owner_session):
+    headers, tenant_id = owner_session
+    r = client.put(f"/api/tenant?tenant_id={tenant_id}", json={"evolution_dissatisfaction_threshold": 1.5}, headers=headers)
+    assert r.status_code == 422, r.text
+
+
+def test_evolution_scan_uses_llm_drafted_theme_via_generator(client, owner_session, activate_tenant, services, admin_headers):
+    """The scan cron now always passes svc.generator() through to
+    generate_behavior_proposal — confirms a theme-aware, LLM-drafted
+    tone_instructions actually reaches the stored candidate version via
+    the real HTTP cron endpoint, not just the pure function in isolation
+    (see test_evolution.py for that unit-level coverage)."""
+    from business_ai.generation import ToneAdjustmentDraft
+    from tests.conftest import FakeGenerator
+
+    services.generator = lambda: FakeGenerator(
+        tone_adjustment_draft=ToneAdjustmentDraft(theme="pricing confusion", tone_instructions="State the price plainly up front."),
+    )
+    headers, tenant_id = _setup_active_tenant_with_turns(
+        client, owner_session, activate_tenant, services, total=20, dissatisfied=10,
+    )
+    client.post(f"/api/tenant/evolution-toggle?tenant_id={tenant_id}", json={"enabled": True}, headers=headers)
+
+    r = client.post("/api/v1/admin/evolution-scan/run", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    proposals = services.evolution_proposals.list_for_tenant(tenant_id)
+    assert len(proposals) == 1
+    candidate = services.evolution_versions.get(tenant_id, proposals[0].candidate_version_id)
+    assert candidate.payload["tone_instructions"] == "State the price plainly up front."
+    assert "pricing confusion" in candidate.rationale
+
+
+def test_evolution_monitor_uses_a_lower_per_tenant_regression_delta(client, owner_session, activate_tenant, services, admin_headers):
+    headers, tenant_id = owner_session
+    client.post(f"/api/knowledge/website?tenant_id={tenant_id}", json={"url": "https://example.com"}, headers=headers)
+    activate_tenant(tenant_id)
+
+    v1 = services.evolution_versions.create(
+        tenant_id=tenant_id, config_type="assistant_tone", payload={"tone_instructions": "v1"}, created_by="owner",
+    )
+    services.evolution_versions.activate(tenant_id, v1.version_id)
+    v2 = services.evolution_versions.create(
+        tenant_id=tenant_id, config_type="assistant_tone", payload={"tone_instructions": "v2"}, created_by="owner",
+        parent_version_id=v1.version_id,
+    )
+    services.evolution_versions.activate(tenant_id, v2.version_id)
+    activated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 48 * 3600))
+    with services.evolution_versions._lock, services.evolution_versions._db() as conn:
+        conn.execute("UPDATE evolution_versions SET activated_at = ? WHERE version_id = ?", (activated_at, v2.version_id))
+        conn.commit()
+
+    for i in range(10):
+        services.analytics_store.log_turn(
+            tenant_id=tenant_id, session_id=f"pre{i}", query=f"pre {i}", answer_status="answered", shows_dissatisfaction=False,
+        )
+    with services.analytics_store._lock, services.analytics_store._db() as conn:
+        pre_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 72 * 3600))
+        conn.execute("UPDATE turns SET created_at = ? WHERE session_id LIKE 'pre%'", (pre_at,))
+        conn.commit()
+    # Post window: a modest 10% rate, a 10pt rise — below the 15pt default delta.
+    for i in range(10):
+        services.analytics_store.log_turn(
+            tenant_id=tenant_id, session_id=f"post{i}", query=f"post {i}", answer_status="answered",
+            shows_dissatisfaction=(i < 1),
+        )
+
+    r_default = client.post("/api/v1/admin/evolution-monitor/run", headers=admin_headers)
+    assert not any(x["tenant_id"] == tenant_id for x in r_default.json()["rolled_back"])
+
+    r = client.put(f"/api/tenant?tenant_id={tenant_id}", json={"evolution_regression_delta": 0.05}, headers=headers)
+    assert r.status_code == 200, r.text
+
+    r_custom = client.post("/api/v1/admin/evolution-monitor/run", headers=admin_headers)
+    assert any(x["tenant_id"] == tenant_id for x in r_custom.json()["rolled_back"])
+
+
 def test_evolution_monitor_isolates_a_broken_tenant_from_the_rest(client, owner_session, activate_tenant, services, admin_headers):
     """A live smoke test surfaced this: if one tenant's stored
     parent_version_id somehow doesn't resolve to a real row (never

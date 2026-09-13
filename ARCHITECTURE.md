@@ -177,7 +177,17 @@ src/business_ai/
                   the LLM-free post-promotion monitoring/auto-rollback
                   check. Can NEVER touch Python/SQL/infra/secrets/
                   money/activation — see the module's own docstring for
-                  the enforced boundary
+                  the enforced boundary. Phase 20 added themed, LLM-
+                  drafted proposal text (generation.draft_tone_adjustment,
+                  pre-validated through the same choke point, falls back
+                  to the original deterministic text on any failure) and
+                  three per-tenant sensitivity overrides threaded through
+                  detect_failure_signal/run_monitoring_check
+                  (TenantConfig.evolution_dissatisfaction_threshold/
+                  evolution_lookback_hours/evolution_regression_delta) —
+                  no new CONFIG_TYPE; see README's V1.25 section for why
+                  automation-threshold/inventory-par-level tuning were
+                  deliberately not added as new CONFIG_TYPEs here
   metrics.py      Phase 12: BusinessMetricStore — manual sales/expense/
                   collection ledger, always labeled source="manual"
   scorecard.py    Phase 13: weekly business scorecard — pure data-
@@ -251,7 +261,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (593 tests) — see README.md
+tests/            pytest suite (604 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

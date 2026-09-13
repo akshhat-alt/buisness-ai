@@ -135,6 +135,14 @@ class TenantConfigUpdate(BaseModel):
     razorpay_webhook_secret: str | None = None
     deposit_amount_inr: int | None = None
     winback_after_days: int | None = None
+    # Phase 20 — "more configurable levers" for Self-Evolution. Bounded
+    # here (the one place this codebase validates numeric tenant
+    # settings) so a malformed value can never reach evolution.py's rate
+    # comparisons; leaving a field unset keeps whatever is already saved
+    # (or the platform default from constants.py if nothing ever was).
+    evolution_dissatisfaction_threshold: float | None = Field(default=None, gt=0, le=1)
+    evolution_lookback_hours: int | None = Field(default=None, ge=1, le=24 * 90)
+    evolution_regression_delta: float | None = Field(default=None, gt=0, le=1)
 
 
 class TenantDeleteRequest(BaseModel):

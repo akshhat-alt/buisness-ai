@@ -485,7 +485,10 @@ DEFAULT_TONE_SUGGESTION = (
 )
 
 
-def detect_failure_signal(tenant_id: str, *, analytics_store, lookback_hours: int = EVOLUTION_LOOKBACK_HOURS) -> FailureSignal | None:
+def detect_failure_signal(
+    tenant_id: str, *, analytics_store, lookback_hours: int = EVOLUTION_LOOKBACK_HOURS,
+    dissatisfaction_rate_threshold: float = EVOLUTION_FAILURE_DISSATISFACTION_RATE_THRESHOLD,
+) -> FailureSignal | None:
     """Pure read-model failure detection over EXISTING conversation
     analytics — the only signal that's actually about the customer
     assistant's own behavior (employee feedback in feedback.py is about
@@ -494,13 +497,19 @@ def detect_failure_signal(tenant_id: str, *, analytics_store, lookback_hours: in
     enough real traffic yet to draw a conclusion, or when the
     dissatisfaction rate isn't actually elevated — both are "no signal",
     not "everything is fine," but the distinction only matters for
-    logging, never for whether a proposal gets created."""
+    logging, never for whether a proposal gets created.
+
+    lookback_hours/dissatisfaction_rate_threshold default to the platform
+    constants but are overridable per tenant (Phase 20's "configurable
+    levers" — see TenantConfig.evolution_lookback_hours/
+    evolution_dissatisfaction_threshold); this function itself stays
+    LLM-free and deterministic either way."""
     since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - lookback_hours * 3600))
     summary = analytics_store.summary_for_tenant(tenant_id, since_iso=since_iso)
     if summary.total_questions < EVOLUTION_MIN_SAMPLE_FOR_DETECTION:
         return None
     rate = summary.dissatisfaction_count / summary.total_questions
-    if rate < EVOLUTION_FAILURE_DISSATISFACTION_RATE_THRESHOLD:
+    if rate < dissatisfaction_rate_threshold:
         return None
     return FailureSignal(
         tenant_id=tenant_id, reason="elevated_dissatisfaction_rate", dissatisfaction_rate=round(rate, 4),
@@ -508,30 +517,79 @@ def detect_failure_signal(tenant_id: str, *, analytics_store, lookback_hours: in
     )
 
 
+# How many of the window's actual dissatisfied questions to hand the LLM
+# for theme identification / tailored drafting — a small, representative
+# sample, not the whole window (keeps the prompt small and the signal
+# concentrated on the most recent complaints).
+THEME_SAMPLE_SIZE = 8
+MAX_THEME_LENGTH = 80
+
+
 def generate_behavior_proposal(
     tenant_id: str, *, analytics_store, evolution_version_store: EvolutionVersionStore,
     evolution_proposal_store: EvolutionProposalStore,
+    lookback_hours: int = EVOLUTION_LOOKBACK_HOURS,
+    dissatisfaction_rate_threshold: float = EVOLUTION_FAILURE_DISSATISFACTION_RATE_THRESHOLD,
+    generator=None,
 ) -> EvolutionProposal | None:
     """Improvement proposal generation: on a detected failure signal,
     drafts a candidate assistant_tone version (status="draft", never
-    active) and records a proposal for it. Deterministic by design — no
-    LLM call, no randomness — so this stage is 100% reproducible and
-    reviewable, matching this codebase's existing preference (Phase 0's
-    keyword parser, Phase 10's risk rules) for deterministic logic
-    wherever correctness/reliability matters more than sophistication."""
-    signal = detect_failure_signal(tenant_id, analytics_store=analytics_store)
+    active) and records a proposal for it.
+
+    Detection itself stays exactly as deterministic as before (see
+    detect_failure_signal) — that reliability guarantee is never
+    compromised. What's new in Phase 20 is WHAT the candidate says once a
+    signal has already, deterministically, fired: when `generator` is
+    given, this pulls a sample of the window's actual dissatisfied
+    questions and asks the LLM to (a) name the common theme and (b) draft
+    tone guidance tailored to it — grounded in real complaints instead of
+    always suggesting the same generic text. The draft is validated
+    through validate_behavior_payload (via the pre-check below, and again
+    inside evolution_version_store.create — the one choke point never
+    changes) BEFORE it's trusted; on any failure (no generator, no LLM
+    access, a malformed response, or content the safety filter rejects),
+    this falls back to the exact original deterministic
+    DEFAULT_TONE_SUGGESTION — the proposal pipeline must keep working
+    during an LLM outage, same invariant run_monitoring_check already
+    holds for the rollback safety net."""
+    signal = detect_failure_signal(
+        tenant_id, analytics_store=analytics_store, lookback_hours=lookback_hours,
+        dissatisfaction_rate_threshold=dissatisfaction_rate_threshold,
+    )
     if signal is None:
         return None
+
+    tone_instructions = signal.suggested_tone_instructions
+    theme: str | None = None
+    if generator is not None:
+        since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - lookback_hours * 3600))
+        sample_queries = analytics_store.list_recent_dissatisfied_queries(
+            tenant_id, since_iso=since_iso, limit=THEME_SAMPLE_SIZE,
+        )
+        if sample_queries:
+            try:
+                draft = generator.draft_tone_adjustment(dissatisfied_queries=sample_queries)
+                candidate_text = draft.tone_instructions
+                validate_behavior_payload("assistant_tone", {"tone_instructions": candidate_text})
+                tone_instructions = candidate_text
+                theme = (draft.theme or "").strip()[:MAX_THEME_LENGTH] or None
+            except Exception:
+                pass  # any failure (LLM error, malformed output, unsafe text) -> keep the deterministic default
+
+    rationale = (
+        f"Dissatisfaction rate {signal.dissatisfaction_rate:.0%} over the last "
+        f"{signal.sample_size} customer questions crossed the "
+        f"{dissatisfaction_rate_threshold:.0%} threshold."
+    )
+    if theme:
+        rationale += f" Common theme in the dissatisfied questions: {theme}."
+
     current_active = evolution_version_store.get_active(tenant_id, "assistant_tone")
     candidate = evolution_version_store.create(
         tenant_id=tenant_id, config_type="assistant_tone",
-        payload={"tone_instructions": signal.suggested_tone_instructions},
+        payload={"tone_instructions": tone_instructions},
         created_by="self_evolution_engine",
-        rationale=(
-            f"Dissatisfaction rate {signal.dissatisfaction_rate:.0%} over the last "
-            f"{signal.sample_size} customer questions crossed the "
-            f"{EVOLUTION_FAILURE_DISSATISFACTION_RATE_THRESHOLD:.0%} threshold."
-        ),
+        rationale=rationale,
         parent_version_id=current_active.version_id if current_active else None,
         status="draft",
     )
@@ -626,7 +684,11 @@ def run_sandbox_evaluation(
 # ==============================================================================
 
 
-def run_monitoring_check(tenant_id: str, active_version: EvolutionVersion, *, analytics_store) -> dict:
+def run_monitoring_check(
+    tenant_id: str, active_version: EvolutionVersion, *, analytics_store,
+    regression_delta: float = EVOLUTION_MONITORING_REGRESSION_DELTA,
+    lookback_hours: int = EVOLUTION_LOOKBACK_HOURS,
+) -> dict:
     """Pure, LLM-free comparison of a promoted version's post-activation
     dissatisfaction rate against its own pre-activation baseline window —
     deliberately reads only durable AnalyticsStore data so this safety
@@ -635,7 +697,11 @@ def run_monitoring_check(tenant_id: str, active_version: EvolutionVersion, *, an
       - {"action": "skipped", "reason": ...} — not enough signal yet, do nothing
       - {"action": "ok", "metrics": {...}} — no regression, do nothing
       - {"action": "regression", "metrics": {...}} — caller should roll back
-    """
+
+    regression_delta defaults to the platform constant but is overridable
+    per tenant (TenantConfig.evolution_regression_delta) — a lower value
+    makes automatic rollback more sensitive, a higher one more tolerant;
+    this function's own comparison logic is unchanged either way."""
     if active_version.activated_at is None:
         return {"action": "skipped", "reason": "not_activated"}
     if active_version.parent_version_id is None:
@@ -644,7 +710,7 @@ def run_monitoring_check(tenant_id: str, active_version: EvolutionVersion, *, an
     if hours_active < EVOLUTION_MONITORING_MIN_HOURS_ACTIVE:
         return {"action": "skipped", "reason": "too_recent"}
 
-    lookback_start = _iso_minus_hours(active_version.activated_at, EVOLUTION_LOOKBACK_HOURS)
+    lookback_start = _iso_minus_hours(active_version.activated_at, lookback_hours)
     baseline = analytics_store.summary_for_tenant(tenant_id, since_iso=lookback_start, until_iso=active_version.activated_at)
     post = analytics_store.summary_for_tenant(tenant_id, since_iso=active_version.activated_at)
 
@@ -661,6 +727,6 @@ def run_monitoring_check(tenant_id: str, active_version: EvolutionVersion, *, an
         "baseline_rate": round(baseline_rate, 4), "post_rate": round(post_rate, 4), "delta": round(delta, 4),
         "baseline_n": baseline.total_questions, "post_n": post.total_questions,
     }
-    if delta >= EVOLUTION_MONITORING_REGRESSION_DELTA:
+    if delta >= regression_delta:
         return {"action": "regression", "metrics": metrics}
     return {"action": "ok", "metrics": metrics}

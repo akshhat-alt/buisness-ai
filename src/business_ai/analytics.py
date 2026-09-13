@@ -211,6 +211,36 @@ class AnalyticsStore(SqliteStore):
             ).fetchall()
             return [r["query"] for r in rows]
 
+    def list_recent_dissatisfied_queries(
+        self, tenant_id: str, *, since_iso: str | None = None, limit: int = 8,
+    ) -> list[str]:
+        """Phase 20: the sample self-evolution's proposal generation feeds
+        to the LLM for theme identification / tailored tone drafting —
+        sibling of list_recent_answered_queries above but filtered to
+        shows_dissatisfaction=1 (the actual failures, not just any
+        answered question) and bounded to a window via since_iso so the
+        sample reflects the SAME detection window that fired the failure
+        signal, not the tenant's entire history. Distinct queries, most
+        recent first."""
+        clause = "tenant_id = ? AND shows_dissatisfaction = 1"
+        params: tuple = (tenant_id,)
+        if since_iso:
+            clause += " AND created_at >= ?"
+            params += (since_iso,)
+        with self._lock, self._db() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT query, MAX(created_at) as latest
+                FROM turns
+                WHERE {clause}
+                GROUP BY query
+                ORDER BY latest DESC
+                LIMIT ?
+                """,
+                params + (limit,),
+            ).fetchall()
+            return [r["query"] for r in rows]
+
     def session_ids_with_buying_intent(self, tenant_id: str, *, since_iso: str | None = None) -> set[str]:
         """Distinct sessions where at least one turn showed buying intent
         — the join key app.py uses against LeadStore (Lead.session_id is

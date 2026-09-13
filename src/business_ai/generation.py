@@ -262,6 +262,11 @@ class FeedbackClassification(BaseModel):
     suggested_action: str
 
 
+class ToneAdjustmentDraft(BaseModel):
+    theme: str
+    tone_instructions: str
+
+
 # ==============================================================================
 # Admin WhatsApp bot — natural-language command routing
 # ==============================================================================
@@ -700,6 +705,69 @@ class OpenAIGenerationProvider:
                 if attempt < 3:
                     time.sleep(2**attempt)
         raise RuntimeError("SOP draft generation failed after 3 attempts") from last_error
+
+    def draft_tone_adjustment(self, *, dissatisfied_queries: list[str]) -> ToneAdjustmentDraft:
+        """Phase 20's themed, LLM-drafted self-evolution proposal: given a
+        sample of the actual customer questions that recently showed
+        dissatisfaction (already selected by a deterministic rate check —
+        see evolution.detect_failure_signal — this method never decides
+        WHETHER to propose anything, only WHAT to say), names the common
+        theme and drafts short tone/style guidance for it. Same anti-
+        hallucination discipline as draft_sop_note/draft_faq_answer:
+        grounded ONLY in the actual questions given, and explicitly
+        scoped to HOW the assistant communicates — never a business fact,
+        policy, or promise, which this method has no authority to invent.
+        Raises on total failure (network, malformed output) exactly like
+        draft_sop_note — the caller (evolution.generate_behavior_proposal)
+        decides the safe deterministic fallback; every returned draft
+        still passes through validate_behavior_payload before it can ever
+        be saved, so this method itself does not need to duplicate that
+        safety filter."""
+        quotes = "\n".join(f'- "{q}"' for q in dissatisfied_queries[:8])
+        system_prompt = (
+            "Customers recently asked these questions and the assistant's answer left them "
+            "dissatisfied. First, identify the common underlying theme in 3-6 words (e.g. "
+            "'refund policy confusion', 'unclear pricing answers') — grounded only in what these "
+            "questions actually show, never invented if there isn't a clear common thread (in that "
+            "case use 'general dissatisfaction'). Then draft ONE short (1-3 sentence) tone/style "
+            "instruction for the assistant that would plausibly help with THIS specific theme — for "
+            "example acknowledging the customer's concern before answering, being more explicit "
+            "about a specific point of confusion, or admitting uncertainty rather than guessing. "
+            "This is an instruction about HOW the assistant communicates, never a business fact, "
+            "policy, price, or promise — you have no authority to invent or change what the "
+            "business actually offers."
+        )
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"theme": {"type": "string"}, "tone_instructions": {"type": "string"}},
+            "required": ["theme", "tone_instructions"],
+        }
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model_name,
+                    temperature=0.2,
+                    max_tokens=250,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {"name": "tone_adjustment_draft", "strict": True, "schema": schema},
+                    },
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Recent dissatisfied questions:\n{quotes}"},
+                    ],
+                )
+                content = response.choices[0].message.content
+                if not content:
+                    raise RuntimeError("OpenAI returned an empty tone adjustment draft.")
+                return ToneAdjustmentDraft.model_validate(json.loads(content))
+            except Exception as exc:  # noqa: BLE001 - retry transient API errors
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(2**attempt)
+        raise RuntimeError("Tone adjustment draft generation failed after 3 attempts") from last_error
 
     def classify_employee_message(self, *, text: str, current_date_iso: str, employee_role: str) -> EmployeeCommandIntent:
         """NL fallback for the admin bot — see the module-level note above

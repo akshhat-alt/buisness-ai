@@ -12,6 +12,11 @@ import logging
 
 from fastapi import FastAPI, Header, HTTPException
 
+from business_ai.constants import (
+    EVOLUTION_FAILURE_DISSATISFACTION_RATE_THRESHOLD,
+    EVOLUTION_LOOKBACK_HOURS,
+    EVOLUTION_MONITORING_REGRESSION_DELTA,
+)
 from business_ai.evolution import generate_behavior_proposal, run_monitoring_check, run_sandbox_evaluation
 from business_ai.schemas import EvolutionKillSwitchRequest
 from business_ai.tenant import TenantAction, TenantNotFoundError, TenantStatus, UnauthorizedError, authorize
@@ -177,9 +182,15 @@ def register_evolution(app: FastAPI, svc, ctx) -> None:
                 skipped.append({"tenant_id": tenant.tenant_id, "reason": "a proposal is already awaiting owner review"})
                 continue
 
+            generator = svc.generator()
             proposal = generate_behavior_proposal(
                 tenant.tenant_id, analytics_store=svc.analytics_store,
                 evolution_version_store=svc.evolution_versions, evolution_proposal_store=svc.evolution_proposals,
+                lookback_hours=tenant.evolution_lookback_hours or EVOLUTION_LOOKBACK_HOURS,
+                dissatisfaction_rate_threshold=(
+                    tenant.evolution_dissatisfaction_threshold or EVOLUTION_FAILURE_DISSATISFACTION_RATE_THRESHOLD
+                ),
+                generator=generator,
             )
             if proposal is None:
                 skipped.append({"tenant_id": tenant.tenant_id, "reason": "no failure signal detected"})
@@ -194,7 +205,7 @@ def register_evolution(app: FastAPI, svc, ctx) -> None:
                 evaluation = run_sandbox_evaluation(
                     tenant.tenant_id, proposal, evolution_version_store=svc.evolution_versions,
                     evolution_evaluation_store=svc.evolution_evaluations, analytics_store=svc.analytics_store,
-                    vector_store=svc.vector_store, embeddings=svc.embeddings(), generator=svc.generator(),
+                    vector_store=svc.vector_store, embeddings=svc.embeddings(), generator=generator,
                     business_name=tenant.business_name, assistant_name=tenant.assistant_name,
                 )
             except Exception:
@@ -238,7 +249,11 @@ def register_evolution(app: FastAPI, svc, ctx) -> None:
             active_version = svc.evolution_versions.get_active(tenant.tenant_id, "assistant_tone")
             if active_version is None:
                 continue
-            result = run_monitoring_check(tenant.tenant_id, active_version, analytics_store=svc.analytics_store)
+            result = run_monitoring_check(
+                tenant.tenant_id, active_version, analytics_store=svc.analytics_store,
+                regression_delta=tenant.evolution_regression_delta or EVOLUTION_MONITORING_REGRESSION_DELTA,
+                lookback_hours=tenant.evolution_lookback_hours or EVOLUTION_LOOKBACK_HOURS,
+            )
             if result["action"] == "skipped":
                 skipped.append({"tenant_id": tenant.tenant_id, "reason": result["reason"]})
                 continue

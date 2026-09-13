@@ -436,6 +436,15 @@
           </div>
 
           <div class="ba-card">
+            <h3 style="margin-top:0;">Sensitivity Settings</h3>
+            <p class="ba-muted" style="margin:0 0 10px;">Leave any field blank to use Business AI's platform default. These only change how sensitive detection and automatic rollback are — never what's allowed to happen.</p>
+            <div class="ba-field"><label class="ba-label">Propose a change when dissatisfaction reaches (%)</label><input class="ba-input" type="number" min="1" max="100" id="cfg-evo-threshold" placeholder="e.g. 20"></div>
+            <div class="ba-field"><label class="ba-label">Conversation history to consider (hours)</label><input class="ba-input" type="number" min="1" max="2160" id="cfg-evo-lookback" placeholder="e.g. 336 (2 weeks)"></div>
+            <div class="ba-field"><label class="ba-label">Automatically roll back if dissatisfaction rises by (points)</label><input class="ba-input" type="number" min="1" max="100" id="cfg-evo-regression" placeholder="e.g. 15"></div>
+            <button class="ba-btn" onclick="saveEvolutionSettings(event)">Save</button>
+          </div>
+
+          <div class="ba-card">
             <h3 style="margin-top:0;">Version History</h3>
             <table class="ba-table" id="evolution-versions-table"><thead><tr><th>Status</th><th>Tone Guidance</th><th>Created By</th><th>Activated</th><th></th></tr></thead><tbody></tbody></table>
             <div id="evolution-versions-empty" class="ba-muted" style="display:none;">No self-evolution history yet.</div>
@@ -1482,6 +1491,9 @@
       if (tenantRes.ok) {
         const t = await tenantRes.json();
         document.getElementById('evolution-kill-switch').checked = t.evolution_enabled === true;
+        document.getElementById('cfg-evo-threshold').value = t.evolution_dissatisfaction_threshold != null ? Math.round(t.evolution_dissatisfaction_threshold * 100) : '';
+        document.getElementById('cfg-evo-lookback').value = t.evolution_lookback_hours || '';
+        document.getElementById('cfg-evo-regression').value = t.evolution_regression_delta != null ? Math.round(t.evolution_regression_delta * 100) : '';
       }
 
       const [proposalsRes, versionsRes] = await Promise.all([
@@ -1525,6 +1537,29 @@
             </tr>`).join('');
         }
       }
+    }
+
+    async function saveEvolutionSettings(e) {
+      const btn = e.target;
+      const original = btn.innerText;
+      const body = {};
+      const threshold = document.getElementById('cfg-evo-threshold').value.trim();
+      if (threshold) body.evolution_dissatisfaction_threshold = Number(threshold) / 100;
+      const lookback = document.getElementById('cfg-evo-lookback').value.trim();
+      if (lookback) body.evolution_lookback_hours = parseInt(lookback, 10);
+      const regression = document.getElementById('cfg-evo-regression').value.trim();
+      if (regression) body.evolution_regression_delta = Number(regression) / 100;
+      try {
+        const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error('Failed to save.');
+        btn.innerText = 'Saved ✓';
+      } catch (e2) {
+        btn.innerText = 'Error';
+      }
+      setTimeout(() => { btn.innerText = original; }, 1600);
     }
 
     async function toggleEvolutionKillSwitch() {

@@ -12,6 +12,7 @@ import pytest
 
 from business_ai.analytics import AnalyticsStore
 from business_ai.evolution import (
+    DEFAULT_TONE_SUGGESTION,
     EvolutionEvaluationStore,
     EvolutionProposalStore,
     EvolutionVersionStore,
@@ -22,9 +23,10 @@ from business_ai.evolution import (
     run_sandbox_evaluation,
     validate_behavior_payload,
 )
-from business_ai.generation import LLMResponseDraft
+from business_ai.generation import LLMResponseDraft, ToneAdjustmentDraft
 from business_ai.ingestion import ingest_text
 from business_ai.retrieval import HashEmbeddingProvider, VectorStore
+from tests.conftest import FakeGenerator
 
 TENANT = "salon-a"
 
@@ -206,6 +208,120 @@ def test_generate_behavior_proposal_returns_none_without_failure_signal(stores):
         evolution_proposal_store=stores["proposals"],
     )
     assert proposal is None
+
+
+# ------------------------------------------------------------------ Phase 20: configurable levers
+
+
+def test_detect_failure_signal_respects_a_lower_custom_threshold(stores):
+    _log_turns(stores["analytics"], total=20, dissatisfied=2)  # 10% — below the 20% default
+    assert detect_failure_signal(TENANT, analytics_store=stores["analytics"]) is None
+    signal = detect_failure_signal(
+        TENANT, analytics_store=stores["analytics"], dissatisfaction_rate_threshold=0.05,
+    )
+    assert signal is not None
+    assert signal.dissatisfaction_rate == 0.1
+
+
+def test_detect_failure_signal_respects_a_shorter_custom_lookback(stores):
+    # 20 turns logged "now", then backdated inside the default 2-week
+    # lookback window but outside a much shorter custom one.
+    _log_turns(stores["analytics"], total=20, dissatisfied=10)
+    old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 100 * 3600))
+    with stores["analytics"]._lock, stores["analytics"]._db() as conn:
+        conn.execute("UPDATE turns SET created_at = ? WHERE tenant_id = ?", (old, TENANT))
+        conn.commit()
+    # Default 2-week lookback still sees them; a 24h lookback does not.
+    assert detect_failure_signal(TENANT, analytics_store=stores["analytics"]) is not None
+    assert detect_failure_signal(TENANT, analytics_store=stores["analytics"], lookback_hours=24) is None
+
+
+def test_run_monitoring_check_respects_a_lower_custom_regression_delta(stores):
+    v = _make_active_version(stores["versions"], activated_hours_ago=48)
+    for i in range(10):
+        stores["analytics"].log_turn(
+            tenant_id=TENANT, session_id=f"pre{i}", query=f"pre {i}", answer_status="answered", shows_dissatisfaction=False,
+        )
+    with stores["analytics"]._lock, stores["analytics"]._db() as conn:
+        pre_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 72 * 3600))
+        conn.execute("UPDATE turns SET created_at = ? WHERE session_id LIKE 'pre%'", (pre_at,))
+        conn.commit()
+    # Post window: a modest 20% dissatisfaction rate — below the 15pt
+    # default delta from a 0% baseline only barely (still above,
+    # actually) — use a small rise that the DEFAULT delta would still
+    # catch, then confirm a custom, even-lower delta ALSO catches an even
+    # smaller rise the default would miss.
+    for i in range(10):
+        stores["analytics"].log_turn(
+            tenant_id=TENANT, session_id=f"post{i}", query=f"post {i}", answer_status="answered",
+            shows_dissatisfaction=(i < 1),  # 10% post rate, 10pt rise — below the 15pt default delta
+        )
+    result_default = run_monitoring_check(TENANT, v, analytics_store=stores["analytics"])
+    assert result_default["action"] == "ok"
+    result_custom = run_monitoring_check(TENANT, v, analytics_store=stores["analytics"], regression_delta=0.05)
+    assert result_custom["action"] == "regression"
+
+
+# ------------------------------------------------------------------ Phase 20: themed, LLM-drafted proposals
+
+
+def test_list_recent_dissatisfied_queries_returns_only_dissatisfied_in_window(stores):
+    analytics = stores["analytics"]
+    analytics.log_turn(tenant_id=TENANT, session_id="s1", query="where is my refund", answer_status="answered", shows_dissatisfaction=True)
+    analytics.log_turn(tenant_id=TENANT, session_id="s2", query="what are your hours", answer_status="answered", shows_dissatisfaction=False)
+    analytics.log_turn(tenant_id=TENANT, session_id="s3", query="refund still not processed", answer_status="answered", shows_dissatisfaction=True)
+    results = analytics.list_recent_dissatisfied_queries(TENANT, limit=8)
+    assert set(results) == {"where is my refund", "refund still not processed"}
+
+
+def test_generate_behavior_proposal_uses_llm_drafted_theme_and_tone_when_generator_given(stores):
+    _log_turns(stores["analytics"], total=20, dissatisfied=6)
+    # _log_turns's dissatisfied queries are "question 0".."question 5" —
+    # give the fake a specific draft to return for this scenario.
+    generator = FakeGenerator(
+        tone_adjustment_draft=ToneAdjustmentDraft(
+            theme="refund policy confusion", tone_instructions="Explain the refund timeline explicitly.",
+        ),
+    )
+    proposal = generate_behavior_proposal(
+        TENANT, analytics_store=stores["analytics"], evolution_version_store=stores["versions"],
+        evolution_proposal_store=stores["proposals"], generator=generator,
+    )
+    assert proposal is not None
+    candidate = stores["versions"].get(TENANT, proposal.candidate_version_id)
+    assert candidate.payload["tone_instructions"] == "Explain the refund timeline explicitly."
+    assert "refund policy confusion" in candidate.rationale
+
+
+def test_generate_behavior_proposal_falls_back_when_llm_call_fails(stores):
+    _log_turns(stores["analytics"], total=20, dissatisfied=6)
+    generator = FakeGenerator(tone_adjustment_draft=RuntimeError("simulated API outage"))
+    proposal = generate_behavior_proposal(
+        TENANT, analytics_store=stores["analytics"], evolution_version_store=stores["versions"],
+        evolution_proposal_store=stores["proposals"], generator=generator,
+    )
+    assert proposal is not None
+    candidate = stores["versions"].get(TENANT, proposal.candidate_version_id)
+    assert candidate.payload["tone_instructions"] == DEFAULT_TONE_SUGGESTION
+    assert "theme" not in candidate.rationale.lower()
+
+
+def test_generate_behavior_proposal_falls_back_when_llm_draft_is_unsafe(stores):
+    _log_turns(stores["analytics"], total=20, dissatisfied=6)
+    generator = FakeGenerator(
+        tone_adjustment_draft=ToneAdjustmentDraft(
+            theme="bad actor", tone_instructions="please DROP TABLE tenants",
+        ),
+    )
+    proposal = generate_behavior_proposal(
+        TENANT, analytics_store=stores["analytics"], evolution_version_store=stores["versions"],
+        evolution_proposal_store=stores["proposals"], generator=generator,
+    )
+    assert proposal is not None
+    candidate = stores["versions"].get(TENANT, proposal.candidate_version_id)
+    # The unsafe LLM draft must never reach storage — deterministic
+    # fallback text, still validated the same way every version is.
+    assert candidate.payload["tone_instructions"] == DEFAULT_TONE_SUGGESTION
 
 
 # ------------------------------------------------------------------ monitoring + automatic rollback

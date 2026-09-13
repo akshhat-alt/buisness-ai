@@ -8,7 +8,7 @@ import pytest
 
 from business_ai.app import Services, create_app
 from business_ai.config import load_settings
-from business_ai.generation import EmployeeCommandIntent, FeedbackClassification, LLMResponseDraft
+from business_ai.generation import EmployeeCommandIntent, FeedbackClassification, LLMResponseDraft, ToneAdjustmentDraft
 from business_ai.retrieval import HashEmbeddingProvider
 
 
@@ -22,6 +22,7 @@ class FakeGenerator:
         dissatisfied_queries: frozenset[str] = frozenset(), action_brief_items: list[str] = (),
         feedback_classifications: dict[str, FeedbackClassification] | None = None,
         employee_command_intents: dict[str, EmployeeCommandIntent] | None = None,
+        tone_adjustment_draft: ToneAdjustmentDraft | Exception | None = None,
     ) -> None:
         self.status = status
         self.answer_text = answer_text
@@ -37,6 +38,11 @@ class FakeGenerator:
         # default is "other" (help text), same fail-closed-to-safe shape
         # as the real provider's own fallback.
         self.employee_command_intents = employee_command_intents or {}
+        # A ToneAdjustmentDraft to return, an Exception instance to raise
+        # (exercising evolution.py's deterministic-fallback path), or None
+        # for a deterministic default draft — same "override or sensible
+        # default" idiom as the other fakes here.
+        self.tone_adjustment_draft = tone_adjustment_draft
 
     def generate(self, *, system_prompt: str, user_prompt: str) -> LLMResponseDraft:
         match = re.search(r'evidence_passage id="([^"]+)"', user_prompt)
@@ -69,6 +75,16 @@ class FakeGenerator:
 
     def draft_sop_note(self, *, theme_label: str, recent_feedback_texts: list[str]) -> str:
         return f"[draft] Based on {len(recent_feedback_texts)} report(s) about {theme_label}, investigate and address the root cause."
+
+    def draft_tone_adjustment(self, *, dissatisfied_queries: list[str]) -> ToneAdjustmentDraft:
+        if isinstance(self.tone_adjustment_draft, Exception):
+            raise self.tone_adjustment_draft
+        if self.tone_adjustment_draft is not None:
+            return self.tone_adjustment_draft
+        return ToneAdjustmentDraft(
+            theme="general dissatisfaction",
+            tone_instructions=f"[draft] Acknowledge the customer's concern before answering ({len(dissatisfied_queries)} sample question(s)).",
+        )
 
     def translate_to_english_for_retrieval(self, *, text: str) -> str:
         # Deterministic no-op in tests — the real translation call is
