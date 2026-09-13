@@ -24,6 +24,7 @@ from business_ai.email_sender import EmailSendError
 from business_ai.formatting import _format_appointment_ist, _whatsapp_link
 from business_ai.constants import (
     DEPENDENCY_RISK_RENOTIFY_HOURS,
+    INVENTORY_ALERT_RENOTIFY_HOURS,
     REENGAGEMENT_MAX_AGE_HOURS,
     REENGAGEMENT_MIN_AGE_HOURS,
     REMINDER_WINDOW_END_HOURS,
@@ -549,6 +550,55 @@ def register_admin(app: FastAPI, svc, ctx) -> None:
                 svc.audit_log.record(
                     tenant_id=tenant.tenant_id, actor_employee_id=None, action="dependency_risk_flagged",
                     target_type="dependency_risk", target_id=r["target_id"], metadata={"summary": r["summary"]},
+                )
+            notified.append(tenant.tenant_id)
+            if sent_count == 0:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "no WhatsApp recipient reachable, flagged anyway"})
+        return {"notified": notified, "skipped": skipped}
+
+    @app.post("/api/v1/admin/inventory-alert/run")
+    def admin_run_inventory_alert(authorization: str | None = Header(default=None)) -> dict:
+        """Restaurant Foundation (Phase 17)'s proactive half: notifies the
+        owner/manager roster about any ingredient below its configured
+        par level. Dedup follows the exact same AuditLogStore-backed
+        pattern as the dependency-risk scan above, just with a shorter
+        renotify window (INVENTORY_ALERT_RENOTIFY_HOURS = 24h, not 7
+        days) — a low-stock ingredient is a same-day problem, so a still-
+        low ingredient should be re-flagged daily, not go quiet for a
+        week while the kitchen keeps running short."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+
+        renotify_cutoff = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - INVENTORY_ALERT_RENOTIFY_HOURS * 3600)
+        )
+        notified: list[str] = []
+        skipped: list[dict] = []
+        for tenant in svc.tenant_registry.list_all():
+            if tenant.status != TenantStatus.ACTIVE:
+                continue
+            low_stock = svc.inventory_store.list_low_stock(tenant.tenant_id)
+            if not low_stock:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "nothing below par level"})
+                continue
+
+            already_flagged = {
+                e.target_id for e in svc.audit_log.list_for_tenant(tenant.tenant_id, action="inventory_low_stock_flagged")
+                if e.created_at >= renotify_cutoff
+            }
+            new_items = [i for i in low_stock if f"inventory:{i.ingredient_key}" not in already_flagged]
+            if not new_items:
+                skipped.append({"tenant_id": tenant.tenant_id, "reason": "already flagged recently"})
+                continue
+
+            lines = "\n".join(f"• {i.ingredient_name}: {i.quantity_on_hand:g}{i.unit} (par {i.par_level:g}{i.unit})" for i in new_items)
+            sent_count = ctx._notify_management_whatsapp(tenant, f"⚠️ Low stock:\n{lines}")
+            for i in new_items:
+                svc.audit_log.record(
+                    tenant_id=tenant.tenant_id, actor_employee_id=None, action="inventory_low_stock_flagged",
+                    target_type="inventory_item", target_id=f"inventory:{i.ingredient_key}",
+                    metadata={"ingredient_name": i.ingredient_name, "quantity_on_hand": i.quantity_on_hand, "par_level": i.par_level},
                 )
             notified.append(tenant.tenant_id)
             if sent_count == 0:

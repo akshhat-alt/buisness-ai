@@ -54,3 +54,10 @@ EVOLUTION_SANDBOX_SAMPLE_SIZE = 5  # historical questions replayed (never to a r
 EVOLUTION_MONITORING_MIN_HOURS_ACTIVE = 24  # give a promoted version a full day of real traffic before judging it
 EVOLUTION_MONITORING_MIN_SAMPLE = 5  # per window (pre- and post-activation) before a rate comparison is trusted
 EVOLUTION_MONITORING_REGRESSION_DELTA = 0.15  # a 15-point rise in dissatisfaction rate triggers automatic rollback
+
+# Phase 17 — Restaurant Foundation (inventory.py). A low-stock ingredient
+# is a same-day operational problem, not a slow-moving one — shorter than
+# DEPENDENCY_RISK_RENOTIFY_HOURS's 7 days on purpose, so a still-low
+# ingredient gets re-flagged daily rather than going quiet for a week
+# while the kitchen keeps running short.
+INVENTORY_ALERT_RENOTIFY_HOURS = 24

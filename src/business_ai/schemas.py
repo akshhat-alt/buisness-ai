@@ -141,3 +141,41 @@ class TenantDeleteRequest(BaseModel):
     # CURRENT business_name exactly (case-sensitive).
     confirm_business_name: str
 
+
+# ---------------------------------------------------------- Restaurant Foundation (Phase 17)
+
+
+class CreateMenuItemRequest(BaseModel):
+    name: str
+    price_inr: int
+    category: str | None = None
+
+
+class UpdateMenuItemRequest(BaseModel):
+    name: str | None = None
+    price_inr: int | None = None
+    category: str | None = None
+    active: bool | None = None
+
+
+class RecipeLineInput(BaseModel):
+    ingredient_name: str
+    quantity: float
+    unit: str
+
+
+class SetRecipeRequest(BaseModel):
+    lines: list[RecipeLineInput]
+
+
+class CreateSupplierRequest(BaseModel):
+    name: str
+    phone: str | None = None
+    notes: str | None = None
+
+
+class SetInventoryParLevelRequest(BaseModel):
+    ingredient_name: str
+    par_level: float
+    unit: str | None = None
+

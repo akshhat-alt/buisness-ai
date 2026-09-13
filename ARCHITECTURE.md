@@ -16,11 +16,11 @@ runtime:
 
 | Pattern | Shri AI origin | Business AI adaptation |
 |---|---|---|
-| Fail-closed tenant isolation via a single `authorize()` chokepoint | `tenant/authorization.py` | `tenant.py` — simplified to 3 roles (owner/staff/platform_admin) instead of Shri AI's broader role set |
+| Fail-closed tenant isolation via a single `authorize()` chokepoint | `tenant/authorization.py` | `tenant.py` — simplified to 4 tenant-scoped/platform roles (owner/manager/staff, plus platform_admin) instead of Shri AI's broader role set |
 | RAG: chunk → embed → retrieve → pre-LLM abstention gate → post-LLM citation/hallucination validator | `generation/{gates,validator}.py`, `retrieval/*` | `generation.py`, `retrieval.py` — same mechanics, first-person business-voice prompt instead of third-person teaching interpreter, plus two new structured-output fields (`shows_buying_intent`, `suggested_handoff`) driving lead capture/handoff without a second LLM call |
 | SSRF-safe URL fetching (DNS + IP-range blocking, checked on every redirect hop) | `runtime/security.py` | `security.py` — copied near-verbatim; this exact guard is already proven |
 | Atomic SQLite quota reservation (single-statement UPDATE, no race window) | `runtime/usage_limiter.py` | `usage_limiter.py` — Redis/distributed mode deliberately dropped; single Railway instance doesn't need it |
-| PBKDF2 password hashing, JWT principals | `runtime/auth.py` | `auth.py` — trimmed to 3 roles, no password-reset-token flow (no email delivery exists yet) |
+| PBKDF2 password hashing, JWT principals | `runtime/auth.py` | `auth.py` — trimmed role set; transactional email exists since V1.1 (`email_sender.py`) but there is still no password-*reset-token* flow (a distinct feature: token generation/expiry, a reset page) |
 
 Nothing at runtime imports across the two projects. If Shri AI's code
 changes, Business AI is unaffected, and vice versa.
@@ -116,6 +116,17 @@ src/business_ai/
   leads.py        Lead capture (SQLite) + appointment/reminder/reengagement/
                   winback/deposit tracking fields and query methods
   analytics.py    Conversation turn logging + summary (SQLite)
+  email_sender.py  Thin Resend API client — the one place any HTML
+                  email actually gets sent from
+  alerts.py       Instant, event-triggered emails (a dissatisfaction
+                  alert, a review request, task escalation) — fired
+                  synchronously from the request path that detected the
+                  trigger, never from a cron. Kept separate from
+                  digest.py because these are a different kind of thing:
+                  one-off reactions to a single event, not a rollup
+  digest.py       The owner's scheduled daily summary email — pure
+                  presentation over AnalyticsStore/LeadStore output, no
+                  new data model
   whatsapp.py     WhatsApp Cloud API: webhook parsing/signature, send client,
                   redelivery idempotency (WhatsAppInboxStore), and
                   MetaEmbeddedSignupClient (one-click onboarding's OAuth
@@ -171,6 +182,27 @@ src/business_ai/
   revenue_radar.py  Phase 15: Revenue Leakage Radar — missed buying
                   intent, unpaid deposits, no-shows; no new store,
                   reuses fields the existing automations already key off
+  menu.py         Phase 17 (Restaurant Foundation): MenuStore — menu
+                  items and their recipes (bill of materials), one
+                  aggregate/two tables; ingredient identity is a
+                  normalized name reusing dependency_graph.py's own
+                  `_normalize_title` idiom (as normalize_ingredient_name)
+  inventory.py    Phase 17: InventoryStore — ingredient-level stock,
+                  keyed by the same normalized name; the only two ways
+                  quantity_on_hand ever changes are a purchase receipt
+                  or a depletion (sale/wastage), never a direct edit.
+                  Fails closed (UnitMismatchError) on a unit that
+                  conflicts with how an ingredient is already tracked,
+                  rather than silently computing a wrong quantity
+  suppliers.py    Phase 17: SupplierStore — the supplier directory
+  purchases.py    Phase 17: PurchaseStore — purchase receipts (NOT a
+                  full purchase-order lifecycle with draft/sent/received
+                  states — that's a later, separate decision); each
+                  receipt also increments InventoryStore
+  wastage.py      Phase 17: WastageStore — wastage entries with an
+                  honestly-estimated cost (0 when there's no purchase
+                  history for that ingredient yet, never guessed);
+                  depletes InventoryStore the same way a sale does
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -195,8 +227,12 @@ src/business_ai/
                   trigger/list, detailed health, data integrity),
                   revenue_radar_routes (Phase 15), scorecard_routes
                   (Phase 16: on-demand read of scorecard.py's data,
-                  zero side effects) — see app.py's create_app() for
-                  wiring
+                  zero side effects), restaurant_routes (Phase 17:
+                  menu/recipe/supplier/inventory setup CRUD — API/
+                  dashboard-driven, deliberately not a WhatsApp grammar;
+                  the high-frequency log sale/purchase/waste commands
+                  live in admin_bot.py instead) — see app.py's
+                  create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -207,7 +243,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (491 tests) — see README.md
+tests/            pytest suite (564 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,
@@ -225,7 +261,8 @@ already in the right places:
 
 - **New channels**: WhatsApp is now built this exact way — `whatsapp.py`
   is a thin adapter (webhook parsing, signature verification, an HTTP
-  send client) and `app.py`'s `_process_question()` is the one grounded-
+  send client) and `routers/admin_bot.py`'s `_process_question()` (moved
+  here from `app.py` in the Phase 9 router split) is the one grounded-
   answer pipeline both the website widget and the WhatsApp webhook call;
   neither the RAG/auth/tenant core nor `/api/ask` itself had to change.
   The same shape applies to a future channel (SMS, Instagram DM): a new

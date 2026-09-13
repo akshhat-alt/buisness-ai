@@ -161,6 +161,13 @@ class TenantAction(str, Enum):
     # over WhatsApp); VIEWING the aggregated total is the gated part,
     # owner+manager only, like VIEW_FEEDBACK.
     VIEW_FINANCIALS = "view_financials"
+    # Restaurant Foundation (Phase 17) — see menu.py/suppliers.py.
+    # Menu/recipe/supplier setup is config, not a quick floor action —
+    # owner+manager, same sensitivity tier as VIEW_FINANCIALS. Logging a
+    # purchase/wastage/dish-sale over WhatsApp needs no permission check
+    # at all, identical shape to Phase 12's financial log commands.
+    MANAGE_MENU = "manage_menu"
+    VIEW_INVENTORY = "view_inventory"
 
 
 OWNER_ACTIONS = frozenset(
@@ -181,6 +188,8 @@ OWNER_ACTIONS = frozenset(
         TenantAction.VIEW_AUTOMATION,
         TenantAction.MANAGE_EVOLUTION,
         TenantAction.VIEW_FINANCIALS,
+        TenantAction.MANAGE_MENU,
+        TenantAction.VIEW_INVENTORY,
     }
 )
 

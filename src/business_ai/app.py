@@ -54,7 +54,9 @@ from business_ai.constants import DATA_ROOT, STATIC_DIR
 from business_ai.employees import EmployeeStore
 from business_ai.evolution import EvolutionEvaluationStore, EvolutionProposalStore, EvolutionVersionStore
 from business_ai.feedback import FeedbackStore
+from business_ai.inventory import InventoryStore
 from business_ai.memory import SopStore
+from business_ai.menu import MenuStore
 from business_ai.metrics import BusinessMetricStore
 from business_ai.email_sender import EmailSender
 from business_ai.config import Settings, load_settings, validate_environment
@@ -63,11 +65,14 @@ from business_ai.ingestion import SourceStore
 from business_ai.leads import LeadStore
 from business_ai.observability import RequestContextMiddleware, configure_logging
 from business_ai.payments import RazorpayClient
+from business_ai.purchases import PurchaseStore
 from business_ai.rate_limiting import FixedWindowRateLimiter, RateLimitMiddleware
 from business_ai.retrieval import OpenAIEmbeddingProvider, VectorStore
 from business_ai.routing_context import RouteContext
+from business_ai.suppliers import SupplierStore
 from business_ai.tasks import TaskStore
 from business_ai.tenant import TenantRegistry
+from business_ai.wastage import WastageStore
 from business_ai.usage_limiter import UsageLimiter
 from business_ai.whatsapp import MetaEmbeddedSignupClient, WhatsAppClient, WhatsAppInboxStore
 from business_ai.auth import UserStore
@@ -85,6 +90,7 @@ from business_ai.routers.knowledge_routes import register_knowledge
 from business_ai.routers.leads_routes import register_leads
 from business_ai.routers.metrics_routes import register_metrics
 from business_ai.routers.ops_routes import register_ops
+from business_ai.routers.restaurant_routes import register_restaurant
 from business_ai.routers.revenue_radar_routes import register_revenue_radar
 from business_ai.routers.scorecard_routes import register_scorecard
 from business_ai.routers.static_pages import register_static_pages
@@ -125,6 +131,11 @@ class Services:
         self.evolution_proposals = EvolutionProposalStore(data_root / "evolution_proposals.db")
         self.evolution_evaluations = EvolutionEvaluationStore(data_root / "evolution_evaluations.db")
         self.metric_store = BusinessMetricStore(data_root / "metrics.db")
+        self.menu_store = MenuStore(data_root / "menu.db")
+        self.inventory_store = InventoryStore(data_root / "inventory.db")
+        self.supplier_store = SupplierStore(data_root / "suppliers.db")
+        self.purchase_store = PurchaseStore(data_root / "purchases.db")
+        self.wastage_store = WastageStore(data_root / "wastage.db")
 
     def embeddings(self):
         return OpenAIEmbeddingProvider(model_name=self.settings.embedding_model, api_key=_openai_key())
@@ -244,6 +255,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     register_dependency(app, svc, ctx)
     register_evolution(app, svc, ctx)
     register_metrics(app, svc, ctx)
+    register_restaurant(app, svc, ctx)
     register_ops(app, svc, ctx)
     register_revenue_radar(app, svc, ctx)
     register_scorecard(app, svc, ctx)

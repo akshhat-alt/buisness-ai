@@ -1024,6 +1024,78 @@ Health panel's render path was exercised against the live server with a
 real platform_admin token, correctly reporting every store `"ok"`. 4 new
 tests in `tests/test_scorecard_routes.py` — 491 total, all green.
 
+## What V1.22 adds: Restaurant Foundation (Phase 17)
+
+The first phase of the Restaurant vertical, and the first genuinely new
+business type Business AI understands beyond the original
+salon/clinic-shaped service business. Five new stores
+(`menu.py`, `inventory.py`, `suppliers.py`, `purchases.py`,
+`wastage.py`), all following the exact `SqliteStore` pattern every
+earlier store uses — no new architecture, no framework change.
+
+**Menu &amp; recipes**: a `MenuItem` and its `RecipeLine`s (ingredient +
+quantity per dish) are one aggregate, set up via the dashboard/API
+(`POST /api/menu/items`, `POST /api/menu/items/{id}/recipe`) — a
+deliberate choice: entering a whole menu is a one-time bulk task, not
+the quick, repeated, on-the-floor action WhatsApp commands are for.
+
+**Inventory &amp; stock depletion**: `InventoryStore` tracks ingredient-
+level stock, keyed by a normalized ingredient name reusing
+`dependency_graph.py`'s own `_normalize_title` idiom (as
+`normalize_ingredient_name`) — "Chicken Breast" and "chicken   breast"
+are the same ingredient. Logging a dish sale over WhatsApp
+(`log sale butter chicken x2`) auto-prices from the menu and
+automatically depletes every ingredient in that dish's recipe.
+
+**Purchases &amp; wastage**: `log purchase 10 kg chicken ₹4200 from
+Ramesh` records a receipt and receives the stock; `log waste 2 kg
+paneer: spoiled` records wastage, depletes stock, and estimates a cost
+from that ingredient's own average purchase price — honestly ₹0 when
+there's no purchase history yet, never a guessed number, the same
+discipline as Revenue Radar's own "estimated" figure. All three log
+commands are open to any roster member, no permission check — identical
+shape to Phase 12's `log sale/expense/collection`.
+
+**Low-stock alerts**: `POST /api/v1/admin/inventory-alert/run` follows
+the exact `AuditLogStore`-dedup pattern as Phase 10's dependency-risk
+scan, with a shorter 24-hour renotify window (`INVENTORY_ALERT_RENOTIFY_HOURS`)
+since a low ingredient is a same-day problem, not a slow-moving one.
+
+**Scope decision, stated honestly**: this phase built a purchase
+*receipt* log (`PurchaseStore`), not a full purchase-*order* lifecycle
+(draft → sent → received) — that richer workflow is real, separate
+scope for a later phase (Phase 30's autonomous purchasing builds on
+top of this receipt data, not instead of it).
+
+**Two real bugs found and fixed during this phase's own live
+verification**, both now covered by regression tests:
+- `InventoryStore.adjust_quantity` used to silently accept a mismatched
+  unit for the same ingredient (a 5kg purchase followed by a 200g
+  depletion computed a confidently wrong quantity). Now raises
+  `UnitMismatchError` and refuses the whole WhatsApp command — including
+  never partially recording a purchase/wastage entry that wouldn't
+  actually reflect in stock — rather than silently corrupting a number.
+- A menu item name starting with a digit (a real, plausible dish like
+  "7 Up" or "2 Piece Chicken") would have been misread by the generic
+  numeric `log sale <amount> [note]` grammar. Fixed by checking for a
+  real menu-item match FIRST for any `log sale ...` text, falling back
+  to numeric parsing only when no menu item matches — non-restaurant
+  tenants (with no menu at all) are completely unaffected.
+
+Live-verified end to end against a real running server: a real menu
+item and recipe were created via the API, real stock was received and
+then depleted by a real (simulated) WhatsApp dish sale, the live
+`/api/inventory` and `/api/metrics/summary` endpoints correctly
+reflected the depletion and the ₹700 sale, the low-stock cron correctly
+notified once then deduped on rerun, cross-tenant access was refused,
+the audit trail showed every real restaurant event, and a full tenant
+export/delete correctly included and removed all five new stores. 73
+new tests across `tests/test_menu.py` (12), `tests/test_inventory.py`
+(13), `tests/test_suppliers.py` (6), `tests/test_purchases.py` (7),
+`tests/test_wastage.py` (8), `tests/test_restaurant_routes.py` (8),
+`tests/test_admin_bot_restaurant.py` (15), and
+`tests/test_inventory_alert_cron.py` (4) — 564 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1105,7 +1177,14 @@ business owner's own step, outside this app.
 pytest
 ```
 
-361 tests covering the full HTTP lifecycle (signup → ingest → activate →
+564 tests (and rising — see each phase's own "What Vx.x adds" section
+above for that phase's exact test count and what it covers; this
+section deliberately stops narrating in detail at V1.7 rather than
+re-summarizing every later phase inline, since keeping ONE hand-written
+running narrative in sync with 20+ phases is exactly the kind of
+staleness this codebase's own documentation audit caught once already).
+The foundational V1-V1.7 coverage below still holds exactly as
+described: the full HTTP lifecycle (signup → ingest → activate →
 grounded ask → quota → leads → analytics → tenant isolation), the
 knowledge-gap closer (draft → publish → gap resolves → assistant answers
 from the new FAQ entry), owner digest (sends only to active tenants with
@@ -1538,3 +1617,31 @@ before the prompt/schema was finalized.
   synchronous HTTP call slow without any visible progress indicator.
   Fine at today's per-tenant SQLite scale; would need a background-job
   pattern (poll a status endpoint) if data volume grows substantially.
+- **Purchases are receipts, not a full purchase-order lifecycle**
+  (Phase 17) — there's no draft → sent → received workflow, no PO status
+  tracking, and no way to record an order before it arrives. `log
+  purchase` is "this stock just arrived," always in the past tense.
+- **No unit conversion between ingredients** (Phase 17) — an ingredient
+  must be logged in ONE consistent unit for its whole lifetime (always
+  grams, or always kg, never mixed); `InventoryStore.adjust_quantity`
+  fails closed with `UnitMismatchError` rather than silently converting
+  or corrupting the number, but there's no "500g = 0.5kg" reconciliation
+  built. An owner who needs to switch units must currently do so
+  deliberately via the `POST /api/inventory/par-level` route (the one
+  place a unit change is allowed to overwrite).
+- **Recipe-based depletion has no undo.** Editing or deleting a logged
+  dish sale doesn't currently exist, so a mis-logged sale's stock
+  depletion can't be reversed except by manually logging a compensating
+  purchase — the same "no edit/delete" limitation Phase 12's financial
+  ledger already has, now inherited by dish sales too.
+- **Wastage cost estimates use a simple lifetime average purchase
+  price**, not the most recent price or a FIFO/LIFO costing method — a
+  reasonable approximation for a small kitchen's own use, not
+  accounting-grade inventory valuation.
+- **The `log purchase`/`log waste` WhatsApp grammar requires a specific
+  word order** (`log purchase <qty> <unit> <ingredient> ₹<amount> [from
+  <supplier>]`, `log waste <qty> <unit> <ingredient>[: <reason>]`) —
+  deterministic keyword parsing, same philosophy as Phase 0's task
+  commands and the same tradeoff: 100% predictable and free, but "log 10
+  kg of chicken, four thousand two hundred rupees" in free-form natural
+  language doesn't parse yet.

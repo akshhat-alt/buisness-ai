@@ -75,6 +75,7 @@ from business_ai.generation import (
     validate_llm_draft,
 )
 from business_ai.ingestion import IngestionError, SourceStore, extract_pdf_text, fetch_website_text, ingest_text
+from business_ai.inventory import UnitMismatchError
 from business_ai.leads import Lead, LeadStore, lead_stage
 from business_ai.payments import PaymentLinkError, RazorpayClient, verify_razorpay_webhook_signature
 from business_ai.retrieval import OpenAIEmbeddingProvider, RetrievalEngine, VectorStore
@@ -125,6 +126,21 @@ _ADMIN_MARK_OUTCOME_RE = re.compile(r"^mark\s+(completed|no-show|no_show|cancell
 # Phase 12: "log sale 1500 haircut", "log expense 300", "log collection 2000 deposit"
 _ADMIN_LOG_METRIC_RE = re.compile(r"^log\s+(sale|expense|collection)\s+([\d,]+(?:\.\d+)?)(?:\s+(.+))?$", re.IGNORECASE | re.DOTALL)
 _OUTCOME_ALIASES = {"no-show": "no_show", "no_show": "no_show", "cancelled": "cancelled", "canceled": "cancelled", "completed": "completed"}
+# Phase 17 (Restaurant Foundation): "log sale butter chicken x2". This
+# deliberately matches ANY "log sale <text>", including one starting
+# with a digit (a real menu item like "7 Up" or "2 Piece Chicken") — the
+# caller checks whether the text resolves to a real menu item FIRST and
+# only falls back to _ADMIN_LOG_METRIC_RE's numeric-amount grammar when
+# it doesn't, rather than trying to exclude digit-leading text by
+# pattern (which would silently misread a real numbered dish name).
+_ADMIN_LOG_DISH_SALE_RE = re.compile(r"^log\s+sale\s+(.+?)(?:\s+x\s?(\d+))?$", re.IGNORECASE)
+# "log purchase 10 kg chicken ₹4200 from Ramesh"
+_ADMIN_LOG_PURCHASE_RE = re.compile(
+    r"^log\s+purchase\s+([\d.]+)\s+(\S+)\s+(.+?)\s+₹\s?([\d,]+(?:\.\d+)?)(?:\s+from\s+(.+))?$", re.IGNORECASE
+)
+# "log waste 500 g paneer: spoiled" — colon-separated optional reason,
+# the same idiom already established by "approve sop <theme>: <text>".
+_ADMIN_LOG_WASTE_RE = re.compile(r"^log\s+waste\s+([\d.]+)\s+(\S+)\s+([^:]+?)(?:\s*:\s*(.+))?$", re.IGNORECASE)
 
 _FEEDBACK_THEME_LABELS = {
     "equipment_or_supplies": "Equipment/supplies",
@@ -162,6 +178,10 @@ def _admin_bot_help_text() -> str:
         "• log sale/expense/collection <amount> [note] — record a manual entry\n"
         "• financials / sales report — last 30 days manual totals (owner/manager)\n"
         "• revenue radar / leakage — missed bookings, unpaid deposits, no-shows (owner/manager)\n"
+        "• log sale <dish> [x<qty>] — log a menu-item sale (auto-priced, depletes stock)\n"
+        "• log purchase <qty> <unit> <ingredient> ₹<amount> [from <supplier>]\n"
+        "• log waste <qty> <unit> <ingredient> [: <reason>]\n"
+        "• inventory / stock — items below par level (owner/manager)\n"
         "\nOr just type naturally — I'll do my best to understand "
         "(except money/outcome confirmations, which always need the exact commands above)."
     )
@@ -1165,7 +1185,21 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             reply(f"✅ Recorded {lead.name or lead.phone or lead.email}'s appointment as {outcome.replace('_', ' ')}.")
             return True
 
-        log_metric_match = _ADMIN_LOG_METRIC_RE.match(raw)
+        # Dish-name lookup takes precedence over the generic numeric
+        # grammar for "log sale ..." — checked FIRST, matching ANY text
+        # (including one that starts with a digit, e.g. a real menu item
+        # like "7 Up" or "2 Piece Chicken"). Only when this text does
+        # NOT match a real menu item do we fall through to the generic
+        # "log sale <amount> [note]" parsing below — a real bug caught
+        # in this phase's own live verification: without this ordering,
+        # "log sale 7 up x2" would have been silently misread as a ₹7
+        # sale with note "up x2" instead of 2x a real "7 Up" menu item.
+        dish_sale_match = _ADMIN_LOG_DISH_SALE_RE.match(raw)
+        dish_menu_item = None
+        if dish_sale_match:
+            dish_menu_item = svc.menu_store.find_by_name(tenant.tenant_id, dish_sale_match.group(1).strip())
+
+        log_metric_match = _ADMIN_LOG_METRIC_RE.match(raw) if dish_menu_item is None else None
         if log_metric_match:
             metric_type, amount_text, note = log_metric_match.group(1).lower(), log_metric_match.group(2), log_metric_match.group(3)
             try:
@@ -1186,6 +1220,137 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 metadata={"metric_type": metric_type, "amount_inr": amount},
             )
             reply(f"✅ Logged {metric_type}: ₹{amount}" + (f" — {note.strip()}" if note else "") + ".")
+            return True
+
+        if dish_sale_match:
+            dish_name, qty_text = dish_sale_match.group(1).strip(), dish_sale_match.group(2)
+            quantity = int(qty_text) if qty_text else 1
+            menu_item = dish_menu_item
+            if menu_item is None:
+                reply(
+                    f'Couldn\'t find "{dish_name}" on the menu, and it doesn\'t look like "log sale <amount> [note]" either. '
+                    f'Add "{dish_name}" to the menu from the dashboard first, or use "log sale <amount> [note]" for a non-menu sale.'
+                )
+                return True
+            amount = menu_item.price_inr * quantity
+            metric = svc.metric_store.record(
+                tenant_id=tenant.tenant_id, metric_type="sale", amount_inr=amount, note=f"{quantity}x {menu_item.name}",
+                reported_by_employee_id=employee.employee_id, menu_item_id=menu_item.menu_item_id, quantity=quantity,
+            )
+            # Recipe-based stock depletion is a best-effort side effect —
+            # a failure here must never undo or block the sale record
+            # itself, same "the primary action always wins" discipline
+            # as every other best-effort push in this codebase.
+            depleted_any = False
+            for line in svc.menu_store.get_recipe(tenant.tenant_id, menu_item.menu_item_id):
+                try:
+                    svc.inventory_store.adjust_quantity(tenant.tenant_id, line.ingredient_name, delta=-(line.quantity * quantity), unit=line.unit)
+                    depleted_any = True
+                except Exception as exc:  # noqa: BLE001 - depletion must never block the sale itself
+                    logger.warning("Stock depletion failed for tenant %s ingredient %s: %s", tenant.tenant_id, line.ingredient_name, exc)
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="dish_sale_logged",
+                target_type="business_metric", target_id=metric.metric_id,
+                metadata={"menu_item_id": menu_item.menu_item_id, "quantity": quantity, "amount_inr": amount},
+            )
+            reply(f"✅ Logged sale: {quantity}x {menu_item.name} — ₹{amount}." + (" Stock updated." if depleted_any else ""))
+            return True
+
+        purchase_match = _ADMIN_LOG_PURCHASE_RE.match(raw)
+        if purchase_match:
+            qty_text, unit, ingredient, amount_text, supplier_name = purchase_match.groups()
+            ingredient = ingredient.strip()
+            try:
+                quantity = float(qty_text)
+                amount = int(round(float(amount_text.replace(",", ""))))
+            except ValueError:
+                reply('Couldn\'t read that purchase. Try "log purchase 10 kg chicken ₹4200 from Ramesh".')
+                return True
+            if quantity <= 0:
+                reply("Quantity must be a positive number.")
+                return True
+            # Adjust inventory FIRST: if the unit conflicts with how this
+            # ingredient is already tracked, reject the whole command
+            # before recording anything — a purchase logged but not
+            # reflected in stock (because the unit check failed after
+            # the fact) would be worse than not logging it at all.
+            try:
+                svc.inventory_store.adjust_quantity(tenant.tenant_id, ingredient, delta=quantity, unit=unit)
+            except UnitMismatchError as exc:
+                reply(f"⚠️ {exc}")
+                return True
+            supplier = svc.supplier_store.find_by_name(tenant.tenant_id, supplier_name) if supplier_name else None
+            purchase = svc.purchase_store.record(
+                tenant_id=tenant.tenant_id, ingredient_name=ingredient, quantity=quantity, unit=unit, amount_inr=amount,
+                supplier_id=supplier.supplier_id if supplier else None, reported_by_employee_id=employee.employee_id,
+            )
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="purchase_logged",
+                target_type="purchase", target_id=purchase.purchase_id,
+                metadata={"ingredient_name": ingredient, "quantity": quantity, "amount_inr": amount},
+            )
+            reply(
+                f"✅ Logged purchase: {quantity:g}{unit} {ingredient} — ₹{amount}"
+                + (f" from {supplier_name.strip()}" if supplier_name else "") + "."
+            )
+            return True
+
+        waste_match = _ADMIN_LOG_WASTE_RE.match(raw)
+        if waste_match:
+            qty_text, unit, ingredient, reason = waste_match.groups()
+            ingredient = ingredient.strip()
+            try:
+                quantity = float(qty_text)
+            except ValueError:
+                reply('Couldn\'t read that quantity. Try "log waste 500 g paneer: spoiled".')
+                return True
+            if quantity <= 0:
+                reply("Quantity must be a positive number.")
+                return True
+            # Best-effort cost estimate from this ingredient's own average
+            # purchase price — honestly ₹0 when there's no purchase
+            # history yet, never a guessed number (same discipline as
+            # Revenue Radar's "estimated" figure).
+            purchase_summary = svc.purchase_store.sum_for_ingredient(tenant.tenant_id, ingredient)
+            estimated_cost = 0
+            if purchase_summary["total_quantity"] > 0:
+                estimated_cost = round(purchase_summary["total_amount_inr"] / purchase_summary["total_quantity"] * quantity)
+            # Adjust inventory FIRST — same reasoning as the purchase
+            # handler above: never record a wastage entry that doesn't
+            # actually reflect in stock because of a unit conflict.
+            try:
+                svc.inventory_store.adjust_quantity(tenant.tenant_id, ingredient, delta=-quantity, unit=unit)
+            except UnitMismatchError as exc:
+                reply(f"⚠️ {exc}")
+                return True
+            entry = svc.wastage_store.record(
+                tenant_id=tenant.tenant_id, ingredient_name=ingredient, quantity=quantity, unit=unit,
+                reason=(reason or "other").strip(), estimated_cost_inr=estimated_cost,
+                reported_by_employee_id=employee.employee_id,
+            )
+            svc.audit_log.record(
+                tenant_id=tenant.tenant_id, actor_employee_id=employee.employee_id, action="wastage_logged",
+                target_type="wastage_entry", target_id=entry.wastage_id,
+                metadata={"ingredient_name": ingredient, "quantity": quantity, "reason": entry.reason},
+            )
+            reply(
+                f"✅ Logged waste: {quantity:g}{unit} {ingredient} ({entry.reason})"
+                + (f" — est. ₹{estimated_cost}" if estimated_cost else "") + "."
+            )
+            return True
+
+        if clean in ("inventory", "stock"):
+            if not can_manage:
+                reply("Only an owner or manager can view inventory.")
+                return True
+            low_stock = svc.inventory_store.list_low_stock(tenant.tenant_id)
+            if not low_stock:
+                reply("✅ Nothing below par level right now. Try \"log purchase\" to receive stock, or set par levels from the dashboard.")
+                return True
+            lines = ["⚠️ Low stock:"]
+            for item in low_stock:
+                lines.append(f"• {item.ingredient_name}: {item.quantity_on_hand:g}{item.unit} (par {item.par_level:g}{item.unit})")
+            reply("\n".join(lines))
             return True
 
         if clean in ("financials", "sales report"):

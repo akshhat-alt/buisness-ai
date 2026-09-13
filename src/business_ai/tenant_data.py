@@ -50,6 +50,11 @@ def export_tenant_data(svc, tenant_id: str) -> dict:
         "evolution_versions": [v.model_dump() for v in svc.evolution_versions.list_for_tenant(tenant_id)],
         "evolution_proposals": [p.model_dump() for p in svc.evolution_proposals.list_for_tenant(tenant_id)],
         "business_metrics": [m.model_dump() for m in svc.metric_store.list_for_tenant(tenant_id, limit=100000)],
+        "menu_items": [i.model_dump() for i in svc.menu_store.list_for_tenant(tenant_id)],
+        "inventory": [i.model_dump() for i in svc.inventory_store.list_for_tenant(tenant_id)],
+        "suppliers": [s.model_dump() for s in svc.supplier_store.list_for_tenant(tenant_id)],
+        "purchases": [p.model_dump() for p in svc.purchase_store.list_for_tenant(tenant_id, limit=100000)],
+        "wastage": [w.model_dump() for w in svc.wastage_store.list_for_tenant(tenant_id, limit=100000)],
     }
 
 
@@ -77,6 +82,11 @@ def delete_tenant_data(svc, tenant_id: str) -> dict:
         "evolution_proposals": svc.evolution_proposals.delete_for_tenant(tenant_id),
         "evolution_evaluations": svc.evolution_evaluations.delete_for_tenant(tenant_id),
         "business_metrics": svc.metric_store.delete_for_tenant(tenant_id),
+        "menu_items": svc.menu_store.delete_for_tenant(tenant_id),
+        "inventory": svc.inventory_store.delete_for_tenant(tenant_id),
+        "suppliers": svc.supplier_store.delete_for_tenant(tenant_id),
+        "purchases": svc.purchase_store.delete_for_tenant(tenant_id),
+        "wastage": svc.wastage_store.delete_for_tenant(tenant_id),
     }
     svc.vector_store.delete_tenant(tenant_id)
     deleted["tenant_config"] = 1 if svc.tenant_registry.delete(tenant_id) else 0

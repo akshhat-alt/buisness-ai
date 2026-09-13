@@ -15,6 +15,7 @@ data-entry action.
 from __future__ import annotations
 
 import secrets
+import sqlite3
 import time
 from pathlib import Path
 
@@ -33,6 +34,13 @@ class BusinessMetric(BaseModel):
     note: str = ""
     reported_by_employee_id: str | None = None
     source: str = "manual"  # always "manual" today — see module docstring
+    # Phase 17 (Restaurant Foundation): set only for a dish sale logged via
+    # "log sale <dish> [x<qty>]" — lets Phase 22's food-cost/menu-engineering
+    # intelligence query "every sale of this dish" directly from the SAME
+    # ledger every other financial number already comes from, rather than
+    # inventing a second, parallel "orders" table that could drift from it.
+    menu_item_id: str | None = None
+    quantity: float | None = None
     created_at: str
 
 
@@ -65,11 +73,20 @@ class BusinessMetricStore(SqliteStore):
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metrics_tenant ON business_metrics(tenant_id)")
+            # Additive columns added after the table's initial shape (Phase
+            # 17) — guarded ALTER TABLE self-heals an existing database
+            # that predates them, same pattern as analytics.py's own
+            # "resolved"/"shows_dissatisfaction" columns.
+            for column_sql in ("menu_item_id TEXT", "quantity REAL"):
+                try:
+                    conn.execute(f"ALTER TABLE business_metrics ADD COLUMN {column_sql}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
             conn.commit()
 
     def record(
         self, *, tenant_id: str, metric_type: str, amount_inr: int, note: str = "",
-        reported_by_employee_id: str | None = None,
+        reported_by_employee_id: str | None = None, menu_item_id: str | None = None, quantity: float | None = None,
     ) -> BusinessMetric:
         if metric_type not in METRIC_TYPES:
             raise ValueError(f"Unknown metric_type: {metric_type!r}. Must be one of {sorted(METRIC_TYPES)}.")
@@ -78,20 +95,34 @@ class BusinessMetricStore(SqliteStore):
         metric = BusinessMetric(
             metric_id=f"metric_{secrets.token_hex(8)}", tenant_id=tenant_id, metric_type=metric_type,
             amount_inr=amount_inr, note=note.strip(), reported_by_employee_id=reported_by_employee_id,
+            menu_item_id=menu_item_id, quantity=quantity,
             created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         )
         with self._lock, self._db() as conn:
             conn.execute(
                 "INSERT INTO business_metrics "
-                "(metric_id, tenant_id, metric_type, amount_inr, note, reported_by_employee_id, source, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(metric_id, tenant_id, metric_type, amount_inr, note, reported_by_employee_id, source, menu_item_id, quantity, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     metric.metric_id, metric.tenant_id, metric.metric_type, metric.amount_inr, metric.note,
-                    metric.reported_by_employee_id, metric.source, metric.created_at,
+                    metric.reported_by_employee_id, metric.source, metric.menu_item_id, metric.quantity, metric.created_at,
                 ),
             )
             conn.commit()
         return metric
+
+    def list_dish_sales(self, tenant_id: str, menu_item_id: str, *, since_iso: str | None = None) -> list[BusinessMetric]:
+        """Every logged sale of one specific dish — the raw material
+        Phase 22's food-cost/menu-engineering intelligence reads. Reads
+        the SAME ledger every other financial number comes from."""
+        clause = "tenant_id = ? AND metric_type = 'sale' AND menu_item_id = ?"
+        params: list = [tenant_id, menu_item_id]
+        if since_iso:
+            clause += " AND created_at >= ?"
+            params.append(since_iso)
+        with self._lock, self._db() as conn:
+            rows = conn.execute(f"SELECT * FROM business_metrics WHERE {clause} ORDER BY created_at DESC", params).fetchall()
+            return [BusinessMetric(**dict(r)) for r in rows]
 
     def list_for_tenant(
         self, tenant_id: str, *, metric_type: str | None = None, since_iso: str | None = None,
