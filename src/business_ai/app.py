@@ -83,6 +83,7 @@ from business_ai.routers.admin_bot import register_admin_bot
 from business_ai.routers.admin_routes import register_admin
 from business_ai.routers.automation_routes import register_automation
 from business_ai.routers.auth_routes import register_auth
+from business_ai.routers.business_query_routes import register_business_query
 from business_ai.routers.customer_routes import register_customer
 from business_ai.routers.dependency_routes import register_dependency
 from business_ai.routers.evolution_routes import register_evolution
@@ -250,6 +251,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     # time, long after every register_* call below has returned — but
     # this order keeps the wiring easy to read top-to-bottom.
     register_admin_bot(app, svc, ctx)
+    register_business_query(app, svc, ctx)
     register_auth(app, svc, ctx)
     register_customer(app, svc, ctx)
     register_leads(app, svc, ctx)

@@ -117,7 +117,11 @@ src/business_ai/
                   method, not a new vendor) and extract_receipt_data()
                   (OpenAI vision input; every field is None unless
                   clearly legible, same "never invent a number"
-                  discipline as purchases.py/wastage.py)
+                  discipline as purchases.py/wastage.py). Phase 26
+                  extended EMPLOYEE_REPORT_TYPES from 5 to 17 values —
+                  classify_employee_message()'s report_request intent
+                  now recognizes every read-only report the app can
+                  answer, not just the original five
   ingestion.py    SSRF-safe website fetch, PDF text extraction, SourceStore
   leads.py        Lead capture (SQLite) + appointment/reminder/reengagement/
                   winback/deposit tracking fields and query methods.
@@ -294,6 +298,17 @@ src/business_ai/
                   "bring your own" like WhatsApp/Razorpay) and a manual
                   paste-in for Zomato/Swiggy (no public review-pull API
                   either has)
+  business_query.py  Phase 26 (Ask Your Business Anything): maps
+                  generation.py's expanded report_request taxonomy to
+                  the ALREADY-EXISTING builder+render pair for 9 report
+                  types with a standalone render_*_whatsapp() function
+                  to reuse, each gated by the exact TenantAction its
+                  equivalent GET route already checks — no new
+                  computation, only a routing layer used by
+                  routers/business_query_routes.py (the dashboard query
+                  bar) independently of admin_bot.py's own WhatsApp NL
+                  fallback, which reuses the same classifier/taxonomy
+                  via its own small _REPORT_TYPE_TO_COMMAND mapping
   formatting.py   Pure formatting/parsing helpers with no store/ctx
                   dependency (appointment time parsing, WhatsApp links)
   schemas.py      Every HTTP request/response Pydantic model
@@ -358,8 +373,11 @@ src/business_ai/
                   POST /api/reviews/manual, both VIEW_FINANCIALS-gated —
                   same tier as POST /api/metrics) and
                   POST /api/v1/admin/review-sync/run to admin_routes.py
-                  (platform_admin-only, the Google Places sync cron)
-                  — see app.py's create_app() for wiring
+                  (platform_admin-only, the Google Places sync cron).
+                  Phase 26 added business_query_routes.py
+                  (POST /api/business-query, the dashboard NL query bar,
+                  registered right after admin_bot.py since it reuses
+                  ctx._require) — see app.py's create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -370,7 +388,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (775 tests) — see README.md
+tests/            pytest suite (797 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

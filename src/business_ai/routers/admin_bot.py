@@ -182,6 +182,23 @@ _ADMIN_LOG_REVIEW_RE = re.compile(r"^log\s+review\s+(\S+)\s+([\d.]+)(?:\s+(\d+))
 # price so a dish name containing digits (e.g. "7 Up") still parses.
 _ADMIN_SIMULATE_PRICE_RE = re.compile(r"^simulate\s+price\s+(.+?)\s+(\d+)$", re.IGNORECASE)
 
+# Phase 26 (Ask Your Business Anything): classify_employee_message's
+# report_type values (generation.py's EMPLOYEE_REPORT_TYPES) translated
+# to the exact deterministic command phrase _try_deterministic_admin_command
+# matches on — most report types ARE already the right phrase (e.g.
+# "reorder", "reservations"), only the ones below differ.
+_REPORT_TYPE_TO_COMMAND = {
+    "feedback_themes": "feedback themes",
+    "sales": "financials",
+    "food_cost": "food cost",
+    "repeat_customers": "repeat customers",
+    "supplier_spend": "supplier spend",
+    "gm_report": "gm report",
+    "menu_recommendations": "menu recommendations",
+    "revenue_leakage": "revenue radar",
+    "shifts_today": "shifts",
+}
+
 _FEEDBACK_THEME_LABELS = {
     "equipment_or_supplies": "Equipment/supplies",
     "software_or_tools": "Software/tools",
@@ -1973,7 +1990,7 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             return
 
         if classification.intent == "report_request" and classification.report_type:
-            mapped = "feedback themes" if classification.report_type == "feedback_themes" else classification.report_type
+            mapped = _REPORT_TYPE_TO_COMMAND.get(classification.report_type, classification.report_type)
             if _try_deterministic_admin_command(tenant, employee, mapped, mapped, can_manage, message_id, reply):
                 return
 

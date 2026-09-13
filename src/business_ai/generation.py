@@ -279,7 +279,19 @@ class ToneAdjustmentDraft(BaseModel):
 
 EMPLOYEE_INTENTS = ("assign_task", "task_status_update", "feedback", "report_request", "other")
 EMPLOYEE_STATUS_WORDS = ("start", "done", "blocked", "cancel", "approve", "reject")
-EMPLOYEE_REPORT_TYPES = ("today", "tasks", "overdue", "feedback_themes", "scorecard")
+# Phase 26 — Ask Your Business Anything: extended from the original five
+# (today/tasks/overdue/feedback_themes/scorecard) to cover every read-
+# only report this app can now honestly answer, so a free-form owner
+# question ("what's our food cost looking like?") routes to the SAME
+# existing deterministic report/render function a typed command already
+# uses — never a new computation, only a wider set of things this
+# router can recognize and point at.
+EMPLOYEE_REPORT_TYPES = (
+    "today", "tasks", "overdue", "feedback_themes", "scorecard",
+    "sales", "food_cost", "reorder", "reservations", "repeat_customers",
+    "supplier_spend", "reviews", "gm_report", "menu_recommendations",
+    "revenue_leakage", "inventory", "shifts_today",
+)
 
 
 class EmployeeCommandIntent(BaseModel):
@@ -817,9 +829,19 @@ class OpenAIGenerationProvider:
             "- feedback: a concern, complaint, or suggestion about how work/the business runs "
             "that is NOT a status update on a specific assigned task. Extract feedback_text as "
             "the concern itself, lightly cleaned up but not reworded in meaning.\n"
-            "- report_request: the sender is asking for a summary/status pull. Extract "
-            "report_type as exactly one of: today, tasks, overdue, feedback_themes, scorecard.\n"
-            "- other: greetings, unrelated chat, or anything not covered above.\n"
+            "- report_request: the sender is asking a business question this app can answer from "
+            "its own existing data — a status pull, a metric, a suggestion list. Extract "
+            "report_type as exactly one of: today (open-task-by-owner briefing), tasks, overdue, "
+            "feedback_themes, scorecard (weekly business health), sales (manual sales/expense/"
+            "collection totals), food_cost (dish profitability/menu engineering), reorder "
+            "(ingredients running low), reservations (upcoming bookings), repeat_customers, "
+            "supplier_spend, reviews (rating per platform), gm_report (one-view daily briefing), "
+            "menu_recommendations (pricing/menu suggestions), revenue_leakage (missed bookings/"
+            "unpaid deposits/no-shows), inventory (stock below par level), shifts_today. Pick "
+            "whichever ONE of these the question is actually asking about — never invent a "
+            "report_type not in this list, and never answer the question yourself.\n"
+            "- other: greetings, unrelated chat, or a business question this app has no existing "
+            "report for.\n"
             "Leave every field null except the ones the matched intent above says to extract."
         )
         schema = {

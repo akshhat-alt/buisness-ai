@@ -1653,6 +1653,65 @@ token, and both new review routes correctly 403'd a staff principal.
 `tests/test_whatsapp_media.py`, `tests/test_admin_bot_perception.py`)
 — 775 total, all green.
 
+## What V1.31 adds: Ask Your Business Anything (Phase 26)
+
+A natural-language query interface over structured data this app
+already computes — deliberately NOT a new computation engine, and
+deliberately NOT NL-to-SQL or free-form arbitrary querying (a real
+hallucination/safety risk this codebase has consistently avoided, the
+same discipline that kept Phase 2's alerts a fixed threshold comparison
+instead of an ML anomaly model). Every answer is one of the SAME
+already-existing, already-tested report/render functions Phases 12-25
+built — this phase adds a routing layer, not a new number.
+
+**One classifier, one taxonomy, two channels.** `generation.py`'s
+`classify_employee_message()` (built in Phase 1 for task/feedback
+routing) already had a `report_request` intent with a `report_type`
+enum — `EMPLOYEE_REPORT_TYPES` was just five values (`today`, `tasks`,
+`overdue`, `feedback_themes`, `scorecard`). This phase extended it to
+seventeen, covering every read-only report the app can now honestly
+answer (`sales`, `food_cost`, `reorder`, `reservations`,
+`repeat_customers`, `supplier_spend`, `reviews`, `gm_report`,
+`menu_recommendations`, `revenue_leakage`, `inventory`, `shifts_today`
+added). On WhatsApp, a free-form owner question ("what's our food cost
+looking like?") was ALREADY routed through this exact classifier as a
+fallback when no deterministic command matched — Phase 26 just widened
+what it can recognize, via a new `_REPORT_TYPE_TO_COMMAND` mapping table
+in `admin_bot.py` translating a `report_type` to the exact keyword
+phrase the existing deterministic command dispatcher matches on. Zero
+new WhatsApp command grammar, zero new permission logic — every widened
+report_type reuses the SAME command handler (and the SAME `can_manage`
+gate) a typed command already had.
+
+**A new dashboard query bar reuses the same classifier independently.**
+`business_query.py` maps nine report types (the ones with an existing
+standalone `render_*_whatsapp()` pure function to reuse: food cost,
+reorder, menu recommendations, supplier spend, GM briefing, revenue
+leakage, repeat customers, reviews) to their own already-existing
+builder+render pair, each gated by the EXACT SAME `TenantAction` its
+equivalent `GET` route already checks — never a looser dashboard-only
+permission for the same data. The remaining report types (today, tasks,
+overdue, sales, inventory, shifts_today, reservations, feedback_themes,
+scorecard) have no standalone render function to reuse (their WhatsApp
+rendering is inlined directly in a command handler) — rather than
+duplicate that formatting logic in a second place that could silently
+drift out of sync with the WhatsApp version, the dashboard honestly
+points the caller at the existing section that already shows it live.
+New `POST /api/business-query` route and a "💬 Ask Your Business
+Anything" card at the top of the dashboard's Command Center.
+
+Live-verified against the real running app: a real signed WhatsApp
+webhook question ("do we need to restock anything in the kitchen")
+against a genuinely low-stock, repeatedly-triggered ingredient was
+classified and routed through the full pipeline to the exact same
+reorder-suggestions computation a typed "reorder" command produces; the
+real dashboard route answered the equivalent question with the correct
+suggested par-level bump for the same ingredient through a real owner
+token; and a staff principal was correctly rejected with the same 403
+the equivalent `GET` route would give. 22 new tests
+(`tests/test_admin_bot_nl_query.py`, `tests/test_business_query_routes.py`)
+— 797 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1734,7 +1793,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-775 tests (and rising — see each phase's own "What Vx.x adds" section
+797 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written
