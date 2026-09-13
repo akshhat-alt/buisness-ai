@@ -76,13 +76,18 @@ from business_ai.generation import (
 )
 from business_ai.ingestion import IngestionError, SourceStore, extract_pdf_text, fetch_website_text, ingest_text
 from business_ai.customer_intelligence import build_repeat_customer_report, render_repeat_customers_whatsapp
+from business_ai.digital_gm import build_digital_gm_briefing, render_digital_gm_whatsapp
 from business_ai.inventory import UnitMismatchError
 from business_ai.leads import Lead, LeadStore, lead_stage
 from business_ai.menu_engineering import (
     build_menu_engineering_report,
+    build_menu_recommendations,
     build_reorder_suggestions,
     render_menu_engineering_whatsapp,
+    render_menu_recommendations_whatsapp,
+    render_price_simulation_whatsapp,
     render_reorder_suggestions_whatsapp,
+    simulate_menu_item_price,
 )
 from business_ai.supplier_intelligence import build_supplier_intelligence_report, render_supplier_intelligence_whatsapp
 from business_ai.payments import PaymentLinkError, RazorpayClient, verify_razorpay_webhook_signature
@@ -166,6 +171,11 @@ _ADMIN_SCHEDULE_SHIFT_RE = re.compile(
     r"^schedule\s+(.+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})(?:\s+(.+))?$", re.IGNORECASE
 )
 _ADMIN_CANCEL_SHIFT_RE = re.compile(r"^cancel\s+shift\s+(\S+)$", re.IGNORECASE)
+# Phase 24 (Restaurant Autopilot): "simulate price butter chicken 350" —
+# same last-field-eats-rest-of-string idiom as "log sale <dish> x<qty>",
+# with the trailing token being the one required numeric hypothetical
+# price so a dish name containing digits (e.g. "7 Up") still parses.
+_ADMIN_SIMULATE_PRICE_RE = re.compile(r"^simulate\s+price\s+(.+?)\s+(\d+)$", re.IGNORECASE)
 
 _FEEDBACK_THEME_LABELS = {
     "equipment_or_supplies": "Equipment/supplies",
@@ -217,6 +227,9 @@ def _admin_bot_help_text() -> str:
         "• shifts / shifts today — today's full schedule (owner/manager)\n"
         "• repeat customers / returning customers — visit history (owner/manager)\n"
         "• supplier spend — spend and purchases by supplier (owner/manager)\n"
+        "• menu recommendations / autopilot — reviewable pricing/menu suggestions (owner/manager)\n"
+        "• simulate price <dish> <price> — what-if food cost % and margin (owner/manager)\n"
+        "• gm report / daily gm — one-view daily briefing (owner/manager)\n"
         "\nOr just type naturally — I'll do my best to understand "
         "(except money/outcome confirmations, which always need the exact commands above)."
     )
@@ -1649,6 +1662,46 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 tenant.tenant_id, inventory_store=svc.inventory_store, automation_run_store=svc.automation_run_store,
             )
             reply(render_reorder_suggestions_whatsapp(report))
+            return True
+
+        if clean in ("menu recommendations", "autopilot"):
+            if not can_manage:
+                reply("Only an owner or manager can view menu recommendations.")
+                return True
+            report = build_menu_engineering_report(
+                tenant.tenant_id, menu_store=svc.menu_store, purchase_store=svc.purchase_store, metric_store=svc.metric_store,
+            )
+            recommendations = build_menu_recommendations(report)
+            reply(render_menu_recommendations_whatsapp(recommendations))
+            return True
+
+        simulate_price_match = _ADMIN_SIMULATE_PRICE_RE.match(raw)
+        if simulate_price_match:
+            if not can_manage:
+                reply("Only an owner or manager can simulate a menu price.")
+                return True
+            dish_fragment, price_text = simulate_price_match.groups()
+            menu_item = svc.menu_store.find_by_name(tenant.tenant_id, dish_fragment.strip())
+            if menu_item is None:
+                reply(f'Couldn\'t find a menu item matching "{dish_fragment.strip()}".')
+                return True
+            result = simulate_menu_item_price(
+                tenant.tenant_id, menu_item.menu_item_id, int(price_text),
+                menu_store=svc.menu_store, purchase_store=svc.purchase_store,
+            )
+            reply(render_price_simulation_whatsapp(result))
+            return True
+
+        if clean in ("gm report", "daily gm"):
+            if not can_manage:
+                reply("Only an owner or manager can view the Digital GM briefing.")
+                return True
+            lines = build_digital_gm_briefing(
+                tenant.tenant_id, menu_store=svc.menu_store, purchase_store=svc.purchase_store, metric_store=svc.metric_store,
+                inventory_store=svc.inventory_store, automation_run_store=svc.automation_run_store,
+                lead_store=svc.lead_store, shift_store=svc.shift_store,
+            )
+            reply(render_digital_gm_whatsapp(lines))
             return True
 
         if clean in ("repeat customers", "returning customers"):

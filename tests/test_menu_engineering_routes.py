@@ -1,6 +1,8 @@
 """HTTP-level tests for Phase 22's Restaurant Profitability Intelligence
-routes: GET /api/menu-engineering and GET /api/reorder-suggestions.
-RBAC (owner+manager via VIEW_INVENTORY, same gate as every other menu/
+routes (GET /api/menu-engineering, GET /api/reorder-suggestions) and
+Phase 24's Restaurant Autopilot routes (GET /api/menu-recommendations,
+POST /api/menu-engineering/simulate, GET /api/digital-gm-briefing). RBAC
+(owner+manager via VIEW_INVENTORY, same gate as every other menu/
 inventory read), tenant isolation.
 """
 
@@ -79,3 +81,79 @@ def test_reorder_suggestions_is_tenant_isolated(client, owner_session):
     headers_b = {"Authorization": f"Bearer {signup_b.json()['access_token']}"}
     r = client.get(f"/api/reorder-suggestions?tenant_id={tenant_a}", headers=headers_b)
     assert r.status_code == 403
+
+
+# ------------------------------------------------------------------ menu recommendations / simulate / GM briefing (Phase 24)
+
+
+def test_menu_recommendations_route_requires_owner_or_manager(client, owner_session, services):
+    headers, tenant_id = owner_session
+    staff_token = create_access_token(Principal.staff("staff_x", tenant_id), services.settings)
+    r = client.get(f"/api/menu-recommendations?tenant_id={tenant_id}", headers={"Authorization": f"Bearer {staff_token}"})
+    assert r.status_code == 403
+
+    r2 = client.get(f"/api/menu-recommendations?tenant_id={tenant_id}", headers=headers)
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["recommendations"] == []
+
+
+def test_menu_recommendations_route_reflects_a_high_food_cost_dish(client, owner_session, services):
+    headers, tenant_id = owner_session
+    services.purchase_store.record(tenant_id=tenant_id, ingredient_name="X", quantity=1000, unit="g", amount_inr=1000)
+    item = services.menu_store.create_item(tenant_id=tenant_id, name="Overpriced Recipe", price_inr=100)
+    services.menu_store.set_recipe(tenant_id, item.menu_item_id, [{"ingredient_name": "X", "quantity": 40, "unit": "g"}])
+    services.metric_store.record(tenant_id=tenant_id, metric_type="sale", amount_inr=100, menu_item_id=item.menu_item_id, quantity=1)
+
+    r = client.get(f"/api/menu-recommendations?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    recs = r.json()["recommendations"]
+    assert len(recs) == 1
+    assert "caution line" in recs[0]["recommendation"]
+
+
+def test_simulate_menu_price_route_recomputes_food_cost_and_margin(client, owner_session, services):
+    headers, tenant_id = owner_session
+    item = services.menu_store.create_item(tenant_id=tenant_id, name="Butter Chicken", price_inr=350)
+    services.menu_store.set_recipe(tenant_id, item.menu_item_id, [{"ingredient_name": "Chicken", "quantity": 200, "unit": "g"}])
+    services.purchase_store.record(tenant_id=tenant_id, ingredient_name="Chicken", quantity=1000, unit="g", amount_inr=500)
+
+    r = client.post(
+        f"/api/menu-engineering/simulate?tenant_id={tenant_id}", headers=headers,
+        json={"menu_item_id": item.menu_item_id, "hypothetical_price_inr": 400},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["recipe_cost_inr"] == 100.0
+    assert body["current_price_inr"] == 350
+    assert body["hypothetical_price_inr"] == 400
+
+
+def test_simulate_menu_price_route_404s_for_a_missing_menu_item(client, owner_session):
+    headers, tenant_id = owner_session
+    r = client.post(
+        f"/api/menu-engineering/simulate?tenant_id={tenant_id}", headers=headers,
+        json={"menu_item_id": "does-not-exist", "hypothetical_price_inr": 100},
+    )
+    assert r.status_code == 404
+
+
+def test_simulate_menu_price_route_requires_owner_or_manager(client, owner_session, services):
+    headers, tenant_id = owner_session
+    item = services.menu_store.create_item(tenant_id=tenant_id, name="Lassi", price_inr=80)
+    staff_token = create_access_token(Principal.staff("staff_x", tenant_id), services.settings)
+    r = client.post(
+        f"/api/menu-engineering/simulate?tenant_id={tenant_id}", headers={"Authorization": f"Bearer {staff_token}"},
+        json={"menu_item_id": item.menu_item_id, "hypothetical_price_inr": 100},
+    )
+    assert r.status_code == 403
+
+
+def test_digital_gm_briefing_route_requires_owner_or_manager(client, owner_session, services):
+    headers, tenant_id = owner_session
+    staff_token = create_access_token(Principal.staff("staff_x", tenant_id), services.settings)
+    r = client.get(f"/api/digital-gm-briefing?tenant_id={tenant_id}", headers={"Authorization": f"Bearer {staff_token}"})
+    assert r.status_code == 403
+
+    r2 = client.get(f"/api/digital-gm-briefing?tenant_id={tenant_id}", headers=headers)
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["lines"] == ["✅ All clear — nothing urgent right now."]

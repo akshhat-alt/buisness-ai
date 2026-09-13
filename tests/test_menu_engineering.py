@@ -11,7 +11,12 @@ from __future__ import annotations
 from business_ai.automation import AutomationRunStore, RunStatus
 from business_ai.inventory import InventoryStore
 from business_ai.menu import MenuStore
-from business_ai.menu_engineering import build_menu_engineering_report, build_reorder_suggestions
+from business_ai.menu_engineering import (
+    build_menu_engineering_report,
+    build_menu_recommendations,
+    build_reorder_suggestions,
+    simulate_menu_item_price,
+)
 from business_ai.metrics import BusinessMetricStore
 from business_ai.purchases import PurchaseStore
 
@@ -282,3 +287,116 @@ def test_reorder_suggestions_sorted_by_trigger_count_descending(tmp_path):
         )
     report = build_reorder_suggestions(TENANT, inventory_store=inv, automation_run_store=runs)
     assert [s.ingredient_name for s in report.suggestions] == ["Chicken", "Paneer"]
+
+
+# ------------------------------------------------------------------ menu recommendations (Phase 24 — Restaurant Autopilot)
+
+
+def _classified_report(tmp_path):
+    menu = MenuStore(tmp_path / "menu.db")
+    purchases = PurchaseStore(tmp_path / "purchases.db")
+    metrics = BusinessMetricStore(tmp_path / "metrics.db")
+    purchases.record(tenant_id=TENANT, ingredient_name="X", quantity=1000, unit="g", amount_inr=1000)  # ₹1/g
+
+    def _dish(name, price, recipe_g, qty_sold):
+        item = menu.create_item(tenant_id=TENANT, name=name, price_inr=price)
+        menu.set_recipe(TENANT, item.menu_item_id, [{"ingredient_name": "X", "quantity": recipe_g, "unit": "g"}])
+        for _ in range(qty_sold):
+            metrics.record(tenant_id=TENANT, metric_type="sale", amount_inr=price, menu_item_id=item.menu_item_id, quantity=1)
+        return item
+
+    _dish("Star Dish", price=200, recipe_g=50, qty_sold=20)
+    _dish("Plowhorse Dish", price=110, recipe_g=100, qty_sold=20)
+    _dish("Puzzle Dish", price=200, recipe_g=50, qty_sold=2)
+    _dish("Dog Dish", price=110, recipe_g=100, qty_sold=2)
+    return menu, purchases, metrics, build_menu_engineering_report(TENANT, menu_store=menu, purchase_store=purchases, metric_store=metrics)
+
+
+def test_recommendations_flag_dog_for_rework_or_removal(tmp_path):
+    _, _, _, report = _classified_report(tmp_path)
+    recs = {r.name: r for r in build_menu_recommendations(report)}
+    assert "reworking the recipe" in recs["Dog Dish"].recommendation or "removing" in recs["Dog Dish"].recommendation
+    assert recs["Dog Dish"].suggested_price_inr is None
+
+
+def test_recommendations_suggest_a_bounded_price_nudge_for_plowhorse(tmp_path):
+    _, _, _, report = _classified_report(tmp_path)
+    recs = {r.name: r for r in build_menu_recommendations(report)}
+    plowhorse = recs["Plowhorse Dish"]
+    assert plowhorse.suggested_price_inr == round(110 * 1.05)  # +5%, PLOWHORSE_PRICE_INCREASE_PCT
+    assert "price increase" in plowhorse.recommendation
+
+
+def test_recommendations_suggest_featuring_puzzle_more_prominently(tmp_path):
+    _, _, _, report = _classified_report(tmp_path)
+    recs = {r.name: r for r in build_menu_recommendations(report)}
+    assert "featuring" in recs["Puzzle Dish"].recommendation
+    assert recs["Puzzle Dish"].suggested_price_inr is None
+
+
+def test_recommendations_have_nothing_to_say_about_a_healthy_star(tmp_path):
+    _, _, _, report = _classified_report(tmp_path)
+    names = {r.name for r in build_menu_recommendations(report)}
+    assert "Star Dish" not in names
+
+
+def test_recommendations_flag_high_food_cost_pct_regardless_of_classification(tmp_path):
+    menu = MenuStore(tmp_path / "menu.db")
+    purchases = PurchaseStore(tmp_path / "purchases.db")
+    metrics = BusinessMetricStore(tmp_path / "metrics.db")
+    purchases.record(tenant_id=TENANT, ingredient_name="X", quantity=1000, unit="g", amount_inr=1000)  # ₹1/g
+    item = menu.create_item(tenant_id=TENANT, name="Overpriced Recipe", price_inr=100)
+    menu.set_recipe(TENANT, item.menu_item_id, [{"ingredient_name": "X", "quantity": 40, "unit": "g"}])  # 40% food cost
+    metrics.record(tenant_id=TENANT, metric_type="sale", amount_inr=100, menu_item_id=item.menu_item_id, quantity=1)
+
+    report = build_menu_engineering_report(TENANT, menu_store=menu, purchase_store=purchases, metric_store=metrics)
+    recs = build_menu_recommendations(report)
+    assert any("caution line" in r.recommendation for r in recs if r.name == "Overpriced Recipe")
+
+
+def test_no_recommendation_for_an_unsold_or_unpriceable_dish(tmp_path):
+    menu = MenuStore(tmp_path / "menu.db")
+    purchases = PurchaseStore(tmp_path / "purchases.db")
+    metrics = BusinessMetricStore(tmp_path / "metrics.db")
+    menu.create_item(tenant_id=TENANT, name="Untried Special", price_inr=500)
+
+    report = build_menu_engineering_report(TENANT, menu_store=menu, purchase_store=purchases, metric_store=metrics)
+    assert build_menu_recommendations(report) == []
+
+
+# ------------------------------------------------------------------ price simulation / Business Twin (Phase 24)
+
+
+def test_simulate_price_recomputes_food_cost_pct_and_margin(tmp_path):
+    menu = MenuStore(tmp_path / "menu.db")
+    purchases = PurchaseStore(tmp_path / "purchases.db")
+    item = menu.create_item(tenant_id=TENANT, name="Butter Chicken", price_inr=350)
+    menu.set_recipe(TENANT, item.menu_item_id, [{"ingredient_name": "Chicken", "quantity": 200, "unit": "g"}])
+    purchases.record(tenant_id=TENANT, ingredient_name="Chicken", quantity=1000, unit="g", amount_inr=500)  # ₹0.5/g -> ₹100 cost
+
+    result = simulate_menu_item_price(TENANT, item.menu_item_id, 400, menu_store=menu, purchase_store=purchases)
+    assert result.current_price_inr == 350
+    assert result.hypothetical_price_inr == 400
+    assert result.recipe_cost_inr == 100.0
+    assert round(result.current_food_cost_pct) == 29  # 100/350
+    assert round(result.hypothetical_food_cost_pct) == 25  # 100/400
+    assert result.current_profit_margin_inr == 250.0
+    assert result.hypothetical_profit_margin_inr == 300.0
+
+
+def test_simulate_price_reports_unknown_cost_when_recipe_unpriceable(tmp_path):
+    menu = MenuStore(tmp_path / "menu.db")
+    purchases = PurchaseStore(tmp_path / "purchases.db")
+    item = menu.create_item(tenant_id=TENANT, name="Lassi", price_inr=80)
+    # No recipe at all.
+
+    result = simulate_menu_item_price(TENANT, item.menu_item_id, 100, menu_store=menu, purchase_store=purchases)
+    assert result.recipe_cost_inr is None
+    assert result.current_food_cost_pct is None
+    assert result.hypothetical_food_cost_pct is None
+
+
+def test_simulate_price_returns_none_for_a_missing_menu_item(tmp_path):
+    menu = MenuStore(tmp_path / "menu.db")
+    purchases = PurchaseStore(tmp_path / "purchases.db")
+    assert simulate_menu_item_price(TENANT, "does-not-exist", 100, menu_store=menu, purchase_store=purchases) is None

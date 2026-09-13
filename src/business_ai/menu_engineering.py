@@ -29,7 +29,9 @@ import time
 from pydantic import BaseModel
 
 from business_ai.constants import (
+    HIGH_FOOD_COST_PCT_THRESHOLD,
     MENU_ENGINEERING_WINDOW_DAYS,
+    PLOWHORSE_PRICE_INCREASE_PCT,
     REORDER_SUGGESTION_INCREASE_PCT,
     REORDER_SUGGESTION_MIN_TRIGGER_COUNT,
 )
@@ -214,4 +216,117 @@ def render_reorder_suggestions_whatsapp(report: ReorderSuggestionsReport) -> str
             f"• {s.ingredient_name}: par level {s.par_level:g}{s.unit} → suggest {s.suggested_par_level:g}{s.unit} "
             f"(triggered {s.low_stock_trigger_count}x)"
         )
+    return "\n".join(lines)
+
+
+class MenuRecommendation(BaseModel):
+    menu_item_id: str
+    name: str
+    classification: str | None
+    recommendation: str
+    suggested_price_inr: int | None = None  # None unless this is a price-nudge recommendation
+
+
+def build_menu_recommendations(report: MenuEngineeringReport) -> list[MenuRecommendation]:
+    """Phase 24 — Restaurant Autopilot. Turns Phase 22's classification
+    into a concrete, reviewable text suggestion per dish — never an
+    auto-applied change. A price nudge is only ever a SUGGESTION the
+    owner applies (or ignores) via the existing PATCH /api/menu/items/{id}
+    route; this function never writes anything itself. Stars and
+    not-enough-data dishes get no recommendation unless their food cost
+    is independently high — being popular and profitable isn't itself
+    something to flag."""
+    recommendations: list[MenuRecommendation] = []
+    for dish in report.dishes:
+        if dish.quantity_sold == 0:
+            continue  # no recent sales — nothing to recommend on
+        notes: list[str] = []
+        suggested_price_inr: int | None = None
+
+        if dish.food_cost_pct is not None and dish.food_cost_pct > HIGH_FOOD_COST_PCT_THRESHOLD:
+            notes.append(
+                f"Food cost is {dish.food_cost_pct:.0f}% of price, above the "
+                f"{HIGH_FOOD_COST_PCT_THRESHOLD:.0f}% caution line — review the recipe cost or the price."
+            )
+
+        if dish.classification == "dog":
+            notes.append("Low demand and low margin — consider reworking the recipe, repricing, or removing it from the menu.")
+        elif dish.classification == "plowhorse":
+            suggested_price_inr = round(dish.price_inr * (1 + PLOWHORSE_PRICE_INCREASE_PCT))
+            notes.append(
+                f"Popular but thin margin — consider a small price increase to ₹{suggested_price_inr} "
+                f"(+{PLOWHORSE_PRICE_INCREASE_PCT * 100:.0f}%)."
+            )
+        elif dish.classification == "puzzle":
+            notes.append("Profitable but rarely ordered — consider featuring it more prominently (menu placement, staff recommendation, or a combo).")
+
+        if not notes:
+            continue
+        recommendations.append(MenuRecommendation(
+            menu_item_id=dish.menu_item_id, name=dish.name, classification=dish.classification,
+            recommendation=" ".join(notes), suggested_price_inr=suggested_price_inr,
+        ))
+    return recommendations
+
+
+def render_menu_recommendations_whatsapp(recommendations: list[MenuRecommendation]) -> str:
+    if not recommendations:
+        return "No menu recommendations right now — nothing needs review."
+    lines = ["🤖 Menu recommendations:"]
+    for r in recommendations[:10]:
+        lines.append(f"• {r.name}: {r.recommendation}")
+    return "\n".join(lines)
+
+
+class PriceSimulationResult(BaseModel):
+    menu_item_id: str
+    name: str
+    current_price_inr: int
+    hypothetical_price_inr: int
+    recipe_cost_inr: float | None
+    current_food_cost_pct: float | None
+    hypothetical_food_cost_pct: float | None
+    current_profit_margin_inr: float | None  # per-unit contribution margin at the current price
+    hypothetical_profit_margin_inr: float | None  # per-unit contribution margin at the hypothetical price
+
+
+def simulate_menu_item_price(
+    tenant_id: str, menu_item_id: str, hypothetical_price_inr: int, *, menu_store, purchase_store,
+) -> PriceSimulationResult | None:
+    """Business Twin (Phase 24): a deterministic what-if, not a demand
+    forecast — recomputes food-cost%/margin at a hypothetical price using
+    the SAME recipe cost calculation as build_menu_engineering_report.
+    Deliberately does NOT attempt to predict how demand would change at
+    the new price (no price-elasticity model exists or is honestly
+    estimable from this app's data) — it answers "what would the margin
+    be," not "what would happen to sales." Returns None if the item
+    doesn't exist for this tenant."""
+    item = menu_store.get_item(tenant_id, menu_item_id)
+    if item is None:
+        return None
+    recipe_cost_inr = _recipe_cost(tenant_id, menu_item_id, menu_store=menu_store, purchase_store=purchase_store)
+    current_food_cost_pct = (recipe_cost_inr / item.price_inr * 100) if recipe_cost_inr is not None and item.price_inr > 0 else None
+    hypothetical_food_cost_pct = (
+        recipe_cost_inr / hypothetical_price_inr * 100
+    ) if recipe_cost_inr is not None and hypothetical_price_inr > 0 else None
+    current_profit_margin_inr = (item.price_inr - recipe_cost_inr) if recipe_cost_inr is not None else None
+    hypothetical_profit_margin_inr = (hypothetical_price_inr - recipe_cost_inr) if recipe_cost_inr is not None else None
+    return PriceSimulationResult(
+        menu_item_id=item.menu_item_id, name=item.name,
+        current_price_inr=item.price_inr, hypothetical_price_inr=hypothetical_price_inr,
+        recipe_cost_inr=round(recipe_cost_inr, 2) if recipe_cost_inr is not None else None,
+        current_food_cost_pct=round(current_food_cost_pct, 1) if current_food_cost_pct is not None else None,
+        hypothetical_food_cost_pct=round(hypothetical_food_cost_pct, 1) if hypothetical_food_cost_pct is not None else None,
+        current_profit_margin_inr=round(current_profit_margin_inr, 2) if current_profit_margin_inr is not None else None,
+        hypothetical_profit_margin_inr=round(hypothetical_profit_margin_inr, 2) if hypothetical_profit_margin_inr is not None else None,
+    )
+
+
+def render_price_simulation_whatsapp(result: PriceSimulationResult) -> str:
+    lines = [f"🔮 What-if: {result.name} at ₹{result.hypothetical_price_inr} (currently ₹{result.current_price_inr})"]
+    if result.recipe_cost_inr is None:
+        lines.append("Recipe cost is unknown — add a priced recipe to simulate food cost % and margin.")
+        return "\n".join(lines)
+    lines.append(f"Food cost %: {result.current_food_cost_pct:.0f}% → {result.hypothetical_food_cost_pct:.0f}%")
+    lines.append(f"Profit margin per dish: ₹{result.current_profit_margin_inr:.2f} → ₹{result.hypothetical_profit_margin_inr:.2f}")
     return "\n".join(lines)

@@ -74,3 +74,14 @@ REORDER_SUGGESTION_MIN_TRIGGER_COUNT = 2
 # "small, reviewable adjustment" philosophy as Self-Evolution's own
 # proposals; the owner still reviews and applies it, never auto-adopted.
 REORDER_SUGGESTION_INCREASE_PCT = 0.25
+
+# Phase 24 — Restaurant Autopilot (menu_engineering.py's
+# build_menu_recommendations). A widely-cited restaurant-industry rule
+# of thumb, not something this app invented — dishes above it are
+# flagged for review, never auto-repriced.
+HIGH_FOOD_COST_PCT_THRESHOLD = 35.0
+# The same conservative, bounded, review-before-apply philosophy as
+# REORDER_SUGGESTION_INCREASE_PCT — a Plowhorse (popular, thin margin)
+# gets a small suggested price nudge, never a large jump that could
+# scare off the exact demand that makes it popular.
+PLOWHORSE_PRICE_INCREASE_PCT = 0.05

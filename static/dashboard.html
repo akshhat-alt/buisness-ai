@@ -522,9 +522,39 @@
           </div>
 
           <div class="ba-card">
+            <h3 style="margin-top:0;">🧑‍💼 Digital GM Briefing</h3>
+            <p class="ba-muted" style="margin-top:-6px;">The most important line from each report below, in one view. Pulled on demand — never a new scheduled push.</p>
+            <div id="ri-gm-briefing" class="ba-muted">Loading…</div>
+            <div style="margin-top:10px;">
+              <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="loadDigitalGmBriefing()">Refresh</button>
+            </div>
+          </div>
+
+          <div class="ba-card">
             <h3 style="margin-top:0;">Menu Engineering <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— last 30 days</span></h3>
             <table class="ba-table" id="ri-menu-table"><thead><tr><th>Dish</th><th>Sold</th><th>Food cost</th><th>Profit</th><th>Classification</th></tr></thead><tbody></tbody></table>
             <div id="ri-menu-empty" class="ba-muted" style="display:none;">No active menu items yet — add one from the Restaurant setup screen (API/dashboard-driven, see docs).</div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">🤖 Menu Recommendations</h3>
+            <p class="ba-muted" style="margin-top:-6px;">Reviewable suggestions from the classification above — nothing here is ever applied automatically.</p>
+            <div id="ri-menu-recs-list" class="ba-muted">Loading…</div>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">🔮 Business Twin — Price What-If</h3>
+            <p class="ba-muted" style="margin-top:-6px;">A deterministic recomputation of food cost % and margin at a hypothetical price — not a demand forecast.</p>
+            <div class="ba-field-row" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+              <div class="ba-field"><label class="ba-label">Dish</label>
+                <select class="ba-input" id="ri-sim-dish"></select>
+              </div>
+              <div class="ba-field"><label class="ba-label">Hypothetical price (₹)</label>
+                <input class="ba-input" id="ri-sim-price" type="number" min="1" style="width:120px;">
+              </div>
+              <button class="ba-btn ba-btn-sm" onclick="simulateMenuPrice()">Simulate</button>
+            </div>
+            <div id="ri-sim-result" class="ba-muted" style="margin-top:10px;"></div>
           </div>
 
           <div class="ba-card">
@@ -1887,8 +1917,9 @@
     const CLASSIFICATION_PILL = { star: '⭐ Star', plowhorse: '🐴 Plowhorse', puzzle: '🧩 Puzzle', dog: '🐕 Dog' };
 
     async function loadRestaurantIntel() {
-      const [menuRes, reorderRes, reservationsRes, repeatRes, supplierRes] = await Promise.all([
+      const [menuRes, menuRecsRes, reorderRes, reservationsRes, repeatRes, supplierRes] = await Promise.all([
         fetch(`/api/menu-engineering?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/menu-recommendations?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/reorder-suggestions?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/leads/upcoming-appointments?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/customer-behavior?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
@@ -1913,6 +1944,20 @@
               <td>${CLASSIFICATION_PILL[d.classification] || '<span class="ba-muted">not enough data</span>'}</td>
             </tr>`).join('');
         }
+        const simSelect = document.getElementById('ri-sim-dish');
+        const previousValue = simSelect.value;
+        simSelect.innerHTML = report.dishes.map(d => `<option value="${escapeHtml(d.menu_item_id)}">${escapeHtml(d.name)} (₹${d.price_inr})</option>`).join('');
+        if (previousValue) simSelect.value = previousValue;
+      }
+
+      if (menuRecsRes.ok) {
+        const data = await menuRecsRes.json();
+        const listEl = document.getElementById('ri-menu-recs-list');
+        listEl.innerHTML = data.recommendations.length ? data.recommendations.map(r => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; gap:8px;">
+            <span><b>${escapeHtml(r.name)}:</b> ${escapeHtml(r.recommendation)}</span>
+            ${r.suggested_price_inr != null ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" data-menu-item-id="${escapeHtml(r.menu_item_id)}" data-price="${r.suggested_price_inr}" onclick="applyMenuPriceRecommendation(this)">Apply ₹${r.suggested_price_inr}</button>` : ''}
+          </div>`).join('') : 'No menu recommendations right now — nothing needs review.';
       }
 
       if (reorderRes.ok) {
@@ -1955,6 +2000,8 @@
           ? `⚠️ ₹${report.unattributed_spend_inr} across ${report.unattributed_purchase_count} purchase(s) had no matching supplier on file.`
           : '';
       }
+
+      loadDigitalGmBriefing();
     }
 
     async function applyReorderSuggestion(buttonEl) {
@@ -1968,6 +2015,54 @@
       if (!res.ok) { alert(data.detail || 'Could not update the par level.'); buttonEl.disabled = false; return; }
       buttonEl.textContent = 'Applied ✓';
       loadRestaurantIntel();
+    }
+
+    async function applyMenuPriceRecommendation(buttonEl) {
+      const { menuItemId, price } = buttonEl.dataset;
+      buttonEl.disabled = true;
+      const res = await fetch(`/api/menu/items/${encodeURIComponent(menuItemId)}?tenant_id=${encodeURIComponent(tenantId)}`, {
+        method: 'PATCH', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ price_inr: Number(price) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not update the price.'); buttonEl.disabled = false; return; }
+      buttonEl.textContent = 'Applied ✓';
+      loadRestaurantIntel();
+    }
+
+    async function simulateMenuPrice() {
+      const resultEl = document.getElementById('ri-sim-result');
+      const menuItemId = document.getElementById('ri-sim-dish').value;
+      const price = document.getElementById('ri-sim-price').value.trim();
+      if (!menuItemId) { resultEl.innerText = 'Add a menu item first.'; return; }
+      if (!price || Number(price) <= 0) { resultEl.innerText = 'Enter a positive hypothetical price.'; return; }
+      resultEl.innerText = 'Simulating…';
+      try {
+        const res = await fetch(`/api/menu-engineering/simulate?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ menu_item_id: menuItemId, hypothetical_price_inr: Number(price) }),
+        });
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.detail || 'Could not simulate that price.');
+        if (r.recipe_cost_inr == null) {
+          resultEl.innerHTML = `<b>${escapeHtml(r.name)}</b>: recipe cost is unknown — add a priced recipe to simulate food cost % and margin.`;
+        } else {
+          resultEl.innerHTML = `<b>${escapeHtml(r.name)}</b>: ₹${r.current_price_inr} → ₹${r.hypothetical_price_inr}<br>` +
+            `Food cost %: ${r.current_food_cost_pct.toFixed(0)}% → ${r.hypothetical_food_cost_pct.toFixed(0)}%<br>` +
+            `Profit margin per dish: ₹${r.current_profit_margin_inr.toFixed(2)} → ₹${r.hypothetical_profit_margin_inr.toFixed(2)}`;
+        }
+      } catch (e) { resultEl.innerText = 'Error: ' + e.message; }
+    }
+
+    async function loadDigitalGmBriefing() {
+      const el = document.getElementById('ri-gm-briefing');
+      el.innerText = 'Loading…';
+      try {
+        const res = await fetch(`/api/digital-gm-briefing?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not load the briefing.');
+        el.innerHTML = data.lines.map(l => `<div style="padding:3px 0;">${escapeHtml(l)}</div>`).join('');
+      } catch (e) { el.innerText = 'Error: ' + e.message; }
     }
 
     async function logMetric() {

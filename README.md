@@ -1513,6 +1513,69 @@ surfaces. 48 new tests across six new files (`tests/test_shifts.py`,
 `tests/test_operations_intelligence_routes.py`,
 `tests/test_admin_bot_operations.py`) — 699 total, all green.
 
+## What V1.29 adds: Restaurant Autopilot (Phase 24)
+
+Three related capabilities, all reviewable/on-demand — nothing in this
+phase writes to the menu, prices, or the customer relationship without
+the owner explicitly asking for or applying it.
+
+**Menu Engineering Autopilot turns Phase 22's classification into a
+concrete, reviewable suggestion** — a new pure function,
+`build_menu_recommendations()` in `menu_engineering.py`, over the same
+`MenuEngineeringReport` Phase 22 already computes (no new store). A
+`Dog` gets flagged to rework or remove; a `Plowhorse` gets a small,
+bounded price nudge (+5%, `PLOWHORSE_PRICE_INCREASE_PCT`, the same
+"conservative, reviewable bump" philosophy as Phase 22's own
+`REORDER_SUGGESTION_INCREASE_PCT`); a `Puzzle` gets a suggestion to
+feature it more prominently; any dish above a 35% food-cost caution line
+(`HIGH_FOOD_COST_PCT_THRESHOLD`, a standard restaurant-industry rule of
+thumb, not something this app invented) gets flagged for review
+regardless of its classification. A `Star` or a dish without enough
+sales data gets no recommendation — nothing to fix. Every suggestion is
+**one-tap apply, never auto-applied**: a price nudge applies through the
+EXISTING `PATCH /api/menu/items/{id}` route (Phase 17) — this phase adds
+no new write path for changing a price. `GET /api/menu-recommendations`,
+`menu recommendations`/`autopilot` (WhatsApp), and a dashboard card with
+an "Apply ₹X" button next to each price suggestion.
+
+**Business Twin is a deterministic price what-if, not a demand
+forecast** — `simulate_menu_item_price()` recomputes food-cost % and
+per-unit profit margin at a hypothetical price using the exact same
+recipe-cost calculation as the real report, but deliberately does NOT
+attempt to predict how demand would change at the new price: no
+price-elasticity model exists or is honestly estimable from this app's
+data, so it answers "what would the margin be," never "what would happen
+to sales." `POST /api/menu-engineering/simulate`, a new `simulate price
+<dish> <price>` WhatsApp command, and a dashboard price-simulator card.
+
+**Digital GM is an on-demand daily briefing, deliberately PULL-ONLY** —
+`build_digital_gm_briefing()` (new `digital_gm.py`) pulls the single most
+important line from each of Phase 22/23's existing reports (menu
+recommendations, reorder suggestions, upcoming reservations, today's
+shifts, repeat customers) into one view. This is explicitly NOT a new
+scheduled cron job: every other periodic job in this codebase is its own
+external-cron-invoked endpoint, and duplicating that infrastructure just
+to re-push the same underlying data on a timer would be exactly the kind
+of unnecessary duplicate architecture this project has consistently
+avoided. An owner pulls it the same way they already pull `today` or
+`food cost`. `GET /api/digital-gm-briefing`, `gm report`/`daily gm`
+(WhatsApp), and a dashboard card with a manual refresh button.
+
+Live-verified against the real running app, including real signed
+WhatsApp webhook requests reaching Meta's real API (and genuinely
+rejected with a real `401 Invalid OAuth access token` for the
+live-verification's fake token) — confirming the admin-bot pipeline
+computes the correct reply and degrades gracefully rather than crashing
+when the outbound send fails, exactly like every prior phase's
+WhatsApp-adjacent live check. The new REST routes were then exercised
+directly with a real owner token: the price simulator correctly
+recomputed food cost % (28.6% → 25.0%) and margin (₹250 → ₹300) for a
+real recipe at a hypothetical price, and all three new routes correctly
+403'd a staff principal. 29 new tests across a new `tests/test_digital_gm.py`
+plus extensions to `tests/test_menu_engineering.py`,
+`tests/test_menu_engineering_routes.py`, and
+`tests/test_admin_bot_restaurant.py` — 728 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1594,7 +1657,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-699 tests (and rising — see each phase's own "What Vx.x adds" section
+728 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written

@@ -405,3 +405,103 @@ def test_reorder_command_all_clear_when_nothing_suggested(client_wa, services_wa
     _send(client_wa, wa_id=OWNER_WA, text="restock suggestions", message_id="wamid.ro2")
     reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
     assert "No reorder suggestions" in reply
+
+
+# ------------------------------------------------------------------ Phase 24: Restaurant Autopilot WhatsApp commands
+
+
+def test_menu_recommendations_command_shows_a_recommendation(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    services_wa.purchase_store.record(tenant_id=tenant_id, ingredient_name="X", quantity=1000, unit="g", amount_inr=1000)
+    item = services_wa.menu_store.create_item(tenant_id=tenant_id, name="Overpriced Recipe", price_inr=100)
+    services_wa.menu_store.set_recipe(tenant_id, item.menu_item_id, [{"ingredient_name": "X", "quantity": 40, "unit": "g"}])
+    services_wa.metric_store.record(tenant_id=tenant_id, metric_type="sale", amount_inr=100, menu_item_id=item.menu_item_id, quantity=1)
+
+    _send(client_wa, wa_id=OWNER_WA, text="menu recommendations", message_id="wamid.mr1")
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
+    assert "Overpriced Recipe" in reply
+    assert "caution line" in reply
+
+
+def test_menu_recommendations_command_all_clear_when_nothing_needs_review(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    _send(client_wa, wa_id=OWNER_WA, text="autopilot", message_id="wamid.mr2")
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
+    assert "No menu recommendations" in reply
+
+
+def test_menu_recommendations_command_is_owner_manager_gated(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+    _add_employee(client_wa, headers, tenant_id, whatsapp_number=RAVI_WA, name="Ravi")
+
+    _send(client_wa, wa_id=RAVI_WA, text="menu recommendations", message_id="wamid.mr3")
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == RAVI_WA][-1]["body"]
+    assert "Only an owner or manager" in reply
+
+
+def test_simulate_price_command_shows_the_what_if(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    services_wa.menu_store.create_item(tenant_id=tenant_id, name="Butter Chicken", price_inr=350)
+    item = services_wa.menu_store.find_by_name(tenant_id, "Butter Chicken")
+    services_wa.menu_store.set_recipe(tenant_id, item.menu_item_id, [{"ingredient_name": "Chicken", "quantity": 200, "unit": "g"}])
+    services_wa.purchase_store.record(tenant_id=tenant_id, ingredient_name="Chicken", quantity=1000, unit="g", amount_inr=500)
+
+    _send(client_wa, wa_id=OWNER_WA, text="simulate price butter chicken 400", message_id="wamid.sp1")
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
+    assert "Butter Chicken" in reply
+    assert "₹400" in reply
+
+
+def test_simulate_price_command_rejects_an_unknown_dish(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    _send(client_wa, wa_id=OWNER_WA, text="simulate price nonexistent dish 400", message_id="wamid.sp2")
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
+    assert "Couldn't find" in reply
+
+
+def test_simulate_price_command_is_owner_manager_gated(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+    _add_employee(client_wa, headers, tenant_id, whatsapp_number=RAVI_WA, name="Ravi")
+    services_wa.menu_store.create_item(tenant_id=tenant_id, name="Lassi", price_inr=80)
+
+    _send(client_wa, wa_id=RAVI_WA, text="simulate price lassi 100", message_id="wamid.sp3")
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == RAVI_WA][-1]["body"]
+    assert "Only an owner or manager" in reply
+
+
+def test_gm_report_command_shows_the_briefing(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    _send(client_wa, wa_id=OWNER_WA, text="gm report", message_id="wamid.gm1")
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
+    assert "Digital GM briefing" in reply
+    assert "All clear" in reply
+
+
+def test_gm_report_command_is_owner_manager_gated(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+    _add_employee(client_wa, headers, tenant_id, whatsapp_number=RAVI_WA, name="Ravi")
+
+    _send(client_wa, wa_id=RAVI_WA, text="daily gm", message_id="wamid.gm2")
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == RAVI_WA][-1]["body"]
+    assert "Only an owner or manager" in reply

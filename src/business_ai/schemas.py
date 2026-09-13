@@ -209,3 +209,11 @@ class SetInventoryParLevelRequest(BaseModel):
     par_level: float
     unit: str | None = None
 
+
+# ---------------------------------------------------------- Restaurant Autopilot (Phase 24)
+
+
+class SimulateMenuPriceRequest(BaseModel):
+    menu_item_id: str
+    hypothetical_price_inr: int = Field(gt=0)
+

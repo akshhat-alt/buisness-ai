@@ -238,7 +238,23 @@ src/business_ai/
                   automation.py's own AutomationRunStore low_stock
                   history (the reorder-suggestion idea explicitly
                   deferred from Phase 20's design decision — see
-                  README's V1.25 section)
+                  README's V1.25 section). Phase 24 (Restaurant
+                  Autopilot) added build_menu_recommendations() (a
+                  reviewable, never-auto-applied suggestion per dish —
+                  applies through the EXISTING PATCH /api/menu/items/{id}
+                  route, no new write path) and
+                  simulate_menu_item_price() (the "Business Twin":
+                  deterministic food-cost%/margin recomputation at a
+                  hypothetical price, deliberately with no demand-
+                  elasticity model — this app has no honest way to
+                  estimate one)
+  digital_gm.py   Phase 24: build_digital_gm_briefing() — pure
+                  aggregation pulling the single most important line
+                  from each of Phase 22/23's existing reports into one
+                  view. Deliberately ON-DEMAND PULL ONLY, no new cron —
+                  every other periodic job in this codebase is its own
+                  external-cron-invoked endpoint, and this reuses that
+                  same data rather than re-pushing it on a timer
   shifts.py       Phase 23 (Restaurant Operations Intelligence):
                   ShiftStore — staff working-hours scheduling, genuinely
                   new (EmployeeStore's "roster" is only who works here,
@@ -314,8 +330,12 @@ src/business_ai/
                   GET /api/leads/upcoming-appointments and party_size on
                   the existing appointment route, and
                   GET /api/supplier-intelligence to restaurant_routes.py
-                  (VIEW_INVENTORY-gated) — see app.py's create_app() for
-                  wiring
+                  (VIEW_INVENTORY-gated). Phase 24 added
+                  GET /api/menu-recommendations,
+                  POST /api/menu-engineering/simulate, and
+                  GET /api/digital-gm-briefing to
+                  menu_engineering_routes.py (all VIEW_INVENTORY-gated)
+                  — see app.py's create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -326,7 +346,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (699 tests) — see README.md
+tests/            pytest suite (728 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,
