@@ -1712,6 +1712,34 @@ the equivalent `GET` route would give. 22 new tests
 (`tests/test_admin_bot_nl_query.py`, `tests/test_business_query_routes.py`)
 — 797 total, all green.
 
+## What V1.32 adds: supplier name-matching fix (Phase 23 follow-up)
+
+Fixes the exact gap Phase 23's own Known Limitations called out: WhatsApp's
+`log purchase <qty> <unit> <ingredient> ₹<amount> from <supplier>` matched
+`SupplierStore.find_by_name` on exact, case/whitespace-insensitive equality
+only, so a typed name like "Ramesh" against a supplier on file as "Ramesh
+Traders" silently recorded the purchase with `supplier_id=None` and no
+indication to the employee that the link failed — the Supplier Spend
+card's "unattributed spend" total was the only place this ever became
+visible, and only to the owner, after the fact.
+
+Two independent fixes, since they address different failure modes.
+`find_by_name` now falls back to a substring match when the exact match
+fails, resolving to the one supplier whose name contains the typed
+fragment — same fragment-matching convention `admin_bot.py`'s
+`_find_employee_by_name` already uses for staff lookups — and still
+returning no match (not a guess) when the fragment is ambiguous across
+two or more suppliers. Separately, when no supplier match is found at
+all (typo-free but genuinely unlisted, or an ambiguous fragment), the
+`log purchase` WhatsApp reply now says so explicitly — e.g. `(supplier
+'Ramesh' not found — purchase logged without a linked supplier; add
+'Ramesh' under Suppliers first)` — instead of confirming success with no
+mention of the gap. The purchase itself still always records either way;
+only the supplier link (and now, the failure feedback) changes.
+
+5 new tests (`tests/test_suppliers.py`, `tests/test_admin_bot_restaurant.py`)
+— 802 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1793,7 +1821,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-797 tests (and rising — see each phase's own "What Vx.x adds" section
+802 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written
@@ -2384,14 +2412,3 @@ before the prompt/schema was finalized.
   so an "on-time %" would have to be invented from nothing. Spend
   totals and purchase counts are the only numbers this app can actually
   back up today.
-- **Supplier name-matching for WhatsApp's `log purchase ... from
-  <supplier>` is still exact-match-only** (`SupplierStore.find_by_name`,
-  unchanged since Phase 17) — confirmed during this phase's own
-  inspection to be a real, silent failure mode: a typo or punctuation
-  difference between what's typed and what's on file means the purchase
-  still records, just with no supplier link, and the employee gets no
-  indication the match failed. Phase 23's own "unattributed spend" total
-  on the Supplier Spend card is the first place this failure becomes
-  visible to an owner at all; fixing the matching itself (fuzzy/
-  substring matching, or an inline "create this supplier?" prompt) is a
-  real, separately-scoped improvement, not done here.

@@ -1600,10 +1600,23 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 target_type="purchase", target_id=purchase.purchase_id,
                 metadata={"ingredient_name": ingredient, "quantity": quantity, "amount_inr": amount},
             )
-            reply(
-                f"✅ Logged purchase: {quantity:g}{unit} {ingredient} — ₹{amount}"
-                + (f" from {supplier_name.strip()}" if supplier_name else "") + "."
-            )
+            base_reply = f"✅ Logged purchase: {quantity:g}{unit} {ingredient} — ₹{amount}"
+            if supplier is not None:
+                base_reply += f" from {supplier.name}."
+            elif supplier_name:
+                # find_by_name looked for an exact or unambiguous partial
+                # match and found neither — say so explicitly rather than
+                # silently recording the purchase with no linked supplier
+                # (the whole reason Phase 23's Supplier Spend now surfaces
+                # an "unattributed spend" total).
+                typed = supplier_name.strip()
+                base_reply += (
+                    f". (supplier '{typed}' not found — purchase logged without a linked supplier;"
+                    f" add '{typed}' under Suppliers first)"
+                )
+            else:
+                base_reply += "."
+            reply(base_reply)
             return True
 
         waste_match = _ADMIN_LOG_WASTE_RE.match(raw)

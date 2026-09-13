@@ -232,7 +232,12 @@ src/business_ai/
                   Fails closed (UnitMismatchError) on a unit that
                   conflicts with how an ingredient is already tracked,
                   rather than silently computing a wrong quantity
-  suppliers.py    Phase 17: SupplierStore — the supplier directory
+  suppliers.py    Phase 17: SupplierStore — the supplier directory.
+                  find_by_name (V1.32 follow-up) falls back to a unique
+                  substring match when the exact match fails — same
+                  fragment-matching convention as admin_bot.py's
+                  _find_employee_by_name — and still returns no match
+                  (never a guess) when the fragment is ambiguous
   purchases.py    Phase 17: PurchaseStore — purchase receipts (NOT a
                   full purchase-order lifecycle with draft/sent/received
                   states — that's a later, separate decision); each
@@ -287,9 +292,9 @@ src/business_ai/
                   SupplierStore/PurchaseStore data, same shape as above
                   — total spend/purchase count/distinct ingredients per
                   supplier, with an explicit "unattributed spend" total
-                  for purchases whose supplier name never matched
-                  (surfacing find_by_name's exact-match-only gap, not
-                  fixing it — see README's Known Limitations)
+                  for purchases whose supplier name never matched — this
+                  surfaced find_by_name's exact-match-only gap, since
+                  fixed as a V1.32 follow-up (see suppliers.py above)
   reviews.py      Phase 25 (Perception & Input Expansion): ReviewStore —
                   genuinely new, nothing tracked review ratings before
                   this. Two write paths into one table: an automated
@@ -388,7 +393,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (797 tests) — see README.md
+tests/            pytest suite (802 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

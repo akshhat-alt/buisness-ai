@@ -175,6 +175,42 @@ def test_log_purchase_without_known_supplier_still_succeeds(client_wa, services_
     assert purchases[0].supplier_id is None
 
 
+def test_log_purchase_matches_supplier_on_unique_substring(client_wa, services_wa):
+    """"Ramesh Traders" in the directory should resolve from a typed
+    "Ramesh" the same way _find_employee_by_name resolves staff names —
+    no more silent supplier_id=None for a typo-free partial name."""
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+    services_wa.supplier_store.create(tenant_id=tenant_id, name="Ramesh Traders")
+
+    _send(client_wa, wa_id=OWNER_WA, text="log purchase 10 kg chicken ₹4200 from Ramesh", message_id="wamid.pur3")
+
+    purchases = services_wa.purchase_store.list_for_tenant(tenant_id)
+    assert len(purchases) == 1
+    assert purchases[0].supplier_id is not None
+
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
+    assert "Ramesh Traders" in reply
+    assert "not found" not in reply
+
+
+def test_log_purchase_with_unmatched_supplier_warns_but_still_succeeds(client_wa, services_wa):
+    headers, tenant_id = _signup(client_wa)
+    _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    services_wa.employee_store.ensure_owner_bootstrap(tenant_id, OWNER_WA)
+
+    _send(client_wa, wa_id=OWNER_WA, text="log purchase 10 kg chicken ₹4200 from Ramesh", message_id="wamid.pur4")
+
+    purchases = services_wa.purchase_store.list_for_tenant(tenant_id)
+    assert len(purchases) == 1
+    assert purchases[0].supplier_id is None
+
+    reply = [m for m in services_wa.fake_whatsapp_client.sent if m["to"] == OWNER_WA][-1]["body"]
+    assert "not found" in reply
+    assert "Ramesh" in reply
+
+
 def test_log_waste_depletes_stock_and_estimates_cost_from_purchase_history(client_wa, services_wa):
     headers, tenant_id = _signup(client_wa)
     _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")

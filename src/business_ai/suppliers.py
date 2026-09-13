@@ -80,13 +80,21 @@ class SupplierStore(SqliteStore):
             return self._row_to_supplier(row) if row else None
 
     def find_by_name(self, tenant_id: str, name: str) -> Supplier | None:
+        """Exact match first (case/whitespace-insensitive); if that fails,
+        fall back to a substring match — same fragment-matching convention
+        as admin_bot.py's `_find_employee_by_name` — but only when exactly
+        one active supplier's name contains the fragment. Two or more
+        partial matches are ambiguous and return None rather than guessing."""
         target = name.strip().lower()
+        if not target:
+            return None
         with self._lock, self._db() as conn:
             rows = conn.execute("SELECT * FROM suppliers WHERE tenant_id = ? AND active = 1", (tenant_id,)).fetchall()
         for row in rows:
             if row["name"].strip().lower() == target:
                 return self._row_to_supplier(row)
-        return None
+        partial_matches = [row for row in rows if target in row["name"].strip().lower()]
+        return self._row_to_supplier(partial_matches[0]) if len(partial_matches) == 1 else None
 
     def list_for_tenant(self, tenant_id: str, *, active_only: bool = False) -> list[Supplier]:
         clause = "tenant_id = ?" + (" AND active = 1" if active_only else "")

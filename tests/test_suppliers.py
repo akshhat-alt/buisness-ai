@@ -30,6 +30,24 @@ def test_find_by_name_is_case_insensitive(store):
     assert found is not None
 
 
+def test_find_by_name_matches_a_unique_substring(store):
+    store.create(tenant_id=TENANT, name="Ramesh Traders")
+    found = store.find_by_name(TENANT, "Ramesh")
+    assert found is not None
+    assert found.name == "Ramesh Traders"
+
+
+def test_find_by_name_returns_none_for_ambiguous_substring(store):
+    store.create(tenant_id=TENANT, name="Ramesh Traders")
+    store.create(tenant_id=TENANT, name="Ramesh Vegetables")
+    assert store.find_by_name(TENANT, "Ramesh") is None
+
+
+def test_find_by_name_returns_none_when_no_supplier_matches_at_all(store):
+    store.create(tenant_id=TENANT, name="Ramesh Traders")
+    assert store.find_by_name(TENANT, "Suresh") is None
+
+
 def test_find_by_name_returns_none_for_inactive(store):
     # Suppliers are created active; there's no deactivate method yet in
     # Phase 17, so this exercises the active_only filter path directly
