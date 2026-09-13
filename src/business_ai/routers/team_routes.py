@@ -9,7 +9,7 @@ from fastapi import FastAPI, Header, HTTPException
 
 from business_ai.employees import normalize_whatsapp_number
 from business_ai.formatting import _parse_appointment_to_utc, _short_task_id
-from business_ai.schemas import CreateEmployeeRequest, CreateTaskRequest, UpdateEmployeeRequest
+from business_ai.schemas import CreateEmployeeRequest, CreateTaskRequest, RejectTaskRequest, UpdateEmployeeRequest
 from business_ai.tenant import TenantAction, TenantNotFoundError, UnauthorizedError, authorize
 
 
@@ -140,3 +140,53 @@ def register_team(app: FastAPI, svc, ctx) -> None:
         except TenantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"tasks": [t.model_dump() for t in svc.task_store.list_for_tenant(tenant_id, status=status)]}
+
+    @app.post("/api/tasks/{task_id}/approve")
+    def approve_task(task_id: str, tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Dashboard-side equivalent of the WhatsApp "approve <id>"
+        command (admin_bot.py) — same ASSIGN_TASK gate the WhatsApp
+        handler's own can_manage check enforces (owner+manager, never
+        staff), same store call, same audit action, same verified-
+        outcome customer ping when the task is linked to a real lead.
+        Phase 21's Approval Inbox is the first caller of this route, but
+        it's a general-purpose dashboard action, not inbox-specific."""
+        principal = ctx._resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.ASSIGN_TASK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        task = svc.task_store.get(tenant_id, task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Unknown task_id for this business.")
+        updated = svc.task_store.approve(tenant_id, task_id, principal.principal_id)
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="task_approved",
+            target_type="task", target_id=task_id, metadata={"via": "api"},
+        )
+        ctx._maybe_verify_outcome_with_customer(tenant, updated)
+        return updated.model_dump()
+
+    @app.post("/api/tasks/{task_id}/reject")
+    def reject_task(
+        task_id: str, request: RejectTaskRequest, tenant_id: str, authorization: str | None = Header(default=None),
+    ) -> dict:
+        """Dashboard-side equivalent of the WhatsApp "reject <id> <reason>"
+        command — sends the task back to in_progress, never cancelled."""
+        principal = ctx._resolve(authorization)
+        try:
+            authorize(principal, TenantAction.ASSIGN_TASK, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        task = svc.task_store.get(tenant_id, task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Unknown task_id for this business.")
+        updated = svc.task_store.reject(tenant_id, task_id, reason=request.reason)
+        svc.audit_log.record(
+            tenant_id=tenant_id, actor_employee_id=None, action="task_rejected",
+            target_type="task", target_id=task_id, metadata={"reason": request.reason, "via": "api"},
+        )
+        return updated.model_dump()

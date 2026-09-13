@@ -1286,6 +1286,83 @@ as an owner would see it in the dashboard. 11 new tests across
 `tests/test_evolution.py` (7) and `tests/test_evolution_cron.py` (4) —
 604 total, all green.
 
+## What V1.26 adds: Dashboard 2.0 (Phase 21)
+
+Closes the exact gaps an INSPECT-phase audit of every dashboard card
+found: three cards that could only be READ from the dashboard (an owner
+had to switch to WhatsApp or the API to act), and one entity type
+(task approval) with no REST route at all despite the store methods and
+WhatsApp command already existing.
+
+**Financials gets a write action.** `POST /api/metrics` — the
+dashboard's own equivalent of the WhatsApp `log sale/expense/collection
+<amount> [note]` commands. An owner logging today's numbers no longer
+has to switch to WhatsApp to do it. Gated by the same `VIEW_FINANCIALS`
+tier that can already see this data, not a new permission.
+
+**Task approval gets its first REST route.** `POST /api/tasks/{id}/approve`
+and `.../reject` — the exact same `TaskStore.approve`/`reject` calls,
+audit actions, and verified-outcome customer ping the WhatsApp `approve
+<id>`/`reject <id>` commands already use, gated by the same `ASSIGN_TASK`
+tier (owner+manager, never staff) the WhatsApp handler's own role check
+enforces. Until this phase, an `approval_required` task could be
+*created* via the API but could only ever be *approved* over WhatsApp —
+the dashboard's Team & Tasks form didn't even expose the "requires
+approval" checkbox, so in practice no real user could reach this flow
+from the dashboard at all. Both gaps are closed together: the checkbox
+now exists, and so does the route to act on it.
+
+**A genuine Approval Inbox**, `GET /api/approvals` — aggregates every
+entity type in this codebase with a real pending-approval concept:
+tasks awaiting approval and Self-Evolution proposals pending owner
+review. These are the ONLY two such entities that exist (confirmed by a
+full-codebase audit before building this) — SOP notes have no separate
+"pending" state to aggregate, they're approved directly. Deliberately
+NOT one blanket permission check: task approval is owner+manager while
+evolution is owner-only, so each section is gated by its own existing
+`authorize()` call and simply omitted if the caller isn't authorized for
+it — a manager's inbox correctly shows pending tasks with no evolution
+section, never a 403 for the whole call.
+
+**The Command Center becomes the unified Daily Brief** the roadmap
+asked for — not a new parallel page, but the Approval Inbox surfaced as
+the first card in the section that was already an owner's daily pull
+summary, renamed "Command Center — Your Daily Brief" to say so plainly.
+Reusing rather than duplicating: Command Center already existed
+specifically to answer "what needs my attention"; giving it real,
+actionable items (with buttons, not just sentences) is what was
+actually missing, not a second surface.
+
+**Revenue Radar's last read-only bucket gets an action.** No-show
+appointments previously rendered as a plain count; each one now has a
+"Create follow-up task" button, linking the new task back to that lead
+(`customer_facing_lead_id`) exactly like the existing "assign ... for
+lead <id>" WhatsApp flow does. The Weekly Scorecard gets the same
+one-tap entry point for turning an insight into an owned, tracked task.
+
+**A real bug found and fixed during this phase's own INSPECT step, not
+a Phase 21 feature:** `GET /api/business-health`, `GET /api/command-center`,
+and `GET /api/timeline` were each defined TWICE — once in
+`insights_routes.py`, byte-for-byte duplicated in `feedback_routes.py` —
+almost certainly an accidental copy during the Phase 9 router
+extraction from `app.py`. Since FastAPI/Starlette matches routes in
+registration order and `register_insights` runs before
+`register_feedback`, the `feedback_routes.py` copies were dead code,
+silently shadowed the entire time. Removed; `feedback_routes.py` now
+contains only what its own docstring always claimed it did (feedback +
+SOP routes). No behavior change — the live routes were never the
+shadowed ones — but it's exactly the "duplicate architecture" this
+project has been asked to keep checking for at every phase boundary.
+
+Live-verified against the real running app: a dashboard-logged sale
+reached the real financials summary and an invalid amount was correctly
+rejected with 400; an approval-required task correctly appeared in the
+real Approval Inbox, was approved via the new REST route, and correctly
+disappeared from the inbox afterward; a pending evolution proposal
+appeared in that same unified inbox alongside it. 16 new tests across
+`tests/test_approvals.py` (12, new file) and `tests/test_metrics_routes.py`
+(4) — 620 total, all green.
+
 ## What v1 deliberately does not do
 
 Not a CRM, not a website builder, not a workflow-automation platform. No
@@ -1367,7 +1444,7 @@ business owner's own step, outside this app.
 pytest
 ```
 
-604 tests (and rising — see each phase's own "What Vx.x adds" section
+620 tests (and rising — see each phase's own "What Vx.x adds" section
 above for that phase's exact test count and what it covers; this
 section deliberately stops narrating in detail at V1.7 rather than
 re-summarizing every later phase inline, since keeping ONE hand-written
@@ -1506,13 +1583,12 @@ before the prompt/schema was finalized.
   yet — a later phase swaps the parser for an LLM intent classifier
   without changing any of the underlying handlers. Due dates likewise
   need a structured `YYYY-MM-DD[ HH:MM]`, not free text like "tomorrow."
-- **No dashboard UI for the roster or tasks yet** — `/api/employees` and
-  `/api/tasks` exist and are tested, but there's no admin-panel screen
-  for them today; management happens over WhatsApp or direct API calls.
-- **`approval_required` tasks can't be created via the WhatsApp grammar
-  yet** — only through the API/store directly. The `awaiting_approval`
-  → `approve`/`reject` round trip itself is fully wired and tested once
-  such a task exists.
+- **`approval_required` tasks still can't be created via the WhatsApp
+  grammar** — only through the dashboard's Team & Tasks form (Phase 21
+  added its checkbox) or the API/store directly. The `awaiting_approval`
+  → `approve`/`reject` round trip itself works identically from either
+  WhatsApp or the dashboard's Approval Inbox (Phase 21) once such a task
+  exists, regardless of how it was created.
 - **No proactive/scheduled admin-bot pushes yet** (a morning briefing, an
   overdue-task nudge nobody asked for) — every reply today is triggered
   by an inbound message, same 24-hour-window constraint as the rest of
@@ -1893,3 +1969,28 @@ before the prompt/schema was finalized.
   saved rather than sending an explicit "unset" signal. An owner who
   wants the platform default back today sets the field to that default's
   own value.
+- **The Approval Inbox (Phase 21) aggregates exactly two entity types**
+  — every genuine pending-approval concept that exists in this codebase
+  today, confirmed by a full-repo audit before building it. It is not a
+  generic/extensible framework for a future third type; adding one means
+  adding its own `authorize()`-gated section to `GET /api/approvals`,
+  the same explicit-per-type pattern already used for the two that
+  exist, not a registered-plugin abstraction nobody has asked for yet.
+- **"Create follow-up task" (Scorecard, Revenue Radar no-shows) is not
+  truly one-tap** — it pre-fills the Team & Tasks form's title (and,
+  for a no-show, links the customer) and scrolls the owner there, but
+  still requires picking a real assignee before it can save. A true
+  single-click creation would need a default-assignee convention (e.g.
+  "assign to me") this app has deliberately not invented, since a
+  dashboard login (`Principal`) and a WhatsApp roster identity
+  (`Employee`) are two different identity systems today (see
+  `EmployeeStore.linked_user_id`, still unused for this purpose).
+- **Dashboard-originated financial entries and task approvals record
+  `actor_employee_id: None` / `reported_by_employee_id: None`** in the
+  audit log and metric row — the same "dashboard-triggered, not
+  WhatsApp-roster-attributed" convention already used everywhere else in
+  this codebase (e.g. `task_assigned` via the API), not a new gap Phase
+  21 introduced. A `Principal`'s dashboard login identity isn't the same
+  record as an `Employee`'s WhatsApp roster identity, so there's no
+  employee_id to attribute it to without the same linking work named
+  above.

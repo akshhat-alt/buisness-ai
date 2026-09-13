@@ -86,6 +86,16 @@ class CreateTaskRequest(BaseModel):
     customer_facing_lead_id: str | None = None  # enables the verified-outcome customer ping on completion
 
 
+class RejectTaskRequest(BaseModel):
+    reason: str | None = None
+
+
+class LogMetricRequest(BaseModel):
+    metric_type: str  # sale | expense | collection — validated against METRIC_TYPES by the store itself
+    amount_inr: int
+    note: str = ""
+
+
 class ApproveSopRequest(BaseModel):
     theme: str
     text: str

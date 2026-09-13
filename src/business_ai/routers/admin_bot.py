@@ -1817,3 +1817,4 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
     ctx._overdue_lines_by_employee = _overdue_lines_by_employee
     ctx._resolve_theme_key = _resolve_theme_key
     ctx._send_admin_bot_message = _send_admin_bot_message
+    ctx._maybe_verify_outcome_with_customer = _maybe_verify_outcome_with_customer

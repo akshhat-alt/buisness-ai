@@ -249,8 +249,24 @@ src/business_ai/
                   menu/recipe/supplier/inventory setup CRUD — API/
                   dashboard-driven, deliberately not a WhatsApp grammar;
                   the high-frequency log sale/purchase/waste commands
-                  live in admin_bot.py instead) — see app.py's
-                  create_app() for wiring
+                  live in admin_bot.py instead). Phase 21 added
+                  POST /api/metrics (dashboard financial logging,
+                  metrics_routes.py), POST /api/tasks/{id}/approve|reject
+                  (team_routes.py — task approval's first REST route,
+                  reusing ctx._maybe_verify_outcome_with_customer now
+                  exposed from admin_bot.py), and GET /api/approvals
+                  (insights_routes.py — the unified Approval Inbox,
+                  aggregating awaiting_approval tasks + pending evolution
+                  proposals with per-item-type authorize(), never a
+                  blanket check). Phase 21 also removed three routes
+                  (business-health, command-center, timeline) that were
+                  accidentally duplicated byte-for-byte in
+                  feedback_routes.py since the Phase 9 extraction —
+                  dead code, silently shadowed by insights_routes.py's
+                  copies the whole time (Starlette matches routes in
+                  registration order); feedback_routes.py now contains
+                  only feedback/SOP routes, matching its own docstring —
+                  see app.py's create_app() for wiring
   app.py          FastAPI app factory: Services + middleware + calls
                   every routers/register_X — the routes themselves moved
                   to routers/ in Phase 9, this file no longer defines any
@@ -261,7 +277,7 @@ scripts/          rotate_secrets.py — one-time secret encryption /
                   key-rotation tool for secrets_vault.py (Phase 9);
                   backup_data.py / restore_data.py — data/ snapshot +
                   restore CLI wrapping ops.py (Phase 14)
-tests/            pytest suite (604 tests) — see README.md
+tests/            pytest suite (620 tests) — see README.md
 ```
 
 Every store (`TenantRegistry`, `UserStore`, `LeadStore`, `AnalyticsStore`,

@@ -108,6 +108,51 @@ def register_insights(app: FastAPI, svc, ctx) -> None:
             "automated_actions_taken": automated_actions_taken,
         }
 
+    @app.get("/api/approvals")
+    def get_approvals(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Phase 21's Approval Inbox: aggregates every entity type in
+        this codebase with a genuine pending-approval concept — a task
+        marked awaiting_approval, and a Self-Evolution proposal pending
+        owner review — into one list. Deliberately NOT one blanket
+        permission check: task approval is owner+manager (ASSIGN_TASK)
+        while evolution is owner-only (MANAGE_EVOLUTION), so this checks
+        each section against its own existing authorize() call and
+        simply omits a section the caller isn't authorized for, rather
+        than 403ing the whole inbox — a manager's inbox correctly shows
+        pending tasks with no evolution section, not an error."""
+        principal = ctx._resolve(authorization)
+        try:
+            svc.tenant_registry.get_config(tenant_id)
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        items: list[dict] = []
+        try:
+            authorize(principal, TenantAction.VIEW_TASKS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError:
+            pass
+        else:
+            for t in svc.task_store.list_for_tenant(tenant_id, status="awaiting_approval"):
+                items.append({
+                    "type": "task", "id": t.task_id, "title": t.title,
+                    "detail": t.description or "", "created_at": t.updated_at,
+                })
+
+        try:
+            authorize(principal, TenantAction.MANAGE_EVOLUTION, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError:
+            pass
+        else:
+            for p in svc.evolution_proposals.list_for_tenant(tenant_id, status="pending_owner_review"):
+                candidate = svc.evolution_versions.get(tenant_id, p.candidate_version_id)
+                items.append({
+                    "type": "evolution_proposal", "id": p.proposal_id, "title": "Assistant tone adjustment",
+                    "detail": candidate.rationale if candidate else "", "created_at": p.created_at,
+                })
+
+        items.sort(key=lambda x: x["created_at"])
+        return {"items": items}
+
     @app.get("/api/timeline")
     def get_timeline(tenant_id: str, authorization: str | None = Header(default=None), limit: int = 50) -> dict:
         """A read over the existing audit log, not a new event-store —

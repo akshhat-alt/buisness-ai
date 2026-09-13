@@ -176,8 +176,13 @@
 
         <section class="dash-section" id="command-center">
           <div class="dash-section-head">
-            <h2>Command Center</h2>
-            <p class="ba-muted" style="margin:0;">Everything that needs a decision from you, in one place — what to look at, where the revenue is, and what's already been handled automatically.</p>
+            <h2>Command Center — Your Daily Brief</h2>
+            <p class="ba-muted" style="margin:0;">Everything that needs a decision from you, in one place — what's actually waiting on your approval, what to look at, where the revenue is, and what's already been handled automatically.</p>
+          </div>
+
+          <div class="ba-card" id="cc-approvals-card">
+            <h3 style="margin-top:0;">✅ Approval Inbox</h3>
+            <div id="cc-approvals-list" class="ba-muted">Loading…</div>
           </div>
 
           <div class="ba-card" id="cc-attention-card">
@@ -268,10 +273,13 @@
           <div class="ba-card">
             <h3 style="margin-top:0;">Open Tasks</h3>
             <table class="ba-table" id="tasks-table"><thead><tr><th>Task</th><th>Assigned to</th><th>Due</th><th>Status</th></tr></thead><tbody></tbody></table>
-            <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+            <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center;">
               <input class="ba-input" id="new-task-title" placeholder="Task title" style="flex:1; min-width:160px;">
               <select class="ba-input" id="new-task-assignee" style="max-width:160px;"></select>
               <input class="ba-input" type="date" id="new-task-due" style="max-width:150px;">
+              <label style="display:flex; align-items:center; gap:6px; font-size:.85em; white-space:nowrap;">
+                <input type="checkbox" id="new-task-approval"> Requires approval before done
+              </label>
               <button class="ba-btn ba-btn-sm" onclick="addTask()">Assign</button>
             </div>
             <div id="task-status" class="ba-muted" style="margin-top:6px;"></div>
@@ -463,11 +471,25 @@
             <div style="margin-top:10px;">
               <a class="ba-btn ba-btn-secondary ba-btn-sm" id="bi-financials-csv-link" href="#" target="_blank" rel="noopener">Download CSV</a>
             </div>
+            <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center;">
+              <select class="ba-input" id="bi-log-type" style="max-width:130px;">
+                <option value="sale">Sale</option>
+                <option value="expense">Expense</option>
+                <option value="collection">Collection</option>
+              </select>
+              <input class="ba-input" type="number" min="1" id="bi-log-amount" placeholder="Amount (₹)" style="max-width:130px;">
+              <input class="ba-input" id="bi-log-note" placeholder="Note (optional)" style="flex:1; min-width:140px;">
+              <button class="ba-btn ba-btn-sm" onclick="logMetric()">Log</button>
+            </div>
+            <div id="bi-log-status" class="ba-muted" style="margin-top:6px;"></div>
           </div>
 
           <div class="ba-card">
             <h3 style="margin-top:0;">Weekly Scorecard</h3>
             <table class="ba-table" id="bi-scorecard-table"><thead><tr><th>Metric</th><th>This week</th><th>Prior week</th></tr></thead><tbody></tbody></table>
+            <div style="margin-top:10px;">
+              <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="startFollowUpTask(null, 'Review this weeks scorecard')">Create follow-up task from this</button>
+            </div>
           </div>
 
           <div class="ba-card">
@@ -1125,22 +1147,46 @@
       } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
     }
 
+    // Phase 21: set by startFollowUpTask()/startFollowUpTaskFromButton()
+    // when a card elsewhere on the dashboard (Scorecard, Revenue Radar
+    // no-shows) wants the NEXT task the owner assigns to link back to a
+    // specific lead — cleared once that task is actually created.
+    let pendingTaskLeadId = null;
+
+    function startFollowUpTask(leadId, titleSuggestion) {
+      pendingTaskLeadId = leadId;
+      document.getElementById('new-task-title').value = titleSuggestion || '';
+      document.getElementById('team').scrollIntoView({ behavior: 'smooth' });
+      document.getElementById('task-status').innerText = leadId
+        ? 'Pick who should follow up, then click Assign — this task will link back to that customer.'
+        : 'Pick who should follow up, then click Assign.';
+    }
+
+    function startFollowUpTaskFromButton(buttonEl) {
+      startFollowUpTask(buttonEl.dataset.leadId, buttonEl.dataset.label);
+    }
+
     async function addTask() {
       const title = document.getElementById('new-task-title').value.trim();
       const assignee = document.getElementById('new-task-assignee').value;
       const due = document.getElementById('new-task-due').value;
+      const approvalRequired = document.getElementById('new-task-approval').checked;
       const statusEl = document.getElementById('task-status');
       if (!title || !assignee) { statusEl.innerText = 'A title and an assignee are required.'; return; }
       try {
+        const body = { title, assigned_to_employee_id: assignee, due_at: due || null, approval_required: approvalRequired };
+        if (pendingTaskLeadId) body.customer_facing_lead_id = pendingTaskLeadId;
         const res = await fetch(`/api/tasks?tenant_id=${encodeURIComponent(tenantId)}`, {
           method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ title, assigned_to_employee_id: assignee, due_at: due || null }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Could not create task.');
         statusEl.innerText = `Assigned "${data.title}".`;
         document.getElementById('new-task-title').value = '';
         document.getElementById('new-task-due').value = '';
+        document.getElementById('new-task-approval').checked = false;
+        pendingTaskLeadId = null;
         loadTeam();
         loadHealth();
       } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
@@ -1246,6 +1292,56 @@
       document.getElementById('cc-automated-list').innerHTML = (cc.automated_actions_taken || []).length
         ? cc.automated_actions_taken.map(l => `<li>${escapeHtml(l)}</li>`).join('')
         : '<li class="ba-muted">Nothing yet — create a rule under Automation to have Business AI act on your behalf.</li>';
+
+      loadApprovals();
+    }
+
+    const APPROVAL_TYPE_LABEL = { task: 'Task approval', evolution_proposal: 'Assistant tone change' };
+
+    async function loadApprovals() {
+      const res = await fetch(`/api/approvals?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      const listEl = document.getElementById('cc-approvals-list');
+      if (!res.ok) { listEl.innerHTML = ''; return; }
+      const data = await res.json();
+      listEl.innerHTML = data.items.length ? data.items.map(item => `
+        <div class="ba-card" style="margin-bottom:8px;">
+          <div class="ba-muted" style="font-size:.8em; text-transform:uppercase; letter-spacing:.03em;">${escapeHtml(APPROVAL_TYPE_LABEL[item.type] || item.type)}</div>
+          <div><b>${escapeHtml(item.title)}</b></div>
+          ${item.detail ? `<div class="ba-muted" style="margin:4px 0;">${escapeHtml(item.detail)}</div>` : ''}
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button class="ba-btn ba-btn-sm" data-type="${escapeHtml(item.type)}" data-id="${escapeHtml(item.id)}" onclick="approveInboxItem(this)">Approve</button>
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" data-type="${escapeHtml(item.type)}" data-id="${escapeHtml(item.id)}" onclick="rejectInboxItem(this)">Reject</button>
+          </div>
+        </div>`).join('') : '<span class="ba-muted">Nothing waiting on your approval right now.</span>';
+    }
+
+    async function approveInboxItem(buttonEl) {
+      const { type, id } = buttonEl.dataset;
+      buttonEl.disabled = true;
+      const url = type === 'task'
+        ? `/api/tasks/${encodeURIComponent(id)}/approve?tenant_id=${encodeURIComponent(tenantId)}`
+        : `/api/evolution/proposals/${encodeURIComponent(id)}/approve?tenant_id=${encodeURIComponent(tenantId)}`;
+      const res = await fetch(url, { method: 'POST', headers: BizAuth.getAuthHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not approve.'); buttonEl.disabled = false; return; }
+      loadApprovals();
+      if (type === 'task') { loadTeam(); loadHealth(); } else { loadEvolution(); }
+    }
+
+    async function rejectInboxItem(buttonEl) {
+      const { type, id } = buttonEl.dataset;
+      buttonEl.disabled = true;
+      const url = type === 'task'
+        ? `/api/tasks/${encodeURIComponent(id)}/reject?tenant_id=${encodeURIComponent(tenantId)}`
+        : `/api/evolution/proposals/${encodeURIComponent(id)}/reject?tenant_id=${encodeURIComponent(tenantId)}`;
+      const res = await fetch(url, {
+        method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: type === 'task' ? JSON.stringify({}) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.detail || 'Could not reject.'); buttonEl.disabled = false; return; }
+      loadApprovals();
+      if (type === 'task') { loadTeam(); loadHealth(); } else { loadEvolution(); }
     }
 
     // ---------------------------------------------------------- Business Map (Phase 10)
@@ -1655,10 +1751,37 @@
                 <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="resendDepositLink('${escapeHtml(l.lead_id)}', this)">Resend link</button>
               </div>`).join('') + `</div>`);
         }
-        if (radar.no_show_appointments.length) parts.push(`<div>• ${radar.no_show_appointments.length} appointment(s) marked no-show.</div>`);
+        if (radar.no_show_appointments.length) {
+          parts.push(`<div style="margin-bottom:10px;"><b>${radar.no_show_appointments.length} appointment(s) marked no-show:</b>` +
+            radar.no_show_appointments.map(l => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;">
+                <span>${escapeHtml(l.name || l.phone || l.email || l.lead_id)}</span>
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" data-lead-id="${escapeHtml(l.lead_id)}" data-label="${escapeHtml('Follow up: no-show — ' + (l.name || l.phone || l.email || ''))}" onclick="startFollowUpTaskFromButton(this)">Create follow-up task</button>
+              </div>`).join('') + `</div>`);
+        }
         if (radar.total_estimated_leakage_inr) parts.push(`<div>Estimated unpaid deposits: ~₹${radar.total_estimated_leakage_inr}.</div>`);
         radarEl.innerHTML = parts.length ? parts.join('') : `Nothing leaking in the last ${radar.window_days} days — nice.`;
       }
+    }
+
+    async function logMetric() {
+      const statusEl = document.getElementById('bi-log-status');
+      const metricType = document.getElementById('bi-log-type').value;
+      const amount = document.getElementById('bi-log-amount').value.trim();
+      const note = document.getElementById('bi-log-note').value.trim();
+      if (!amount || Number(amount) <= 0) { statusEl.innerText = 'Enter a positive amount.'; return; }
+      try {
+        const res = await fetch(`/api/metrics?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ metric_type: metricType, amount_inr: parseInt(amount, 10), note }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not log that entry.');
+        statusEl.innerText = `Logged ${metricType}: ₹${data.amount_inr}.`;
+        document.getElementById('bi-log-amount').value = '';
+        document.getElementById('bi-log-note').value = '';
+        loadBusinessIntel();
+      } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
     }
 
     async function nudgeLead(leadId, buttonEl) {

@@ -102,3 +102,48 @@ def test_metrics_export_csv_contains_logged_entries(client, owner_session, servi
     assert "expense" in r.text
     assert "750" in r.text
     assert "supplies" in r.text
+
+
+# ------------------------------------------------------------------ Phase 21: dashboard write route
+
+
+def test_create_metric_via_dashboard_route(client, owner_session, services):
+    headers, tenant_id = owner_session
+    r = client.post(
+        f"/api/metrics?tenant_id={tenant_id}",
+        json={"metric_type": "sale", "amount_inr": 1200, "note": "walk-in"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["amount_inr"] == 1200
+    assert data["metric_type"] == "sale"
+    assert data["reported_by_employee_id"] is None  # dashboard writes aren't WhatsApp-roster-attributed
+
+    entries = services.metric_store.list_for_tenant(tenant_id)
+    assert len(entries) == 1
+    audit = services.audit_log.list_for_tenant(tenant_id, action="metric_logged")
+    assert len(audit) == 1
+
+
+def test_create_metric_rejects_unknown_type(client, owner_session):
+    headers, tenant_id = owner_session
+    r = client.post(f"/api/metrics?tenant_id={tenant_id}", json={"metric_type": "bogus", "amount_inr": 100}, headers=headers)
+    assert r.status_code == 400, r.text
+
+
+def test_create_metric_rejects_non_positive_amount(client, owner_session):
+    headers, tenant_id = owner_session
+    r = client.post(f"/api/metrics?tenant_id={tenant_id}", json={"metric_type": "sale", "amount_inr": 0}, headers=headers)
+    assert r.status_code == 400, r.text
+
+
+def test_create_metric_requires_owner_or_manager(client, owner_session, services):
+    headers, tenant_id = owner_session
+    staff_token = create_access_token(Principal.staff("staff_x", tenant_id), services.settings)
+    r = client.post(
+        f"/api/metrics?tenant_id={tenant_id}",
+        json={"metric_type": "sale", "amount_inr": 500},
+        headers={"Authorization": f"Bearer {staff_token}"},
+    )
+    assert r.status_code == 403
