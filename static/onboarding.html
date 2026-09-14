@@ -80,23 +80,72 @@
     <!-- Step 2: Connect WhatsApp -->
     <section class="wiz-panel" data-step="1">
       <div class="ba-card">
-        <h3 style="margin-top:0;">Connect WhatsApp <span class="wiz-optional-tag">Optional</span></h3>
-        <p class="ba-muted" style="margin-top:0;">Let customers message your assistant directly on WhatsApp. You can always do this later from Settings.</p>
+        <h3 style="margin-top:0;">Connect WhatsApp <span class="wiz-optional-tag">Optional &amp; Skippable</span></h3>
+        <p class="ba-muted" style="margin-top:0;">
+          Connecting WhatsApp is <strong>completely optional</strong> — your assistant's website chat works immediately regardless. You can skip this step now and connect or change your WhatsApp number anytime later from Settings.
+        </p>
         <div id="wa-embedded-box" style="display:none; margin-bottom:14px;">
           <button class="ba-btn" id="wa-connect-btn" onclick="launchWhatsAppEmbeddedSignup()">Connect WhatsApp</button>
         </div>
-        <div id="wa-connected-box" style="display:none;">
-          <div class="ba-alert ba-alert-info"><div>✓ WhatsApp connected.</div></div>
+        <div id="wa-connected-box" style="display:none; margin-bottom:14px;">
+          <div class="ba-alert ba-alert-info" style="margin-bottom:12px;">
+            <div>
+              <strong>✓ WhatsApp connected.</strong>
+              <div id="wiz-wa-connected-details" style="margin-top:4px; font-size:0.8125rem;">
+                Phone Number ID: <code id="wiz-wa-connected-id" style="font-family:monospace; background:rgba(0,0,0,0.05); padding:2px 6px; border-radius:4px;"></code>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" id="wiz-wa-test-btn" onclick="testWhatsappConnection()">Test Connection</button>
+            <button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="editManualWhatsapp()">Edit Credentials</button>
+          </div>
+          <div id="wiz-wa-test-status" style="margin-top:10px;"></div>
         </div>
         <div id="wa-manual-box">
-          <p class="ba-muted" style="margin-top:0; font-size:0.8125rem;">Manual setup: add your Phone Number ID and access token from <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers</a>.</p>
-          <div class="ba-field"><label class="ba-label">WhatsApp Phone Number ID</label><input class="ba-input" id="wiz-wa-phone-id" placeholder="e.g. 109876543210987"></div>
-          <div class="ba-field"><label class="ba-label">WhatsApp Access Token</label><input class="ba-input" type="password" id="wiz-wa-token" placeholder="Permanent access token from Meta"></div>
-          <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="saveManualWhatsapp()">Save Connection</button>
+          <div style="margin-bottom:18px; padding:14px 16px; background:var(--ba-surface-sunken); border:1px solid var(--ba-border); border-radius:var(--ba-radius-sm);">
+            <div style="font-weight:600; font-size:0.875rem; margin-bottom:10px; color:var(--ba-ink);">Manual Cloud API Setup Checklist (~10 minutes):</div>
+            <ol style="margin:0; padding-left:20px; font-size:0.8125rem; color:var(--ba-ink-soft); line-height:1.6;">
+              <li style="margin-bottom:8px;">
+                <strong>Meta App &amp; WhatsApp Product:</strong> In <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers &rarr; My Apps</a>, create a Meta App (type: <strong>Business</strong>) and add the <strong>WhatsApp</strong> product to it.
+              </li>
+              <li style="margin-bottom:8px;">
+                <strong>Phone Number ID:</strong> Under <strong>WhatsApp &gt; API Setup</strong> in your Meta App, add or select your phone number. Copy the numeric <strong>Phone Number ID</strong> (not the phone number itself).
+              </li>
+              <li style="margin-bottom:8px;">
+                <strong>Permanent Access Token:</strong> In <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Meta Business Settings &rarr; System Users</a>, create a System User, assign your WhatsApp account asset with the <code>whatsapp_business_messaging</code> permission, and generate a <strong>permanent access token</strong> (for quick testing, you can also copy the temporary 24-hour access token from the API Setup page).
+              </li>
+              <li style="margin-bottom:8px;">
+                <strong>Save Connection:</strong> Paste your <strong>Phone Number ID</strong> and <strong>access token</strong> into the fields below and click <strong>Save Connection</strong>.
+              </li>
+              <li>
+                <strong>Message your number:</strong> Message that WhatsApp number from any phone — your assistant will answer from your ingested knowledge base within seconds!
+              </li>
+            </ol>
+          </div>
+          <div class="ba-field">
+            <label class="ba-label" for="wiz-wa-phone-id">WhatsApp Phone Number ID</label>
+            <input class="ba-input" id="wiz-wa-phone-id" placeholder="e.g. 109876543210987">
+            <div class="ba-muted" style="font-size:0.75rem; margin-top:4px;">Find this on the <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">WhatsApp &gt; API Setup</a> page in your Meta App.</div>
+          </div>
+          <div class="ba-field">
+            <label class="ba-label" for="wiz-wa-token">WhatsApp Access Token</label>
+            <input class="ba-input" type="password" id="wiz-wa-token" placeholder="Permanent access token from Meta">
+            <div class="ba-muted" style="font-size:0.75rem; margin-top:4px;">Generated under <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Meta Business Settings &gt; System Users</a> with <code>whatsapp_business_messaging</code> permission (or temporary test token).</div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px;">
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" id="wiz-wa-save-btn" onclick="saveManualWhatsapp()">Save Connection</button>
+          </div>
           <div id="wiz-wa-status" class="ba-muted" style="margin-top:8px;"></div>
         </div>
       </div>
-      <div class="wiz-nav-row"><button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(0)">Back</button><button class="ba-btn ba-btn-sm" onclick="goToStep(2)">Continue</button></div>
+      <div class="wiz-nav-row">
+        <button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(0)">Back</button>
+        <div style="display:flex; gap:8px;">
+          <button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(2)">Skip for now &rarr;</button>
+          <button class="ba-btn ba-btn-sm" onclick="goToStep(2)">Continue</button>
+        </div>
+      </div>
     </section>
 
     <!-- Step 3: Add Knowledge -->
@@ -313,6 +362,9 @@
       if (tenant.whatsapp_phone_number_id) {
         document.getElementById('wa-connected-box').style.display = 'block';
         document.getElementById('wa-manual-box').style.display = 'none';
+        const connectedIdEl = document.getElementById('wiz-wa-connected-id');
+        if (connectedIdEl) connectedIdEl.textContent = tenant.whatsapp_phone_number_id;
+        document.getElementById('wiz-wa-phone-id').value = tenant.whatsapp_phone_number_id;
         return;
       }
       if (status.available) {
@@ -377,14 +429,49 @@
       const phoneId = document.getElementById('wiz-wa-phone-id').value.trim();
       const token = document.getElementById('wiz-wa-token').value.trim();
       if (!phoneId || !token) { statusEl.textContent = 'Both fields are required.'; return; }
+      statusEl.textContent = 'Saving connection...';
       try {
         const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
           method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ whatsapp_phone_number_id: phoneId, whatsapp_access_token: token }),
         });
         if (!res.ok) throw new Error((await res.json()).detail || 'Could not save.');
-        loadWhatsappStep();
+        statusEl.textContent = '✓ Saved successfully!';
+        await loadWhatsappStep();
       } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    async function testWhatsappConnection() {
+      const testStatusEl = document.getElementById('wiz-wa-test-status');
+      if (!testStatusEl) return;
+      testStatusEl.innerHTML = '<span class="ba-muted">Verifying saved connection...</span>';
+      try {
+        const res = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, {
+          headers: BizAuth.getAuthHeaders(),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || 'Could not verify account connection.');
+        }
+        const tenant = await res.json();
+        if (tenant.whatsapp_phone_number_id) {
+          testStatusEl.innerHTML = `<div class="ba-alert ba-alert-info" style="margin-top:8px;">
+            <div>✓ <strong>Connection verified.</strong> Phone Number ID <code>${escapeHtml(tenant.whatsapp_phone_number_id)}</code> is saved on your account. Text your WhatsApp number from any phone to test live responses!</div>
+          </div>`;
+        } else {
+          testStatusEl.innerHTML = `<div class="ba-alert ba-alert-warn" style="margin-top:8px;">
+            <div>✗ Connection check failed: No WhatsApp Phone Number ID is stored on this account.</div>
+          </div>`;
+        }
+      } catch (err) {
+        testStatusEl.innerHTML = `<div class="ba-alert ba-alert-warn" style="margin-top:8px;">
+          <div>✗ Connection check failed: ${escapeHtml(err.message || 'Could not verify connection.')}</div>
+        </div>`;
+      }
+    }
+
+    function editManualWhatsapp() {
+      document.getElementById('wa-manual-box').style.display = 'block';
     }
 
     // ---------------------------------------------------------- Step 3: Knowledge
