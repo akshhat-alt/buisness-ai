@@ -1,0 +1,512 @@
+name: Scheduled Crons
+
+on:
+  schedule:
+    # 1. Every 30 minutes (appointment reminders)
+    #    Runs at minute 0 and 30 of every hour (UTC and IST)
+    - cron: "*/30 * * * *"
+
+    # 2. Every 60 minutes (automation engine, task escalation)
+    #    Runs at minute 0 of every hour (UTC and IST)
+    - cron: "0 * * * *"
+
+    # 3. Once daily early morning IST (00:30 UTC = 06:00 AM IST)
+    #    Runs: digest, re-engagement, win-back, dependency scan,
+    #    evolution scan, evolution monitor, inventory alert, review sync, backup
+    - cron: "30 0 * * *"
+
+    # 4. Once weekly on Monday early morning IST (01:00 UTC = 06:30 AM IST)
+    #    Runs: weekly business scorecard
+    - cron: "0 1 * * 1"
+
+  workflow_dispatch:
+    inputs:
+      group:
+        description: "Cron group to execute"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - reminders
+          - hourly
+          - daily
+          - weekly
+
+jobs:
+  reminders-30m:
+    name: "Every 30m: Reminders"
+    if: github.event.schedule == '*/30 * * * *' || github.event.inputs.group == 'all' || github.event.inputs.group == 'reminders'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate as platform admin
+        run: |
+          if [ -z "${{ vars.BUSINESS_AI_BASE_URL }}" ]; then
+            echo "::error::BUSINESS_AI_BASE_URL repository variable is not set."
+            exit 1
+          fi
+          if [ -z "${{ secrets.BUSINESS_AI_ADMIN_SECRET }}" ]; then
+            echo "::error::BUSINESS_AI_ADMIN_SECRET repository secret is not set."
+            exit 1
+          fi
+
+          BASE_URL="${{ vars.BUSINESS_AI_BASE_URL }}"
+          BASE_URL="${BASE_URL%/}"
+
+          LOGIN_RESP=$(curl -s -S -X POST "${BASE_URL}/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"admin\",\"password\":\"${{ secrets.BUSINESS_AI_ADMIN_SECRET }}\"}")
+
+          TOKEN=$(echo "$LOGIN_RESP" | jq -r '.access_token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Failed to obtain access token from /api/auth/login: $LOGIN_RESP"
+            exit 1
+          fi
+
+          echo "::add-mask::$TOKEN"
+          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP"
+          : > "$RUNNER_TEMP/failures.log"
+
+      - name: POST /api/v1/admin/reminders/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/reminders/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: Report run results
+        if: always()
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Authentication failed; no endpoints were executed."
+            exit 1
+          fi
+          if [ -s "$RUNNER_TEMP/failures.log" ]; then
+            echo "=================================================="
+            echo "ERROR: One or more scheduled endpoints failed:"
+            cat "$RUNNER_TEMP/failures.log"
+            echo "=================================================="
+            exit 1
+          fi
+          echo "All endpoints in this scheduled run succeeded."
+
+  hourly-60m:
+    name: "Every 60m: Automation & Task Escalation"
+    if: github.event.schedule == '0 * * * *' || github.event.inputs.group == 'all' || github.event.inputs.group == 'hourly'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate as platform admin
+        run: |
+          if [ -z "${{ vars.BUSINESS_AI_BASE_URL }}" ]; then
+            echo "::error::BUSINESS_AI_BASE_URL repository variable is not set."
+            exit 1
+          fi
+          if [ -z "${{ secrets.BUSINESS_AI_ADMIN_SECRET }}" ]; then
+            echo "::error::BUSINESS_AI_ADMIN_SECRET repository secret is not set."
+            exit 1
+          fi
+
+          BASE_URL="${{ vars.BUSINESS_AI_BASE_URL }}"
+          BASE_URL="${BASE_URL%/}"
+
+          LOGIN_RESP=$(curl -s -S -X POST "${BASE_URL}/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"admin\",\"password\":\"${{ secrets.BUSINESS_AI_ADMIN_SECRET }}\"}")
+
+          TOKEN=$(echo "$LOGIN_RESP" | jq -r '.access_token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Failed to obtain access token from /api/auth/login: $LOGIN_RESP"
+            exit 1
+          fi
+
+          echo "::add-mask::$TOKEN"
+          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP"
+          : > "$RUNNER_TEMP/failures.log"
+
+      - name: POST /api/v1/admin/automation/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/automation/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/task-escalation/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/task-escalation/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: Report run results
+        if: always()
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Authentication failed; no endpoints were executed."
+            exit 1
+          fi
+          if [ -s "$RUNNER_TEMP/failures.log" ]; then
+            echo "=================================================="
+            echo "ERROR: One or more scheduled endpoints failed:"
+            cat "$RUNNER_TEMP/failures.log"
+            echo "=================================================="
+            exit 1
+          fi
+          echo "All endpoints in this scheduled run succeeded."
+
+  daily-early-morning:
+    name: "Daily Early Morning IST: Operations, Intelligence & Backup"
+    if: github.event.schedule == '30 0 * * *' || github.event.inputs.group == 'all' || github.event.inputs.group == 'daily'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate as platform admin
+        run: |
+          if [ -z "${{ vars.BUSINESS_AI_BASE_URL }}" ]; then
+            echo "::error::BUSINESS_AI_BASE_URL repository variable is not set."
+            exit 1
+          fi
+          if [ -z "${{ secrets.BUSINESS_AI_ADMIN_SECRET }}" ]; then
+            echo "::error::BUSINESS_AI_ADMIN_SECRET repository secret is not set."
+            exit 1
+          fi
+
+          BASE_URL="${{ vars.BUSINESS_AI_BASE_URL }}"
+          BASE_URL="${BASE_URL%/}"
+
+          LOGIN_RESP=$(curl -s -S -X POST "${BASE_URL}/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"admin\",\"password\":\"${{ secrets.BUSINESS_AI_ADMIN_SECRET }}\"}")
+
+          TOKEN=$(echo "$LOGIN_RESP" | jq -r '.access_token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Failed to obtain access token from /api/auth/login: $LOGIN_RESP"
+            exit 1
+          fi
+
+          echo "::add-mask::$TOKEN"
+          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP"
+          : > "$RUNNER_TEMP/failures.log"
+
+      - name: POST /api/v1/admin/digest/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/digest/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/reengagement/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/reengagement/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/winback/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/winback/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/dependency-scan/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/dependency-scan/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/evolution-scan/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/evolution-scan/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/evolution-monitor/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/evolution-monitor/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/inventory-alert/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/inventory-alert/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/review-sync/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/review-sync/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: POST /api/v1/admin/backup/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/backup/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: Report run results
+        if: always()
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Authentication failed; no endpoints were executed."
+            exit 1
+          fi
+          if [ -s "$RUNNER_TEMP/failures.log" ]; then
+            echo "=================================================="
+            echo "ERROR: One or more scheduled endpoints failed:"
+            cat "$RUNNER_TEMP/failures.log"
+            echo "=================================================="
+            exit 1
+          fi
+          echo "All endpoints in this scheduled run succeeded."
+
+  weekly-monday:
+    name: "Weekly Monday Early Morning IST: Scorecard"
+    if: github.event.schedule == '0 1 * * 1' || github.event.inputs.group == 'all' || github.event.inputs.group == 'weekly'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate as platform admin
+        run: |
+          if [ -z "${{ vars.BUSINESS_AI_BASE_URL }}" ]; then
+            echo "::error::BUSINESS_AI_BASE_URL repository variable is not set."
+            exit 1
+          fi
+          if [ -z "${{ secrets.BUSINESS_AI_ADMIN_SECRET }}" ]; then
+            echo "::error::BUSINESS_AI_ADMIN_SECRET repository secret is not set."
+            exit 1
+          fi
+
+          BASE_URL="${{ vars.BUSINESS_AI_BASE_URL }}"
+          BASE_URL="${BASE_URL%/}"
+
+          LOGIN_RESP=$(curl -s -S -X POST "${BASE_URL}/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"admin\",\"password\":\"${{ secrets.BUSINESS_AI_ADMIN_SECRET }}\"}")
+
+          TOKEN=$(echo "$LOGIN_RESP" | jq -r '.access_token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Failed to obtain access token from /api/auth/login: $LOGIN_RESP"
+            exit 1
+          fi
+
+          echo "::add-mask::$TOKEN"
+          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP"
+          : > "$RUNNER_TEMP/failures.log"
+
+      - name: POST /api/v1/admin/weekly-scorecard/run
+        continue-on-error: true
+        run: |
+          ENDPOINT="/api/v1/admin/weekly-scorecard/run"
+          echo "Calling POST ${BASE_URL}${ENDPOINT}..."
+          HTTP_RESP=$(curl -s -S -w "\n%{http_code}" -X POST "${BASE_URL}${ENDPOINT}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$HTTP_RESP" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESP" | tail -n 1)
+
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "SUCCESS: $ENDPOINT"
+          else
+            echo "FAIL: $ENDPOINT (HTTP $HTTP_STATUS) - $HTTP_BODY" >> "$RUNNER_TEMP/failures.log"
+            exit 1
+          fi
+
+      - name: Report run results
+        if: always()
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Authentication failed; no endpoints were executed."
+            exit 1
+          fi
+          if [ -s "$RUNNER_TEMP/failures.log" ]; then
+            echo "=================================================="
+            echo "ERROR: One or more scheduled endpoints failed:"
+            cat "$RUNNER_TEMP/failures.log"
+            echo "=================================================="
+            exit 1
+          fi
+          echo "All endpoints in this scheduled run succeeded."
