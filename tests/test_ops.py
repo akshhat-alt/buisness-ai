@@ -12,7 +12,7 @@ import pytest
 from business_ai.employees import EmployeeStore
 from business_ai.leads import LeadStore
 from business_ai.memory import SopStore
-from business_ai.ops import check_data_integrity, create_backup, list_backups, restore_backup
+from business_ai.ops import check_data_integrity, create_backup, list_backups, restore_backup, upload_backup_to_s3
 from business_ai.tasks import TaskStore
 from business_ai.tenant import TenantRegistry
 
@@ -130,3 +130,77 @@ def test_integrity_check_finds_orphaned_sop_author(integrity_stores):
     )
     report = check_data_integrity(**integrity_stores)
     assert any(i["type"] == "sop_orphaned_author" for i in report["issues"])
+
+
+def test_upload_backup_to_s3_noop_when_unconfigured(tmp_path, settings):
+    archive = tmp_path / "test_backup.tar.gz"
+    archive.write_text("archive data")
+    assert settings.backup_s3_bucket is None
+    res = upload_backup_to_s3(archive, settings)
+    assert res is None
+
+
+def test_upload_backup_to_s3_uploads_with_configured_settings(tmp_path, settings, monkeypatch):
+    import dataclasses
+    import boto3
+
+    archive = tmp_path / "test_backup.tar.gz"
+    archive.write_text("archive data")
+
+    configured_settings = dataclasses.replace(
+        settings,
+        backup_s3_bucket="my-backup-bucket",
+        backup_s3_access_key_id="test-key-id",
+        backup_s3_secret_access_key="test-secret-key",
+        backup_s3_endpoint_url="https://s3.us-west-002.backblazeb2.com",
+        backup_s3_region="us-west-002",
+    )
+
+    captured_client_kwargs = {}
+    uploaded_files = []
+
+    class FakeS3Client:
+        def upload_file(self, filename, bucket, key):
+            uploaded_files.append({"filename": filename, "bucket": bucket, "key": key})
+
+    def fake_boto3_client(service, **kwargs):
+        assert service == "s3"
+        captured_client_kwargs.update(kwargs)
+        return FakeS3Client()
+
+    monkeypatch.setattr(boto3, "client", fake_boto3_client)
+
+    result = upload_backup_to_s3(archive, configured_settings)
+    assert result == "uploaded"
+    assert captured_client_kwargs == {
+        "endpoint_url": "https://s3.us-west-002.backblazeb2.com",
+        "region_name": "us-west-002",
+        "aws_access_key_id": "test-key-id",
+        "aws_secret_access_key": "test-secret-key",
+    }
+    assert len(uploaded_files) == 1
+    assert uploaded_files[0] == {
+        "filename": str(archive),
+        "bucket": "my-backup-bucket",
+        "key": "test_backup.tar.gz",
+    }
+
+
+def test_upload_backup_to_s3_raises_on_error(tmp_path, settings, monkeypatch):
+    import dataclasses
+    import boto3
+
+    archive = tmp_path / "test_backup.tar.gz"
+    archive.write_text("archive data")
+
+    configured_settings = dataclasses.replace(settings, backup_s3_bucket="my-backup-bucket")
+
+    class FailingS3Client:
+        def upload_file(self, filename, bucket, key):
+            raise ConnectionError("S3 endpoint timed out")
+
+    monkeypatch.setattr(boto3, "client", lambda service, **kwargs: FailingS3Client())
+
+    with pytest.raises(ConnectionError, match="S3 endpoint timed out"):
+        upload_backup_to_s3(archive, configured_settings)
+

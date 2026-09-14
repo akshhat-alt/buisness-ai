@@ -5,6 +5,8 @@ gated.
 
 from __future__ import annotations
 
+import dataclasses
+
 
 def test_backup_run_requires_platform_admin(client, owner_session):
     headers, _ = owner_session
@@ -16,6 +18,49 @@ def test_backup_run_creates_a_real_archive(client, admin_headers, services):
     r = client.post("/api/v1/admin/backup/run", headers=admin_headers)
     assert r.status_code == 200, r.text
     data = r.json()
+    assert data["size_bytes"] > 0
+    from pathlib import Path
+    assert Path(data["archive_path"]).is_file()
+    assert "offsite" not in data
+
+
+def test_backup_run_pushes_to_s3_when_configured(client, admin_headers, services, monkeypatch):
+    services.settings = dataclasses.replace(services.settings, backup_s3_bucket="offsite-bucket")
+
+    from business_ai.routers import ops_routes
+
+    uploaded = []
+
+    def fake_upload(archive_path, settings):
+        uploaded.append((archive_path, settings.backup_s3_bucket))
+        return "uploaded"
+
+    monkeypatch.setattr(ops_routes, "upload_backup_to_s3", fake_upload)
+
+    r = client.post("/api/v1/admin/backup/run", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["offsite"] == "uploaded"
+    assert len(uploaded) == 1
+    assert uploaded[0][1] == "offsite-bucket"
+    from pathlib import Path
+    assert Path(data["archive_path"]).is_file()
+
+
+def test_backup_run_handles_offsite_failure_gracefully(client, admin_headers, services, monkeypatch):
+    services.settings = dataclasses.replace(services.settings, backup_s3_bucket="offsite-bucket")
+
+    from business_ai.routers import ops_routes
+
+    def failing_upload(archive_path, settings):
+        raise ConnectionResetError("Connection dropped by S3 peer")
+
+    monkeypatch.setattr(ops_routes, "upload_backup_to_s3", failing_upload)
+
+    r = client.post("/api/v1/admin/backup/run", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["offsite"] == "failed"
     assert data["size_bytes"] > 0
     from pathlib import Path
     assert Path(data["archive_path"]).is_file()

@@ -8,12 +8,15 @@ cross-store reference has silently gone orphaned.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import time
 
 from fastapi import FastAPI, Header, HTTPException
 
-from business_ai.ops import check_data_integrity, create_backup, list_backups
+from business_ai.ops import check_data_integrity, create_backup, list_backups, upload_backup_to_s3
+
+logger = logging.getLogger(__name__)
 
 
 def register_ops(app: FastAPI, svc, ctx) -> None:
@@ -26,7 +29,16 @@ def register_ops(app: FastAPI, svc, ctx) -> None:
             result = create_backup(svc.data_root, svc.backup_dir)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
-        return result.model_dump()
+
+        data = result.model_dump()
+        if svc.settings.backup_s3_bucket:
+            try:
+                status = upload_backup_to_s3(result.archive_path, svc.settings)
+                data["offsite"] = status or "uploaded"
+            except Exception as exc:
+                logger.warning("Failed to push backup to S3 bucket %s: %s", svc.settings.backup_s3_bucket, exc)
+                data["offsite"] = "failed"
+        return data
 
     @app.get("/api/v1/admin/backup/list")
     def admin_list_backups(authorization: str | None = Header(default=None)) -> dict:

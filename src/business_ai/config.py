@@ -148,6 +148,15 @@ class Settings:
     # instantly (e.g. a cost spike or incident) without a redeploy.
     enabled: bool
 
+    # Offsite backups: optional push to S3-compatible storage (AWS S3, Backblaze B2,
+    # Cloudflare R2, MinIO, etc.). All unset by default — existing single-volume
+    # deployments are completely unaffected.
+    backup_s3_bucket: str | None = None
+    backup_s3_access_key_id: str | None = None
+    backup_s3_secret_access_key: str | None = None
+    backup_s3_endpoint_url: str | None = None
+    backup_s3_region: str | None = None
+
 
 def load_settings() -> Settings:
     raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
@@ -195,6 +204,11 @@ def load_settings() -> Settings:
         google_places_api_key=(os.getenv("GOOGLE_PLACES_API_KEY") or "").strip() or None,
         port=_int_env("PORT", 8000),
         enabled=_bool_env("BUSINESS_AI_ENABLED", True),
+        backup_s3_bucket=(os.getenv("BACKUP_S3_BUCKET") or "").strip() or None,
+        backup_s3_access_key_id=(os.getenv("BACKUP_S3_ACCESS_KEY_ID") or "").strip() or None,
+        backup_s3_secret_access_key=(os.getenv("BACKUP_S3_SECRET_ACCESS_KEY") or "").strip() or None,
+        backup_s3_endpoint_url=(os.getenv("BACKUP_S3_ENDPOINT_URL") or "").strip() or None,
+        backup_s3_region=(os.getenv("BACKUP_S3_REGION") or "").strip() or None,
     )
 
 

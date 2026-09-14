@@ -18,6 +18,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from business_ai.config import Settings
+
 
 class BackupResult(BaseModel):
     archive_path: str
@@ -46,6 +48,37 @@ def create_backup(data_root: Path, backup_dir: Path) -> BackupResult:
         archive_path=str(archive_path), size_bytes=archive_path.stat().st_size,
         created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     )
+
+
+def upload_backup_to_s3(archive_path: Path | str, settings: Settings) -> str | None:
+    """Uploads a given local backup archive to S3-compatible storage via boto3.
+
+    A no-op returning None if backup_s3_bucket is unset (matching this codebase's
+    optional integration convention). Boto3 is imported lazily inside this
+    function so that environments without offsite backup configured do not incur
+    unnecessary import overhead.
+
+    Raises an exception if an error occurs during client initialization or upload.
+    """
+    if not settings.backup_s3_bucket:
+        return None
+
+    import boto3
+
+    archive_path = Path(archive_path)
+    client_kwargs: dict[str, str] = {}
+    if settings.backup_s3_endpoint_url:
+        client_kwargs["endpoint_url"] = settings.backup_s3_endpoint_url
+    if settings.backup_s3_region:
+        client_kwargs["region_name"] = settings.backup_s3_region
+    if settings.backup_s3_access_key_id:
+        client_kwargs["aws_access_key_id"] = settings.backup_s3_access_key_id
+    if settings.backup_s3_secret_access_key:
+        client_kwargs["aws_secret_access_key"] = settings.backup_s3_secret_access_key
+
+    s3 = boto3.client("s3", **client_kwargs)
+    s3.upload_file(str(archive_path), settings.backup_s3_bucket, archive_path.name)
+    return "uploaded"
 
 
 def list_backups(backup_dir: Path) -> list[dict]:
