@@ -77,7 +77,7 @@ from business_ai.tenant import TenantRegistry
 from business_ai.wastage import WastageStore
 from business_ai.usage_limiter import UsageLimiter
 from business_ai.whatsapp import MetaEmbeddedSignupClient, WhatsAppClient, WhatsAppInboxStore
-from business_ai.auth import UserStore
+from business_ai.auth import PasswordResetStore, UserStore
 
 from business_ai.routers.admin_bot import register_admin_bot
 from business_ai.routers.admin_routes import register_admin
@@ -118,6 +118,7 @@ class Services:
         # backup never recursively contains earlier backups.
         self.backup_dir = data_root.parent / f"{data_root.name}_backups"
         self.user_store = UserStore(data_root / "users.db")
+        self.password_reset_store = PasswordResetStore(data_root / "password_resets.db")
         self.tenant_registry = TenantRegistry(data_root / "tenants.db", secret_encryption_key=settings.secret_encryption_key)
         self.usage_limiter = UsageLimiter(data_root / "usage.db", settings)
         self.lead_store = LeadStore(data_root / "leads.db")

@@ -16,6 +16,8 @@ def register_static_pages(app: FastAPI, svc, ctx) -> None:
     # -------------------------------------------------------------- static pages
     for route, filename in (
         ("/", "index.html"), ("/login", "login.html"), ("/login.html", "login.html"),
+        ("/forgot-password", "forgot-password.html"), ("/forgot-password.html", "forgot-password.html"),
+        ("/reset-password", "reset-password.html"), ("/reset-password.html", "reset-password.html"),
         ("/chat", "chat.html"), ("/chat.html", "chat.html"),
         ("/dashboard", "dashboard.html"), ("/dashboard.html", "dashboard.html"),
         ("/onboarding", "onboarding.html"), ("/onboarding.html", "onboarding.html"),

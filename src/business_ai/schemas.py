@@ -22,6 +22,16 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6, max_length=200)
+
+
+
 class AskRequest(BaseModel):
     query: str = Field(min_length=1)
     session_id: str | None = None

@@ -12,15 +12,12 @@ from __future__ import annotations
 import hashlib
 import secrets
 import sqlite3
-import threading
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generator
 
 import jwt
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from business_ai.config import KNOWN_INSECURE_SECRETS, Settings
 
@@ -259,6 +256,26 @@ class UserStore(SqliteStore):
                 return None
             return UserRecord(**dict(row))
 
+    def get_user_by_id(self, user_id: str) -> UserRecord | None:
+        with self._lock, self._db() as conn:
+            row = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not row:
+                return None
+            return UserRecord(**dict(row))
+
+    def update_password(self, user_id: str, new_password: str) -> None:
+        if len(new_password) < 6:
+            raise ValueError("Password must be at least 6 characters.")
+        p_hash, salt = self.hash_password(new_password)
+        with self._lock, self._db() as conn:
+            cur = conn.execute(
+                "UPDATE users SET password_hash = ?, salt = ? WHERE user_id = ?",
+                (p_hash, salt, user_id),
+            )
+            if cur.rowcount == 0:
+                raise ValueError("User not found.")
+            conn.commit()
+
     def delete_for_tenant(self, tenant_id: str) -> int:
         """Phase 9 tenant data deletion: removes every row for this
         tenant. Returns the number of rows deleted, for the export/
@@ -277,3 +294,74 @@ def get_global_user_store(data_root: Path | str = "data") -> UserStore:
     if resolved_path not in _USER_STORES:
         _USER_STORES[resolved_path] = UserStore(resolved_path)
     return _USER_STORES[resolved_path]
+
+
+# ==============================================================================
+# Password reset token store
+# ==============================================================================
+
+
+class PasswordResetRecord(BaseModel):
+    token: str
+    user_id: str
+    created_at: str
+    expires_at: str
+    used_at: str | None = None
+
+
+class PasswordResetStore(SqliteStore):
+    """Thread-safe SQLite store for self-service password reset tokens."""
+
+    def __init__(self, db_path: Path | str = "data/password_resets.db") -> None:
+        super().__init__(db_path)
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with self._lock, self._db() as conn:
+            self._apply_default_pragmas(conn)
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS password_resets (
+                    token TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    used_at TEXT
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id)")
+            conn.commit()
+
+    def create(self, user_id: str, *, lifetime_seconds: int = 3600) -> str:
+        token = secrets.token_urlsafe(32)
+        now = time.time()
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+        expires_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + lifetime_seconds))
+
+        with self._lock, self._db() as conn:
+            conn.execute(
+                """
+                INSERT INTO password_resets (token, user_id, created_at, expires_at, used_at)
+                VALUES (?, ?, ?, ?, NULL)
+                """,
+                (token, user_id, now_iso, expires_iso),
+            )
+            conn.commit()
+        return token
+
+    def get(self, token: str) -> PasswordResetRecord | None:
+        if not token or not isinstance(token, str):
+            return None
+        with self._lock, self._db() as conn:
+            row = conn.execute("SELECT * FROM password_resets WHERE token = ?", (token,)).fetchone()
+            if not row:
+                return None
+            return PasswordResetRecord(**dict(row))
+
+    def mark_used(self, token: str) -> None:
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with self._lock, self._db() as conn:
+            conn.execute("UPDATE password_resets SET used_at = ? WHERE token = ?", (now_iso, token))
+            conn.commit()
+

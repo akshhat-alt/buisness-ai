@@ -68,7 +68,10 @@
                 <input class="ba-input" type="email" id="signin-email" required autocomplete="username">
               </div>
               <div class="ba-field">
-                <label class="ba-label" for="signin-password">Password</label>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <label class="ba-label" for="signin-password" style="margin:0;">Password</label>
+                  <a href="/forgot-password" style="font-size:0.8125rem; color:var(--ba-primary); text-decoration:none;">Forgot password?</a>
+                </div>
                 <input class="ba-input" type="password" id="signin-password" required autocomplete="current-password">
               </div>
               <button type="submit" class="ba-btn ba-btn-block" id="signin-btn">Sign In</button>

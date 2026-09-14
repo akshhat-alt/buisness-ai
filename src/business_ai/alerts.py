@@ -211,3 +211,23 @@ def render_review_request(*, business_name: str, assistant_name: str, review_lin
     </div>
     """
     return subject, html
+
+
+def render_password_reset_email(*, user_name: str, reset_link: str) -> tuple[str, str]:
+    """For an account owner or staff member requesting a password reset."""
+    subject = "Reset your Business AI password"
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px;">Reset your password</h2>
+      <p>Hi {escape(user_name)},</p>
+      <p>We received a request to reset your Business AI account password. Click the link below to choose a new password:</p>
+      <p>
+        <a href="{escape(reset_link)}"
+           style="display:inline-block; padding:10px 16px; background:#1F5C4E; color:#fff;
+                  text-decoration:none; border-radius:6px;">Reset Password</a>
+      </p>
+      <p style="color:#666; font-size:0.875rem;">This link is valid for 1 hour. If you didn't request this reset, you can safely ignore this email.</p>
+    </div>
+    """
+    return subject, html
+
