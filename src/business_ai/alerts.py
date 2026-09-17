@@ -32,7 +32,7 @@ def render_dissatisfaction_alert(
     html = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <h2 style="margin-bottom:4px; color:#b91c1c;">A customer sounds unhappy</h2>
-      <p style="color:#666; margin-top:0;">Your Business AI assistant flagged this conversation
+      <p style="color:#666; margin-top:0;">Your Bizistic assistant flagged this conversation
       for you right away, instead of waiting for tomorrow's summary.</p>
       <p><strong>Customer said:</strong><br>{escape(query)}</p>
       {reply_block}
@@ -112,14 +112,14 @@ def render_new_tenant_signup_alert(
     signup is only visible if the admin happens to check the dashboard's
     admin panel — a real gap for onboarding a real, unfamiliar customer
     rather than a pilot the founder is already watching closely."""
-    subject = f"New Business AI signup: {business_name}"
+    subject = f"New Bizistic signup: {business_name}"
     dashboard_link = (
         f'<p><a href="{escape(dashboard_url)}">Open the admin panel to activate &rarr;</a></p>' if dashboard_url else ""
     )
     html = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <h2 style="margin-bottom:4px;">New business signed up</h2>
-      <p><strong>{escape(business_name)}</strong> ({escape(owner_email)}) just created a Business AI
+      <p><strong>{escape(business_name)}</strong> ({escape(owner_email)}) just created a Bizistic
       account and is waiting to be activated once they've added their knowledge base.</p>
       <p style="color:#999; font-size:0.875rem;">Tenant ID: {escape(tenant_id)}</p>
       {dashboard_link}
@@ -133,7 +133,7 @@ def render_tenant_activated_email(*, business_name: str, assistant_name: str, ch
     owner has no signal that activation happened beyond refreshing their
     own dashboard — a confusing silence right at the moment they're
     handing this off to their team or telling customers about it."""
-    subject = f"{business_name} is live on Business AI"
+    subject = f"{business_name} is live on Bizistic"
     chat_block = (
         f'<p><a href="{escape(chat_url)}">Try your assistant &rarr;</a></p>' if chat_url else ""
     )
@@ -152,7 +152,7 @@ def render_billing_link_email(*, business_name: str, assistant_name: str, amount
     assistant can go live. The payment itself lands directly in Business
     AI's own Razorpay account (platform-level credentials, never the
     tenant's) — see app.py's billing-link route."""
-    subject = f"Complete your Business AI subscription — {business_name}"
+    subject = f"Complete your Bizistic subscription — {business_name}"
     html = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <h2 style="margin-bottom:4px;">Complete your subscription</h2>
@@ -181,7 +181,7 @@ def render_tenant_self_activated_notice(*, business_name: str, tenant_id: str, d
     html = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <h2 style="margin-bottom:4px;">A business went live on its own</h2>
-      <p><strong>{escape(business_name)}</strong> just activated their own Business AI assistant — no action
+      <p><strong>{escape(business_name)}</strong> just activated their own Bizistic assistant — no action
       needed from you.</p>
       <p style="color:#999; font-size:0.875rem;">Tenant ID: {escape(tenant_id)}</p>
       {dashboard_link}
@@ -215,12 +215,12 @@ def render_review_request(*, business_name: str, assistant_name: str, review_lin
 
 def render_password_reset_email(*, user_name: str, reset_link: str) -> tuple[str, str]:
     """For an account owner or staff member requesting a password reset."""
-    subject = "Reset your Business AI password"
+    subject = "Reset your Bizistic password"
     html = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <h2 style="margin-bottom:4px;">Reset your password</h2>
       <p>Hi {escape(user_name)},</p>
-      <p>We received a request to reset your Business AI account password. Click the link below to choose a new password:</p>
+      <p>We received a request to reset your Bizistic account password. Click the link below to choose a new password:</p>
       <p>
         <a href="{escape(reset_link)}"
            style="display:inline-block; padding:10px 16px; background:#1F5C4E; color:#fff;

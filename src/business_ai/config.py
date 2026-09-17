@@ -98,6 +98,12 @@ class Settings:
     # fatal, if these aren't set; this is an add-on, not core auth)
     resend_api_key: str | None
     digest_from_email: str | None
+    # Reply-To for outgoing transactional email. Needed because
+    # digest_from_email points at a no-mailbox sending address
+    # (noreply@send.<domain>) — without this, a customer replying to any
+    # automated email (password reset, alerts, etc.) has nowhere to land.
+    # Unset = no Reply-To header is sent, same as before this setting existed.
+    support_reply_to: str | None
     digest_window_hours: int
     public_base_url: str | None
     # Onboarding: notifies you when a new business signs up (otherwise
@@ -193,6 +199,7 @@ def load_settings() -> Settings:
         whatsapp_config_id=(os.getenv("WHATSAPP_CONFIG_ID") or "").strip() or None,
         resend_api_key=(os.getenv("RESEND_API_KEY") or "").strip() or None,
         digest_from_email=(os.getenv("DIGEST_FROM_EMAIL") or "").strip() or None,
+        support_reply_to=(os.getenv("SUPPORT_REPLY_TO_EMAIL") or "").strip() or None,
         platform_admin_email=(os.getenv("PLATFORM_ADMIN_EMAIL") or "").strip() or None,
         platform_razorpay_key_id=(os.getenv("PLATFORM_RAZORPAY_KEY_ID") or "").strip() or None,
         platform_razorpay_key_secret=(os.getenv("PLATFORM_RAZORPAY_KEY_SECRET") or "").strip() or None,

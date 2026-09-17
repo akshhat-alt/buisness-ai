@@ -104,7 +104,7 @@ def render_owner_digest(
     html = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <h2 style="margin-bottom: 4px;">{escape(tenant.business_name)} — {period}'s summary</h2>
-      <p style="color:#666; margin-top:0;">From your Business AI assistant.</p>
+      <p style="color:#666; margin-top:0;">From your Bizistic assistant.</p>
 
       <table style="width:100%; border-collapse:collapse; margin: 16px 0;">
         <tr>

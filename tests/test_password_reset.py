@@ -76,7 +76,7 @@ def test_forgot_password_sends_email_with_valid_token(client_with_email, service
     assert len(sent_emails) == 1
     email = sent_emails[0]
     assert email["to"] == "resetme@example.com"
-    assert "Reset your Business AI password" in email["subject"]
+    assert "Reset your Bizistic password" in email["subject"]
     assert "https://app.example.com/reset-password?token=" in email["html_body"]
 
 

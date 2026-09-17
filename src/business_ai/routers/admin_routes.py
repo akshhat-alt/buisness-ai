@@ -143,7 +143,7 @@ def register_admin(app: FastAPI, svc, ctx) -> None:
         try:
             payment_url = svc.razorpay_client().create_payment_link(
                 key_id=svc.settings.platform_razorpay_key_id, key_secret=svc.settings.platform_razorpay_key_secret,
-                amount_inr=request.amount_inr, description=f"Business AI subscription — {tenant.business_name}",
+                amount_inr=request.amount_inr, description=f"Bizistic subscription — {tenant.business_name}",
                 customer_name=tenant.business_name, reference_id=target_tenant_id,
             )
         except PaymentLinkError as exc:

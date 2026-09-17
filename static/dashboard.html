@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — Business AI</title>
+  <title>Dashboard — Bizistic</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/css/base.css">
   <style>
@@ -93,7 +93,7 @@
   <nav class="ba-navbar">
     <a href="/" class="ba-brand">
       <span class="ba-brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#06110D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4 3v-3H6a2 2 0 0 1-2-2Z"/></svg></span>
-      Business AI
+      Bizistic
     </a>
     <a href="#" data-signout class="ba-navlink">Sign Out</a>
   </nav>
@@ -455,13 +455,13 @@
         <section class="dash-section" id="evolution">
           <div class="dash-section-head">
             <h2>Self-Evolution</h2>
-            <p class="ba-muted" style="margin:0;">Business AI can propose small, reviewable adjustments to your assistant's tone when it detects a real pattern of customer dissatisfaction — never anything else, and never live until you approve it. Off by default.</p>
+            <p class="ba-muted" style="margin:0;">Bizistic can propose small, reviewable adjustments to your assistant's tone when it detects a real pattern of customer dissatisfaction — never anything else, and never live until you approve it. Off by default.</p>
           </div>
 
           <div class="ba-card">
             <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
               <input type="checkbox" id="evolution-kill-switch" onchange="toggleEvolutionKillSwitch()">
-              <span>Allow Business AI to propose assistant tone improvements</span>
+              <span>Allow Bizistic to propose assistant tone improvements</span>
             </label>
           </div>
 
@@ -472,7 +472,7 @@
 
           <div class="ba-card">
             <h3 style="margin-top:0;">Sensitivity Settings</h3>
-            <p class="ba-muted" style="margin:0 0 10px;">Leave any field blank to use Business AI's platform default. These only change how sensitive detection and automatic rollback are — never what's allowed to happen.</p>
+            <p class="ba-muted" style="margin:0 0 10px;">Leave any field blank to use Bizistic's platform default. These only change how sensitive detection and automatic rollback are — never what's allowed to happen.</p>
             <div class="ba-field"><label class="ba-label">Propose a change when dissatisfaction reaches (%)</label><input class="ba-input" type="number" min="1" max="100" id="cfg-evo-threshold" placeholder="e.g. 20"></div>
             <div class="ba-field"><label class="ba-label">Conversation history to consider (hours)</label><input class="ba-input" type="number" min="1" max="2160" id="cfg-evo-lookback" placeholder="e.g. 336 (2 weeks)"></div>
             <div class="ba-field"><label class="ba-label">Automatically roll back if dissatisfaction rises by (points)</label><input class="ba-input" type="number" min="1" max="100" id="cfg-evo-regression" placeholder="e.g. 15"></div>
@@ -672,7 +672,7 @@
           </div>
           <div class="ba-card">
             <p class="ba-muted" style="margin-top:0;">Deposits are collected straight into your own
-              <a href="https://razorpay.com" target="_blank" rel="noopener">Razorpay</a> account — Business AI never
+              <a href="https://razorpay.com" target="_blank" rel="noopener">Razorpay</a> account — Bizistic never
               holds your money. Find your Key ID/Secret under Razorpay → Settings → API Keys.</p>
             <div class="ba-field"><label class="ba-label">Deposit Amount (₹)</label><input class="ba-input" type="number" min="1" id="cfg-deposit-amount" placeholder="e.g. 200"></div>
             <div class="ba-field"><label class="ba-label">Razorpay Key ID</label><input class="ba-input" id="cfg-rzp-key-id" placeholder="rzp_live_..."></div>
@@ -1504,7 +1504,7 @@
 
       document.getElementById('cc-automated-list').innerHTML = (cc.automated_actions_taken || []).length
         ? cc.automated_actions_taken.map(l => `<li>${escapeHtml(l)}</li>`).join('')
-        : '<li class="ba-muted">Nothing yet — create a rule under Automation to have Business AI act on your behalf.</li>';
+        : '<li class="ba-muted">Nothing yet — create a rule under Automation to have Bizistic act on your behalf.</li>';
 
       loadApprovals();
     }

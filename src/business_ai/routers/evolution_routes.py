@@ -275,7 +275,7 @@ def register_evolution(app: FastAPI, svc, ctx) -> None:
             )
             ctx._notify_management_whatsapp(
                 tenant,
-                "⚠️ Business AI automatically rolled back a self-evolved assistant tone change after detecting "
+                "⚠️ Bizistic automatically rolled back a self-evolved assistant tone change after detecting "
                 f"a rise in customer dissatisfaction (from {result['metrics']['baseline_rate']:.0%} to "
                 f"{result['metrics']['post_rate']:.0%}). Your assistant is back to its previous behavior.",
             )

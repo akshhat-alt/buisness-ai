@@ -20,13 +20,14 @@ class EmailSendError(Exception):
 
 
 class EmailSender:
-    def __init__(self, *, api_key: str, from_address: str) -> None:
+    def __init__(self, *, api_key: str, from_address: str, reply_to: str | None = None) -> None:
         if not api_key:
             raise ValueError("An email provider API key is required.")
         if not from_address:
             raise ValueError("A from-address is required.")
         self._api_key = api_key
         self._from_address = from_address
+        self._reply_to = reply_to
 
     def send(self, *, to: str, subject: str, html_body: str, text_body: str | None = None) -> None:
         payload: dict = {
@@ -37,6 +38,8 @@ class EmailSender:
         }
         if text_body:
             payload["text"] = text_body
+        if self._reply_to:
+            payload["reply_to"] = [self._reply_to]
 
         request = Request(
             RESEND_API_URL,
@@ -44,11 +47,15 @@ class EmailSender:
             headers={
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
+                "User-Agent": "Business-AI/1.0",
             },
             method="POST",
         )
         try:
             with urlopen(request, timeout=15) as response:
                 response.read()
-        except (HTTPError, URLError) as exc:
-            raise EmailSendError(f"Failed to send email to {to}: {exc}") from exc
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            raise EmailSendError(f"Resend API error {exc.code} sending to {to}: {detail}") from exc
+        except URLError as exc:
+            raise EmailSendError(f"Could not reach Resend sending to {to}: {exc}") from exc

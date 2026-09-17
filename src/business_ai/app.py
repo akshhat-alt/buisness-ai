@@ -155,7 +155,9 @@ class Services:
 
     def email_sender(self) -> EmailSender:
         return EmailSender(
-            api_key=self.settings.resend_api_key or "", from_address=self.settings.digest_from_email or ""
+            api_key=self.settings.resend_api_key or "",
+            from_address=self.settings.digest_from_email or "",
+            reply_to=self.settings.support_reply_to,
         )
 
     def whatsapp_client(self) -> WhatsAppClient:
