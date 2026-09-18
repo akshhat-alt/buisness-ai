@@ -25,6 +25,16 @@
       color: var(--ba-muted); padding: 16px 12px 6px; margin-top: 4px;
     }
     .dash-nav-group-label:first-child { margin-top: 0; padding-top: 4px; }
+    .dash-nav-advanced-toggle {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+      background: none; border: none; cursor: pointer; text-align: left; font-family: inherit;
+      font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ba-muted); padding: 16px 12px 6px; margin-top: 4px;
+    }
+    .dash-nav-advanced-toggle svg { width: 13px; height: 13px; transition: transform 0.15s ease; flex-shrink: 0; }
+    .dash-nav-advanced-toggle.open svg { transform: rotate(90deg); }
+    .dash-nav-advanced-group { display: none; }
+    .dash-nav-advanced-group.open { display: block; }
     .dash-main { padding: 28px 32px 80px; min-width: 0; }
     .dash-section { scroll-margin-top: 80px; margin-bottom: 40px; }
     .dash-section-head { margin-bottom: 16px; }
@@ -211,19 +221,18 @@
 
   <nav class="mobile-tabbar" aria-label="Dashboard sections">
     <a href="#overview">Overview</a>
-    <a href="#command-center">Command Center</a>
     <a href="#knowledge">Knowledge</a>
     <a href="#leads">Leads</a>
     <a href="#team">Team &amp; Tasks</a>
     <a href="#health">Business Health</a>
-    <a href="#business-map">Business Map</a>
     <a href="#automation">Automation</a>
-    <a href="#evolution">Self-Evolution</a>
     <a href="#business-intel">Business Intel</a>
-    <a href="#restaurant-intel">Restaurant Intel</a>
+    <a class="dash-restaurant-nav" href="#restaurant-intel" style="display:none;">Restaurant Intel</a>
     <a href="#staff">Staff Assistant</a>
     <a href="#whatsapp">WhatsApp</a>
     <a href="#growth">Deposits</a>
+    <a href="#business-map">Business Map</a>
+    <a href="#evolution">Self-Evolution</a>
     <a href="#settings">Settings</a>
   </nav>
 
@@ -231,7 +240,6 @@
     <aside class="dash-sidebar">
       <div class="dash-nav-group-label">Overview</div>
       <a class="dash-nav-link" href="#overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> Overview</a>
-      <a class="dash-nav-link" href="#command-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg> Command Center</a>
 
       <div class="dash-nav-group-label">Customers</div>
       <a class="dash-nav-link" href="#leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg> Leads</a>
@@ -242,15 +250,22 @@
       <a class="dash-nav-link" href="#team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Team &amp; Tasks</a>
       <a class="dash-nav-link" href="#staff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg> Staff Assistant</a>
 
-      <div class="dash-nav-group-label">Intelligence</div>
+      <div class="dash-nav-group-label">Insights</div>
       <a class="dash-nav-link" href="#health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Business Health</a>
-      <a class="dash-nav-link" href="#business-map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8.2 7.3 10 15.5M15.8 7.3 14 15.5M8.5 6h7"/></svg> Business Map</a>
       <a class="dash-nav-link" href="#business-intel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg> Business Intel</a>
-      <a class="dash-nav-link" href="#restaurant-intel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7a4 4 0 0 0 4 4v9M7 2v6M11 2v6M15 2c-1.5 1.5-1.5 4-1.5 4s2.5 0 4-1.5S19 0 19 0s-2.5 0-4 1.5S15 2 15 2ZM15 6v15"/></svg> Restaurant Intel</a>
+      <a class="dash-nav-link dash-restaurant-nav" href="#restaurant-intel" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7a4 4 0 0 0 4 4v9M7 2v6M11 2v6M15 2c-1.5 1.5-1.5 4-1.5 4s2.5 0 4-1.5S19 0 19 0s-2.5 0-4 1.5S15 2 15 2ZM15 6v15"/></svg> Restaurant Intel</a>
 
       <div class="dash-nav-group-label">Automation</div>
       <a class="dash-nav-link" href="#automation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg> Automation</a>
-      <a class="dash-nav-link" href="#evolution"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg> Self-Evolution</a>
+
+      <button class="dash-nav-advanced-toggle" id="dash-advanced-toggle" type="button" aria-expanded="false">
+        Advanced
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+      </button>
+      <div class="dash-nav-advanced-group" id="dash-advanced-group">
+        <a class="dash-nav-link" href="#business-map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8.2 7.3 10 15.5M15.8 7.3 14 15.5M8.5 6h7"/></svg> Business Map</a>
+        <a class="dash-nav-link" href="#evolution"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg> Self-Evolution</a>
+      </div>
 
       <div class="dash-nav-group-label">Setup</div>
       <a class="dash-nav-link" href="#knowledge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Knowledge</a>
@@ -928,6 +943,43 @@
       return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
     }
 
+    // Sidebar declutter: "Business Map" and "Self-Evolution" are real,
+    // working features, but day-to-day irrelevant for most small-business
+    // owners — collapsed by default instead of removed. Remembered per
+    // browser via localStorage; a direct #business-map/#evolution link
+    // (e.g. a bookmark) still auto-expands the group so the anchor works.
+    (function setupAdvancedNavGroup() {
+      const toggle = document.getElementById('dash-advanced-toggle');
+      const group = document.getElementById('dash-advanced-group');
+      if (!toggle || !group) return;
+      let open = false;
+      try { open = localStorage.getItem('ba_advanced_nav_open') === '1' || ['#business-map', '#evolution'].includes(location.hash); } catch (e) { /* ignore */ }
+      function setOpen(v) {
+        open = v;
+        toggle.classList.toggle('open', open);
+        group.classList.toggle('open', open);
+        toggle.setAttribute('aria-expanded', String(open));
+        try { localStorage.setItem('ba_advanced_nav_open', open ? '1' : '0'); } catch (e) { /* ignore */ }
+      }
+      toggle.addEventListener('click', () => setOpen(!open));
+      setOpen(open);
+    })();
+
+    // Restaurant Intel is a real feature, but only relevant to restaurants
+    // and cafes — hidden from the nav for every other business until they
+    // actually have at least one menu item, instead of showing an empty
+    // vertical-specific tool to a salon or retail shop owner.
+    async function applyRestaurantNavVisibility() {
+      try {
+        const res = await fetch(`/api/menu/items?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if ((data.items || []).length > 0) {
+          document.querySelectorAll('.dash-restaurant-nav').forEach(el => { el.style.display = ''; });
+        }
+      } catch (e) { /* leave hidden on any error */ }
+    }
+
     let currentTenant = null;
     let currentPlan = 'starter';
     let currentAnalytics = { total_questions: 0, answered_count: 0, buying_intent_count: 0, dissatisfaction_count: 0 };
@@ -1296,6 +1348,7 @@
         loadEvolution();
         loadBusinessIntel();
         loadRestaurantIntel();
+        applyRestaurantNavVisibility();
       }
 
       const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
