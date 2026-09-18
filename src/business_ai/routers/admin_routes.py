@@ -37,8 +37,9 @@ from business_ai.leads import Lead
 from business_ai.payments import PaymentLinkError
 from business_ai.reviews import GooglePlacesError, GooglePlacesReviewClient
 from business_ai.scorecard import build_weekly_scorecard_data, has_scorecard_content, render_weekly_scorecard_email, render_weekly_scorecard_whatsapp
-from business_ai.schemas import BillingLinkRequest, MarkPaidRequest
+from business_ai.schemas import BillingLinkRequest, MarkPaidRequest, SetPlanRequest
 from business_ai.tenant import TenantAction, TenantConfig, TenantNotFoundError, TenantStatus, UnauthorizedError, authorize
+from business_ai.usage_meter import current_period
 from business_ai.whatsapp import REENGAGEMENT_WINDOW_CLOSED_CODE, WhatsAppSendError
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,38 @@ def register_admin(app: FastAPI, svc, ctx) -> None:
             fields["subscription_price_inr"] = request.amount_inr
         updated = svc.tenant_registry.update_config(target_tenant_id, **fields)
         return updated.model_dump()
+
+    @app.post("/api/v1/admin/tenants/{target_tenant_id}/set-plan")
+    def admin_set_plan(target_tenant_id: str, request: SetPlanRequest, authorization: str | None = Header(default=None)) -> dict:
+        """Phase 1 monetization infrastructure: platform_admin-only, same
+        as billing-link/mark-paid — a tenant's own owner cannot grant
+        itself a paid plan's features for free, so this deliberately
+        does NOT go through TenantConfigUpdate (the owner self-service
+        schema in tenant_settings_routes.py)."""
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+        try:
+            svc.tenant_registry.get_config(target_tenant_id)
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        updated = svc.tenant_registry.update_config(target_tenant_id, plan=request.plan)
+        return updated.model_dump()
+
+    @app.get("/api/v1/admin/tenants/{target_tenant_id}/usage")
+    def admin_get_usage(target_tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        principal = ctx._require(authorization)
+        if principal.role != "platform_admin":
+            raise HTTPException(status_code=403, detail="Platform admin only.")
+        try:
+            tenant = svc.tenant_registry.get_config(target_tenant_id)
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "plan": tenant.plan,
+            "period": current_period(),
+            "usage": svc.usage_meter_store.get_usage(tenant_id=target_tenant_id),
+        }
 
     @app.post("/api/v1/admin/tenants/{target_tenant_id}/suspend")
     def admin_suspend(target_tenant_id: str, authorization: str | None = Header(default=None)) -> dict:

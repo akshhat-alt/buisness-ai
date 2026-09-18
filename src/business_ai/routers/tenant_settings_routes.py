@@ -16,6 +16,7 @@ from business_ai.payments import PaymentLinkError
 from business_ai.schemas import EmbeddedSignupRequest, TenantConfigUpdate, TenantDeleteRequest
 from business_ai.tenant import TenantAction, TenantNotFoundError, TenantStatus, UnauthorizedError, authorize
 from business_ai.tenant_data import delete_tenant_data, export_tenant_data
+from business_ai.usage_meter import current_period
 from business_ai.whatsapp import MetaEmbeddedSignupError
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,25 @@ def register_tenant_settings(app: FastAPI, svc, ctx) -> None:
         fields = {k: v for k, v in request.model_dump().items() if v is not None}
         updated = svc.tenant_registry.update_config(tenant_id, **fields)
         return updated.model_dump()
+
+    @app.get("/api/tenant/usage")
+    def get_tenant_usage(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Phase 1 monetization infrastructure: the owner's own current
+        plan and this month's usage counters — same authorization tier
+        as viewing the tenant itself (VIEW_ANALYTICS), since knowing
+        your own usage isn't a sensitive lever the way changing it is."""
+        principal = ctx._resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.VIEW_ANALYTICS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "plan": tenant.plan,
+            "period": current_period(),
+            "usage": svc.usage_meter_store.get_usage(tenant_id=tenant_id),
+        }
 
     @app.get("/api/tenant/whatsapp/embedded-signup-status")
     def whatsapp_embedded_signup_status() -> dict:

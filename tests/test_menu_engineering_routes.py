@@ -8,6 +8,16 @@ inventory read), tenant isolation.
 
 from __future__ import annotations
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _growth_plan(services, owner_session):
+    # Restaurant intelligence (VIEW_INVENTORY/MANAGE_MENU) is Growth-tier
+    # under Phase 1's plan-gating.
+    _, tenant_id = owner_session
+    services.tenant_registry.update_config(tenant_id, plan="growth")
+
 from business_ai.auth import Principal, create_access_token
 
 

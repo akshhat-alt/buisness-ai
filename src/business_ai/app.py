@@ -73,6 +73,7 @@ from business_ai.routing_context import RouteContext
 from business_ai.shifts import ShiftStore
 from business_ai.suppliers import SupplierStore
 from business_ai.tasks import TaskStore
+from business_ai.usage_meter import UsageMeterStore
 from business_ai.tenant import TenantRegistry
 from business_ai.wastage import WastageStore
 from business_ai.usage_limiter import UsageLimiter
@@ -129,6 +130,7 @@ class Services:
         self.employee_store = EmployeeStore(data_root / "employees.db")
         self.task_store = TaskStore(data_root / "tasks.db")
         self.shift_store = ShiftStore(data_root / "shifts.db")
+        self.usage_meter_store = UsageMeterStore(data_root / "usage_meter.db")
         self.audit_log = AuditLogStore(data_root / "audit.db")
         self.feedback_store = FeedbackStore(data_root / "feedback.db")
         self.sop_store = SopStore(data_root / "sops.db")

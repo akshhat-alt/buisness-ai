@@ -8,8 +8,19 @@ tests do.
 
 from __future__ import annotations
 
+import pytest
+
 from business_ai.auth import Principal, create_access_token
 from business_ai.generation import EmployeeCommandIntent
+
+
+@pytest.fixture(autouse=True)
+def _growth_plan(services, owner_session):
+    # Restaurant-report query types (food cost, reorder, reviews, GM
+    # briefing) reuse Growth-tier actions (VIEW_INVENTORY/VIEW_FINANCIALS)
+    # under Phase 1's plan-gating.
+    _, tenant_id = owner_session
+    services.tenant_registry.update_config(tenant_id, plan="growth")
 
 
 def _ask(client, headers, tenant_id, services, *, question: str, report_type: str | None, intent: str = "report_request"):

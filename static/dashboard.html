@@ -192,6 +192,11 @@
             <div id="bq-answer" class="ba-muted" style="margin-top:10px; white-space:pre-wrap;"></div>
           </div>
 
+          <div class="ba-card" id="usage-card">
+            <h3 style="margin-top:0;">📊 Plan &amp; Usage</h3>
+            <div id="usage-body" class="ba-muted">Loading…</div>
+          </div>
+
           <div class="ba-card" id="cc-approvals-card">
             <h3 style="margin-top:0;">✅ Approval Inbox</h3>
             <div id="cc-approvals-list" class="ba-muted">Loading…</div>
@@ -854,6 +859,7 @@
       if (role === 'owner') {
         loadTeam();
         loadHealth();
+        loadUsage();
         loadCommandCenter();
         loadBusinessMap();
         loadAutomationKillSwitch();
@@ -1475,6 +1481,22 @@
     }
 
     // ---------------------------------------------------------- Command Center (Phase 7)
+
+    const PLAN_LABEL = { starter: 'Starter', growth: 'Growth', scale: 'Scale' };
+    const METRIC_LABEL = { ai_messages: 'AI messages answered', whatsapp_messages: 'WhatsApp replies sent' };
+
+    async function loadUsage() {
+      const res = await fetch(`/api/tenant/usage?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      const bodyEl = document.getElementById('usage-body');
+      if (!res.ok) { bodyEl.textContent = ''; return; }
+      const data = await res.json();
+      const planLabel = PLAN_LABEL[data.plan] || data.plan;
+      const metrics = Object.entries(data.usage || {});
+      const usageLines = metrics.length
+        ? metrics.map(([metric, count]) => `${METRIC_LABEL[metric] || metric}: <strong>${count}</strong>`).join(' &nbsp;&middot;&nbsp; ')
+        : 'No usage recorded yet this period.';
+      bodyEl.innerHTML = `<span class="ba-badge ba-badge-primary">${escapeHtml(planLabel)} plan</span> &nbsp; ${usageLines} <span class="ba-muted" style="margin-left:6px;">(${escapeHtml(data.period)})</span>`;
+    }
 
     async function loadCommandCenter() {
       const res = await fetch(`/api/command-center?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });

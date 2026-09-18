@@ -509,6 +509,13 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             shows_buying_intent=answer.shows_buying_intent, suggested_handoff=answer.suggested_handoff,
             shows_dissatisfaction=answer.shows_dissatisfaction, channel=channel,
         )
+        # Phase 1 monetization infrastructure: usage accounting, not a
+        # gate — a metering failure must never block the answer the
+        # customer already got.
+        try:
+            svc.usage_meter_store.increment(tenant_id=tenant_id, metric="ai_messages")
+        except Exception as exc:  # noqa: BLE001 - accounting must never break the response pipeline
+            logger.warning("Usage metering failed for tenant %s (ai_messages): %s", tenant_id, exc)
 
         if answer.shows_dissatisfaction:
             _send_dissatisfaction_alert(tenant=tenant, query=query, answer_text=answer.answer_text, session_id=session_id)
@@ -2192,6 +2199,10 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                         phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
                         to=msg.wa_id, body=reply_text,
                     )
+                    try:
+                        svc.usage_meter_store.increment(tenant_id=tenant.tenant_id, metric="whatsapp_messages")
+                    except Exception as exc:  # noqa: BLE001 - accounting must never break a send that already succeeded
+                        logger.warning("Usage metering failed for tenant %s (whatsapp_messages): %s", tenant.tenant_id, exc)
                 except WhatsAppSendError as exc:
                     logger.error("Failed to send WhatsApp reply for tenant %s: %s", tenant.tenant_id, exc)
             except Exception as exc:  # noqa: BLE001 - one bad message must never break the rest of the batch or the webhook's 200

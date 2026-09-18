@@ -5,6 +5,8 @@ commands.
 
 from __future__ import annotations
 
+import pytest
+
 from business_ai.auth import Principal, create_access_token
 from tests.test_admin_bot import OWNER_WA, RAVI_WA, _add_employee, _send
 from tests.test_whatsapp import _activate_with_whatsapp, _signup, client_wa, services_wa
@@ -12,8 +14,18 @@ from tests.test_whatsapp import _activate_with_whatsapp, _signup, client_wa, ser
 __all__ = ["client_wa", "services_wa"]
 
 
-def test_revenue_radar_route_requires_owner_or_manager(client, owner_session, services):
-    headers, tenant_id = owner_session
+@pytest.fixture()
+def owner_session_growth(services, owner_session):
+    # Revenue Radar (VIEW_FEEDBACK) is Growth-tier under Phase 1's
+    # plan-gating; the WhatsApp command test below uses its own separate
+    # client_wa/services_wa fixtures and is unaffected.
+    _, tenant_id = owner_session
+    services.tenant_registry.update_config(tenant_id, plan="growth")
+    return owner_session
+
+
+def test_revenue_radar_route_requires_owner_or_manager(client, owner_session_growth, services):
+    headers, tenant_id = owner_session_growth
     staff_token = create_access_token(Principal.staff("staff_x", tenant_id), services.settings)
 
     r = client.get(f"/api/revenue-radar?tenant_id={tenant_id}", headers={"Authorization": f"Bearer {staff_token}"})
@@ -35,8 +47,8 @@ def test_revenue_radar_route_is_tenant_isolated(client, owner_session):
     assert r.status_code == 403
 
 
-def test_revenue_radar_reflects_a_no_show(client, owner_session, services):
-    headers, tenant_id = owner_session
+def test_revenue_radar_reflects_a_no_show(client, owner_session_growth, services):
+    headers, tenant_id = owner_session_growth
     lead = services.lead_store.create(tenant_id=tenant_id, session_id="s1", phone="9876543210")
     services.lead_store.record_appointment_outcome(tenant_id, lead.lead_id, "no_show")
     r = client.get(f"/api/revenue-radar?tenant_id={tenant_id}", headers=headers)

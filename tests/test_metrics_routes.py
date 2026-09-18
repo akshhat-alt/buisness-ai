@@ -6,11 +6,25 @@ summary/CSV export (owner/manager-gated, tenant-isolated).
 
 from __future__ import annotations
 
+import pytest
+
 from business_ai.auth import Principal, create_access_token
 from tests.test_admin_bot import OWNER_WA, RAVI_WA, _add_employee, _send
 from tests.test_whatsapp import _activate_with_whatsapp, _signup, client_wa, services_wa
 
 __all__ = ["client_wa", "services_wa"]
+
+
+@pytest.fixture()
+def owner_session_growth(services, owner_session):
+    # The dashboard financials routes (VIEW_FINANCIALS) are Growth-tier
+    # under Phase 1's plan-gating; the WhatsApp `log`/`financials`
+    # commands elsewhere in this file need no permission check at all
+    # and are unaffected, so this is a separate, non-autouse fixture
+    # rather than a file-wide one.
+    _, tenant_id = owner_session
+    services.tenant_registry.update_config(tenant_id, plan="growth")
+    return owner_session
 
 
 def test_log_sale_via_whatsapp_creates_a_metric_and_replies(client_wa, services_wa):
@@ -68,8 +82,8 @@ def test_financials_command_is_owner_manager_gated(client_wa, services_wa):
     assert "1000" in owner_reply
 
 
-def test_metrics_summary_route_requires_owner_or_manager(client, owner_session, services):
-    headers, tenant_id = owner_session
+def test_metrics_summary_route_requires_owner_or_manager(client, owner_session_growth, services):
+    headers, tenant_id = owner_session_growth
     services.metric_store.record(tenant_id=tenant_id, metric_type="sale", amount_inr=2500)
     staff_token = create_access_token(Principal.staff("staff_x", tenant_id), services.settings)
 
@@ -83,8 +97,8 @@ def test_metrics_summary_route_requires_owner_or_manager(client, owner_session, 
     assert any(s["metric_type"] == "sale" and s["total_inr"] == 2500 for s in data["summary"])
 
 
-def test_metrics_summary_is_tenant_isolated(client, owner_session):
-    headers_a, tenant_a = owner_session
+def test_metrics_summary_is_tenant_isolated(client, owner_session_growth):
+    headers_a, tenant_a = owner_session_growth
     signup_b = client.post(
         "/api/auth/signup",
         json={"email": "metrics-other@example.com", "password": "secret123", "name": "Bob", "business_name": "Other Biz"},
@@ -94,8 +108,8 @@ def test_metrics_summary_is_tenant_isolated(client, owner_session):
     assert r.status_code == 403
 
 
-def test_metrics_export_csv_contains_logged_entries(client, owner_session, services):
-    headers, tenant_id = owner_session
+def test_metrics_export_csv_contains_logged_entries(client, owner_session_growth, services):
+    headers, tenant_id = owner_session_growth
     services.metric_store.record(tenant_id=tenant_id, metric_type="expense", amount_inr=750, note="supplies")
     r = client.get(f"/api/metrics/export.csv?tenant_id={tenant_id}", headers=headers)
     assert r.status_code == 200, r.text
@@ -107,8 +121,8 @@ def test_metrics_export_csv_contains_logged_entries(client, owner_session, servi
 # ------------------------------------------------------------------ Phase 21: dashboard write route
 
 
-def test_create_metric_via_dashboard_route(client, owner_session, services):
-    headers, tenant_id = owner_session
+def test_create_metric_via_dashboard_route(client, owner_session_growth, services):
+    headers, tenant_id = owner_session_growth
     r = client.post(
         f"/api/metrics?tenant_id={tenant_id}",
         json={"metric_type": "sale", "amount_inr": 1200, "note": "walk-in"},
@@ -126,20 +140,20 @@ def test_create_metric_via_dashboard_route(client, owner_session, services):
     assert len(audit) == 1
 
 
-def test_create_metric_rejects_unknown_type(client, owner_session):
-    headers, tenant_id = owner_session
+def test_create_metric_rejects_unknown_type(client, owner_session_growth):
+    headers, tenant_id = owner_session_growth
     r = client.post(f"/api/metrics?tenant_id={tenant_id}", json={"metric_type": "bogus", "amount_inr": 100}, headers=headers)
     assert r.status_code == 400, r.text
 
 
-def test_create_metric_rejects_non_positive_amount(client, owner_session):
-    headers, tenant_id = owner_session
+def test_create_metric_rejects_non_positive_amount(client, owner_session_growth):
+    headers, tenant_id = owner_session_growth
     r = client.post(f"/api/metrics?tenant_id={tenant_id}", json={"metric_type": "sale", "amount_inr": 0}, headers=headers)
     assert r.status_code == 400, r.text
 
 
-def test_create_metric_requires_owner_or_manager(client, owner_session, services):
-    headers, tenant_id = owner_session
+def test_create_metric_requires_owner_or_manager(client, owner_session_growth, services):
+    headers, tenant_id = owner_session_growth
     staff_token = create_access_token(Principal.staff("staff_x", tenant_id), services.settings)
     r = client.post(
         f"/api/metrics?tenant_id={tenant_id}",

@@ -9,6 +9,17 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _scale_plan(services, owner_session):
+    # These tests opt a tenant into Self-Evolution via the owner-facing
+    # kill-switch route, which requires MANAGE_EVOLUTION — a Scale-tier
+    # action under Phase 1's plan-gating.
+    _, tenant_id = owner_session
+    services.tenant_registry.update_config(tenant_id, plan="scale")
+
 
 def _log_turns(client, headers, tenant_id, *, total, dissatisfied):
     """Drives real turns through /api/ask so answer_status is genuinely

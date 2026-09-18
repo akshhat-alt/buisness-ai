@@ -6,7 +6,19 @@ rollback, and the kill switch.
 
 from __future__ import annotations
 
+import pytest
+
 from business_ai.auth import Principal, create_access_token
+
+
+@pytest.fixture(autouse=True)
+def _scale_plan(services, owner_session):
+    # Self-Evolution (MANAGE_EVOLUTION) is a Scale-tier action (Phase 1
+    # monetization infra) — every tenant in this file needs that plan to
+    # exercise the feature at all; role-based denial (manager/staff) is
+    # unaffected since those roles never had MANAGE_EVOLUTION regardless.
+    _, tenant_id = owner_session
+    services.tenant_registry.update_config(tenant_id, plan="scale")
 
 
 def _create_pending_review_proposal(services, tenant_id: str):

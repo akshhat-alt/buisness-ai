@@ -146,6 +146,11 @@ def test_approval_inbox_lists_awaiting_approval_tasks(client_wa, services_wa):
 
 def test_approval_inbox_lists_pending_evolution_proposals(client_wa, services_wa):
     headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    # Evolution proposals require MANAGE_EVOLUTION (Scale-tier under
+    # Phase 1's plan-gating) to appear in the inbox at all — the shared
+    # helper only grants Growth, which is enough for every other test
+    # using it but not this one.
+    services_wa.tenant_registry.update_config(tenant_id, plan="scale")
     candidate = services_wa.evolution_versions.create(
         tenant_id=tenant_id, config_type="assistant_tone", payload={"tone_instructions": "Be warmer."},
         created_by="self_evolution_engine", rationale="test rationale",
@@ -165,6 +170,7 @@ def test_approval_inbox_lists_pending_evolution_proposals(client_wa, services_wa
 
 def test_approval_inbox_aggregates_both_types_sorted_by_created_at(client_wa, services_wa):
     headers, tenant_id, ravi = _setup_tenant_with_owner_and_staff(client_wa, services_wa)
+    services_wa.tenant_registry.update_config(tenant_id, plan="scale")  # evolution proposal needs MANAGE_EVOLUTION
     r = client_wa.post(
         f"/api/tasks?tenant_id={tenant_id}",
         json={"title": "Refund the customer", "assigned_to_employee_id": ravi["employee_id"], "approval_required": True},

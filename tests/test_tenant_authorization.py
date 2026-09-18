@@ -24,7 +24,15 @@ from business_ai.tenant import (
 @pytest.fixture()
 def registry(tmp_path: Path) -> TenantRegistry:
     reg = TenantRegistry(tmp_path / "tenants.db")
-    reg.register(TenantConfig(tenant_id="salon-a", business_name="Salon A", owner_email="a@x.com", status=TenantStatus.ACTIVE))
+    # plan="growth" so VIEW_FEEDBACK (a Growth-tier action under Phase 1's
+    # plan-gating) is reachable in tests below; growth is a superset of
+    # starter, so no currently-passing Starter-tier assertion is affected.
+    reg.register(
+        TenantConfig(
+            tenant_id="salon-a", business_name="Salon A", owner_email="a@x.com",
+            status=TenantStatus.ACTIVE, plan="growth",
+        )
+    )
     reg.register(TenantConfig(tenant_id="salon-b", business_name="Salon B", owner_email="b@x.com", status=TenantStatus.PROVISIONING))
     return reg
 
@@ -202,3 +210,117 @@ def test_only_owner_can_manage_automation(registry):
         authorize(staff, TenantAction.MANAGE_AUTOMATION, target_tenant_id="salon-a", registry=registry)
     with pytest.raises(UnauthorizedError):
         authorize(staff, TenantAction.VIEW_AUTOMATION, target_tenant_id="salon-a", registry=registry)
+
+
+# ------------------------------------------------------------------
+# Phase 1 monetization infrastructure: plan-based authorization.
+# "salon-a" is registered with plan="growth" above; these tests add a
+# dedicated "starter-plan" tenant to prove the restriction actually
+# bites, independent of role.
+# ------------------------------------------------------------------
+
+
+@pytest.fixture()
+def starter_registry(tmp_path: Path) -> TenantRegistry:
+    reg = TenantRegistry(tmp_path / "tenants_starter.db")
+    reg.register(
+        TenantConfig(
+            tenant_id="cafe-starter", business_name="Cafe Starter", owner_email="c@x.com",
+            status=TenantStatus.ACTIVE,  # plan left at its default: "starter"
+        )
+    )
+    return reg
+
+
+def test_starter_plan_owner_can_use_core_actions(starter_registry):
+    owner = Principal.owner("user_20", "cafe-starter")
+    for action in (
+        TenantAction.QUERY_ASSISTANT, TenantAction.INGEST_KNOWLEDGE, TenantAction.VIEW_LEADS,
+        TenantAction.MANAGE_ASSISTANT, TenantAction.MANAGE_AUTOMATION, TenantAction.VIEW_AUTOMATION,
+    ):
+        authorize(owner, action, target_tenant_id="cafe-starter", registry=starter_registry)
+
+
+def test_starter_plan_owner_is_denied_growth_actions_despite_owner_role(starter_registry):
+    """The whole point of plan-gating: even the OWNER of a Starter-plan
+    tenant cannot reach a Growth-tier action. Role allows it; plan does
+    not — both must agree."""
+    owner = Principal.owner("user_21", "cafe-starter")
+    for action in (
+        TenantAction.VIEW_FEEDBACK, TenantAction.MANAGE_SOPS, TenantAction.VIEW_FINANCIALS,
+        TenantAction.MANAGE_MENU, TenantAction.VIEW_INVENTORY, TenantAction.MANAGE_SHIFTS, TenantAction.VIEW_SHIFTS,
+    ):
+        with pytest.raises(UnauthorizedError, match="plan"):
+            authorize(owner, action, target_tenant_id="cafe-starter", registry=starter_registry)
+
+
+def test_starter_plan_owner_is_denied_scale_only_action(starter_registry):
+    owner = Principal.owner("user_22", "cafe-starter")
+    with pytest.raises(UnauthorizedError, match="plan"):
+        authorize(owner, TenantAction.MANAGE_EVOLUTION, target_tenant_id="cafe-starter", registry=starter_registry)
+
+
+def test_growth_plan_owner_is_denied_scale_only_action(tmp_path: Path):
+    reg = TenantRegistry(tmp_path / "tenants_growth.db")
+    reg.register(
+        TenantConfig(
+            tenant_id="salon-growth", business_name="Salon Growth", owner_email="g@x.com",
+            status=TenantStatus.ACTIVE, plan="growth",
+        )
+    )
+    owner = Principal.owner("user_23", "salon-growth")
+    # Growth-tier actions work fine...
+    authorize(owner, TenantAction.VIEW_FEEDBACK, target_tenant_id="salon-growth", registry=reg)
+    # ...but Scale-only self-evolution does not.
+    with pytest.raises(UnauthorizedError, match="plan"):
+        authorize(owner, TenantAction.MANAGE_EVOLUTION, target_tenant_id="salon-growth", registry=reg)
+
+
+def test_unrecognized_plan_value_fails_closed(tmp_path: Path):
+    """An unrecognized plan string (a typo, a not-yet-supported future
+    tier, hand-edited data) must deny every plan-gated action for
+    everyone, including the owner — the same fail-closed shape as an
+    unrecognized role. It must NOT default-allow, and must NOT crash."""
+    reg = TenantRegistry(tmp_path / "tenants_bogus.db")
+    reg.register(
+        TenantConfig(
+            tenant_id="biz-bogus", business_name="Biz Bogus", owner_email="b@x.com",
+            status=TenantStatus.ACTIVE, plan="not_a_real_plan",
+        )
+    )
+    owner = Principal.owner("user_24", "biz-bogus")
+    with pytest.raises(UnauthorizedError, match="plan"):
+        authorize(owner, TenantAction.MANAGE_ASSISTANT, target_tenant_id="biz-bogus", registry=reg)
+    with pytest.raises(UnauthorizedError, match="plan"):
+        authorize(owner, TenantAction.QUERY_ASSISTANT, target_tenant_id="biz-bogus", registry=reg)
+
+
+def test_existing_tenant_row_without_a_plan_field_defaults_to_starter(tmp_path: Path):
+    """Simulates a tenant registered before Phase 1 existed: its stored
+    JSON has no "plan" key at all. Loading it must default to "starter",
+    not fail, and not silently grant every plan-gated action."""
+    reg = TenantRegistry(tmp_path / "tenants_legacy.db")
+    with reg._lock, reg._db() as conn:
+        reg._apply_default_pragmas(conn)
+        conn.execute("CREATE TABLE IF NOT EXISTS tenants (tenant_id TEXT PRIMARY KEY, config_json TEXT NOT NULL)")
+        legacy_config = TenantConfig(
+            tenant_id="legacy-biz", business_name="Legacy Biz", owner_email="l@x.com", status=TenantStatus.ACTIVE,
+        )
+        # Drop the "plan" key entirely to simulate a row written before
+        # this field existed, rather than relying on today's default.
+        import json
+
+        raw = json.loads(legacy_config.model_dump_json())
+        raw.pop("plan", None)
+        conn.execute(
+            "INSERT INTO tenants (tenant_id, config_json) VALUES (?, ?)", ("legacy-biz", json.dumps(raw)),
+        )
+        conn.commit()
+
+    loaded = reg.get_config("legacy-biz")
+    assert loaded.plan == "starter"
+
+    owner = Principal.owner("user_25", "legacy-biz")
+    authorize(owner, TenantAction.MANAGE_ASSISTANT, target_tenant_id="legacy-biz", registry=reg)
+    with pytest.raises(UnauthorizedError, match="plan"):
+        authorize(owner, TenantAction.VIEW_FEEDBACK, target_tenant_id="legacy-biz", registry=reg)

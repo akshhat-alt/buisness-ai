@@ -5,7 +5,17 @@ as ASSIGN_TASK/VIEW_TASKS), tenant isolation.
 
 from __future__ import annotations
 
+import pytest
+
 from business_ai.auth import Principal, create_access_token
+
+
+@pytest.fixture(autouse=True)
+def _growth_plan(services, owner_session):
+    # Shift scheduling (MANAGE_SHIFTS/VIEW_SHIFTS) is Growth-tier under
+    # Phase 1's plan-gating.
+    _, tenant_id = owner_session
+    services.tenant_registry.update_config(tenant_id, plan="growth")
 
 
 def _add_employee(client, headers, tenant_id, **overrides):

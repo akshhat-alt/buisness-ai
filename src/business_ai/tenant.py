@@ -134,6 +134,15 @@ class TenantConfig(BaseModel):
     # gets a reply asking the employee to type instead, never silently
     # dropped and never transcribed without consent.
     voice_notes_enabled: bool = False
+    # Phase 1 monetization infrastructure — which plan tier this tenant is
+    # on. Every tenant that existed before this field was added simply
+    # gets "starter" when their stored JSON (which has no "plan" key) is
+    # parsed, the same zero-migration pattern every other field addition
+    # in this file already relies on. Validated as a plain str, not a
+    # pydantic Literal, so a not-yet-recognized plan value loaded from an
+    # old row fails closed via PLAN_ACTIONS.get(..., frozenset()) in
+    # authorize() below, rather than raising at load time.
+    plan: str = "starter"
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
 
@@ -271,6 +280,68 @@ ROLE_ACTIONS: dict[str, frozenset[TenantAction]] = {
     "owner": OWNER_ACTIONS,
     "manager": MANAGER_ACTIONS,
     "staff": STAFF_ACTIONS,
+}
+
+# ==============================================================================
+# Plan tiers (Phase 1 monetization infrastructure) — a SECOND, independent
+# dimension of authorization alongside role. A principal must clear BOTH
+# the role check above and the plan check below; neither substitutes for
+# the other. This mirrors ROLE_ACTIONS' own shape deliberately: an
+# explicit map, fail-closed via .get(plan, frozenset()), never an
+# if/elif chain that could silently fall through to a permissive default.
+# ==============================================================================
+
+# Starter — the core WhatsApp/website assistant, lead capture, staff
+# roster and tasks, and basic owner-configured automations. No vertical
+# intelligence, no staff-feedback/SOP layer, no financials/restaurant
+# modules, no self-evolution.
+STARTER_ACTIONS = frozenset(
+    {
+        TenantAction.QUERY_ASSISTANT,
+        TenantAction.VIEW_PUBLIC_INFO,
+        TenantAction.INGEST_KNOWLEDGE,
+        TenantAction.VIEW_LEADS,
+        TenantAction.VIEW_ANALYTICS,
+        TenantAction.MANAGE_ASSISTANT,
+        TenantAction.MANAGE_EMPLOYEES,
+        TenantAction.ASSIGN_TASK,
+        TenantAction.VIEW_TASKS,
+        TenantAction.UPDATE_TASK_STATUS,
+        TenantAction.MANAGE_AUTOMATION,
+        TenantAction.VIEW_AUTOMATION,
+    }
+)
+
+# Growth adds staff-operations intelligence (feedback/SOPs), financials
+# (also what reviews.py and the restaurant "Ask Your Business Anything"
+# report types reuse — see reviews_routes.py/business_query_routes.py,
+# which authorize against VIEW_FINANCIALS/VIEW_INVENTORY/etc. rather than
+# a dedicated action of their own), and the restaurant/shift modules.
+GROWTH_ACTIONS = STARTER_ACTIONS | frozenset(
+    {
+        TenantAction.VIEW_FEEDBACK,
+        TenantAction.MANAGE_SOPS,
+        TenantAction.VIEW_FINANCIALS,
+        TenantAction.MANAGE_MENU,
+        TenantAction.VIEW_INVENTORY,
+        TenantAction.MANAGE_SHIFTS,
+        TenantAction.VIEW_SHIFTS,
+    }
+)
+
+# Scale adds Self-Evolution — the most sensitive lever in the system (it
+# can change the live customer-assistant's tone), on top of everything
+# Growth already includes.
+SCALE_ACTIONS = GROWTH_ACTIONS | frozenset({TenantAction.MANAGE_EVOLUTION})
+
+# Fail-closed plan -> allowed-actions lookup, same shape as ROLE_ACTIONS.
+# A plan string that doesn't appear here (a typo, a not-yet-supported
+# future tier, or simply garbage in a hand-edited row) gets the empty
+# set, not STARTER_ACTIONS by accident.
+PLAN_ACTIONS: dict[str, frozenset[TenantAction]] = {
+    "starter": STARTER_ACTIONS,
+    "growth": GROWTH_ACTIONS,
+    "scale": SCALE_ACTIONS,
 }
 
 # Actions a real, anonymous website visitor (a customer, not a platform
@@ -496,5 +567,15 @@ def authorize(
     allowed = ROLE_ACTIONS.get(principal.role, frozenset())
     if action not in allowed:
         raise UnauthorizedError(f"Role '{principal.role}' is not authorized to perform '{action.value}'.")
+
+    # Second, independent dimension: the tenant's PLAN must also include
+    # this action, on top of the role already allowing it. Same
+    # fail-closed shape as the role check just above — an unrecognized
+    # plan value gets zero actions, never a default fallthrough.
+    plan_allowed = PLAN_ACTIONS.get(config.plan, frozenset())
+    if action not in plan_allowed:
+        raise UnauthorizedError(
+            f"Your plan ('{config.plan}') does not include '{action.value}'. Upgrade your plan to access this feature."
+        )
 
     return config

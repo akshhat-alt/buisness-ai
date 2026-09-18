@@ -5,6 +5,8 @@ app.py) — grouped in one module since none of them depend on
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from business_ai.automation import ActionType, TriggerType
@@ -80,6 +82,15 @@ class BillingLinkRequest(BaseModel):
 
 class MarkPaidRequest(BaseModel):
     amount_inr: int | None = None
+
+
+class SetPlanRequest(BaseModel):
+    # Literal, not a plain str: rejects an invalid plan at the API layer
+    # with a clean 422, before it ever reaches authorize()'s own
+    # fail-closed PLAN_ACTIONS.get(..., frozenset()) — that fallback
+    # exists for defense in depth (e.g. a hand-edited row), not as the
+    # primary validation for this endpoint.
+    plan: Literal["starter", "growth", "scale"]
 
 
 class CreateEmployeeRequest(BaseModel):

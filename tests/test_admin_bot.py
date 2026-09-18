@@ -86,6 +86,11 @@ def _add_employee(client, headers, tenant_id, *, whatsapp_number, name, role="st
 def _setup_tenant_with_owner_and_staff(client_wa, services_wa):
     headers, tenant_id = _signup(client_wa)
     _activate_with_whatsapp(client_wa, headers, tenant_id, services_wa.settings.admin_secret, phone_number_id="PNID_1")
+    # Feedback/SOP viewing (VIEW_FEEDBACK/MANAGE_SOPS) is Growth-tier under
+    # Phase 1's plan-gating; growth is a superset of starter, so this
+    # can't affect any test in this file that only needs Starter-tier
+    # actions.
+    services_wa.tenant_registry.update_config(tenant_id, plan="growth")
     _set_owner_number(client_wa, headers, tenant_id)
     # Normally lazy (triggered by the owner's first inbound message —
     # see EmployeeStore.ensure_owner_bootstrap), forced here so tests can
@@ -437,11 +442,13 @@ def test_owner_can_view_feedback_themes_over_whatsapp(client_wa, services_wa):
 def test_feedback_is_tenant_isolated(client_wa, services_wa):
     headers_a, tenant_a = _signup(client_wa, business_name="Salon A", email="fa@example.com")
     _activate_with_whatsapp(client_wa, headers_a, tenant_a, services_wa.settings.admin_secret, phone_number_id="PNID_FA")
+    services_wa.tenant_registry.update_config(tenant_a, plan="growth")  # VIEW_FEEDBACK is Growth-tier
     services_wa.employee_store.ensure_owner_bootstrap(tenant_a, OWNER_WA)
     services_wa.employee_store.add(tenant_id=tenant_a, whatsapp_number=RAVI_WA, name="Ravi", role="staff")
 
     headers_b, tenant_b = _signup(client_wa, business_name="Salon B", email="fb@example.com")
     _activate_with_whatsapp(client_wa, headers_b, tenant_b, services_wa.settings.admin_secret, phone_number_id="PNID_FB")
+    services_wa.tenant_registry.update_config(tenant_b, plan="growth")
 
     payload = _wa_payload(phone_number_id="PNID_FA", wa_id=RAVI_WA, message_id="wamid.fb7", text="feedback broken chair")
     r = _signed_post(client_wa, payload)
@@ -1259,6 +1266,7 @@ def test_timeline_is_tenant_isolated(client_wa, services_wa):
 
     headers_b, tenant_b = _signup(client_wa, business_name="Salon B", email="tlb@example.com")
     _activate_with_whatsapp(client_wa, headers_b, tenant_b, services_wa.settings.admin_secret, phone_number_id="PNID_TLB")
+    services_wa.tenant_registry.update_config(tenant_b, plan="growth")
 
     r = client_wa.get(f"/api/timeline?tenant_id={tenant_b}", headers=headers_b)
     assert r.json()["entries"] == []

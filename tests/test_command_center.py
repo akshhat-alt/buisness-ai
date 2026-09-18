@@ -100,6 +100,7 @@ def test_command_center_is_tenant_isolated(client_wa, services_wa):
     from tests.test_whatsapp import _signup
 
     headers_b, tenant_b = _signup(client_wa, business_name="Other Biz", email="cc-owner@example.com")
+    services_wa.tenant_registry.update_config(tenant_b, plan="growth")
     r = client_wa.get(f"/api/command-center?tenant_id={tenant_b}", headers=headers_b)
     assert r.status_code == 200, r.text
     assert r.json()["needs_attention"]["overdue_tasks"] == 0
