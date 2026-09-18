@@ -92,6 +92,18 @@ class TenantConfig(BaseModel):
     billing_status: str = "unbilled"  # "unbilled" | "invoiced" | "paid"
     billing_link_sent_at: str | None = None
     billing_paid_at: str | None = None
+    # Phase 2 — real recurring billing via Razorpay Subscriptions,
+    # additive to the billing_status/billing_paid_at fields above (which
+    # stay exactly as they are for the one-time Payment Links path).
+    # None for every tenant until this tenant is actually migrated to a
+    # real subscription — nothing reads these until then.
+    platform_subscription_id: str | None = None
+    # Mirrors Razorpay's own subscription status vocabulary verbatim
+    # (authenticated/active/pending/halted/cancelled/completed/paused) —
+    # not a value this app invents, so a webhook handler can just copy
+    # Razorpay's `status` field straight through.
+    platform_subscription_status: str | None = None
+    platform_subscription_current_period_end: str | None = None
     status: TenantStatus = TenantStatus.PROVISIONING
     question_quota: int | None = None  # None = platform default (see config.active_tenant_quota)
     # Owner-facing automation kill switch (Phase 6) — default True so

@@ -35,6 +35,69 @@ _PAYMENT_LINK_EVENTS = frozenset({
     "payment_link.paid", "payment_link.expired", "payment_link.cancelled", "payment_link.partially_paid",
 })
 
+# Phase 2 — the full subscription.* lifecycle Razorpay documents (verified
+# against their current webhook docs), all sharing payload.subscription.entity's
+# shape. Correlated the same way as payment links: a `reference_id` set at
+# creation time, here inside `notes` (Subscriptions has no top-level
+# reference_id field) — see RazorpayClient.create_subscription.
+_SUBSCRIPTION_EVENTS = frozenset({
+    "subscription.authenticated", "subscription.activated", "subscription.charged", "subscription.completed",
+    "subscription.updated", "subscription.pending", "subscription.halted", "subscription.cancelled",
+    "subscription.paused", "subscription.resumed",
+})
+
+# subscription.* statuses that mean "the tenant currently has working,
+# paid access" — everything else (pending/halted/cancelled/paused) does
+# not, and should be treated as a billing problem to alert the owner
+# about, not a silent downgrade.
+_SUBSCRIPTION_ACTIVE_STATUSES = frozenset({"authenticated", "active", "completed"})
+
+
+def _handle_subscription_event(svc, event: str, payload: dict) -> dict:
+    """Phase 2 — real recurring billing. Correlates via `notes.reference_id`
+    (Subscriptions has no top-level reference_id field the way Payment
+    Links does — see RazorpayClient.create_subscription). Always records
+    Razorpay's own subscription_id/status/current_end on the tenant, so
+    that state is visible even before any product decision is made about
+    it. Only ever SETS billing_status to "paid" (on an active-status
+    event) — deliberately does NOT auto-revoke it on halted/cancelled/
+    paused here; per the Master Plan, that's a grace-period decision
+    that needs its own design, not a side effect of wiring the webhook.
+    Every non-active-status event is still recorded via the audit log,
+    so nothing is silently lost."""
+    sub_entity = payload.get("payload", {}).get("subscription", {}).get("entity", {})
+    target_tenant_id = (sub_entity.get("notes") or {}).get("reference_id")
+    if not target_tenant_id:
+        return {"status": "ignored", "reason": "no_matching_tenant"}
+
+    try:
+        svc.tenant_registry.get_config(target_tenant_id)
+    except TenantNotFoundError:
+        logger.warning("Razorpay subscription webhook referenced unknown tenant_id %s", target_tenant_id)
+        return {"status": "ignored", "reason": "unknown_tenant"}
+
+    status = sub_entity.get("status")
+    current_end = sub_entity.get("current_end")
+    fields: dict = {
+        "platform_subscription_id": sub_entity.get("id"),
+        "platform_subscription_status": status,
+    }
+    if current_end:
+        fields["platform_subscription_current_period_end"] = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(current_end)
+        )
+    if status in _SUBSCRIPTION_ACTIVE_STATUSES:
+        fields["billing_status"] = "paid"
+        fields["billing_paid_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    updated = svc.tenant_registry.update_config(target_tenant_id, **fields)
+    svc.audit_log.record(
+        tenant_id=target_tenant_id, actor_employee_id=None, action="platform_subscription_event",
+        target_type="tenant", target_id=target_tenant_id, metadata={"event": event, "status": status},
+    )
+    logger.info("Razorpay subscription event %s for tenant %s -> status %s", event, target_tenant_id, status)
+    return {"status": "ok", "subscription_status": updated.platform_subscription_status}
+
 
 def register_webhooks(app: FastAPI, svc, ctx) -> None:
 
@@ -64,6 +127,10 @@ def register_webhooks(app: FastAPI, svc, ctx) -> None:
             return {"status": "ignored", "reason": "invalid_json"}
 
         event = payload.get("event")
+
+        if event in _SUBSCRIPTION_EVENTS:
+            return _handle_subscription_event(svc, event, payload)
+
         if event not in _PAYMENT_LINK_EVENTS:
             return {"status": "ignored", "reason": "irrelevant_event"}
 

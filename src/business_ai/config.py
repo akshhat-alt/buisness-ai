@@ -132,6 +132,16 @@ class Settings:
     # unpriced) — fully backward compatible with every tenant onboarded
     # before this setting existed.
     platform_subscription_price_inr: int | None
+    # Phase 2 — real recurring billing. Each tier's Razorpay Plan ID,
+    # created ONCE via RazorpayClient.create_plan() and pasted in here —
+    # not created automatically at request time. All three unset (the
+    # default, true for every deployment until this is set up on a real,
+    # KYC'd Razorpay account) means self-serve checkout stays on the
+    # existing one-time Payment Links path; nothing about that path
+    # changes until these are configured.
+    platform_razorpay_plan_id_starter: str | None
+    platform_razorpay_plan_id_growth: str | None
+    platform_razorpay_plan_id_scale: str | None
 
     # Customer win-back: platform-wide default "lapsed" threshold, used
     # when a tenant hasn't set their own TenantConfig.winback_after_days.
@@ -205,6 +215,9 @@ def load_settings() -> Settings:
         platform_razorpay_key_secret=(os.getenv("PLATFORM_RAZORPAY_KEY_SECRET") or "").strip() or None,
         platform_razorpay_webhook_secret=(os.getenv("PLATFORM_RAZORPAY_WEBHOOK_SECRET") or "").strip() or None,
         platform_subscription_price_inr=(_int_env("PLATFORM_SUBSCRIPTION_PRICE_INR", 0) or None),
+        platform_razorpay_plan_id_starter=(os.getenv("PLATFORM_RAZORPAY_PLAN_ID_STARTER") or "").strip() or None,
+        platform_razorpay_plan_id_growth=(os.getenv("PLATFORM_RAZORPAY_PLAN_ID_GROWTH") or "").strip() or None,
+        platform_razorpay_plan_id_scale=(os.getenv("PLATFORM_RAZORPAY_PLAN_ID_SCALE") or "").strip() or None,
         digest_window_hours=_int_env("DIGEST_WINDOW_HOURS", 24),
         public_base_url=(os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/") or None,
         winback_default_days=_int_env("WINBACK_DEFAULT_DAYS", 45),
