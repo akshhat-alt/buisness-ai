@@ -20,6 +20,7 @@
       <a class="bm-navlink" href="#channels">WhatsApp</a>
       <a class="bm-navlink" href="#product">Product</a>
       <a class="bm-navlink" href="#operations">Operations</a>
+      <a class="bm-navlink" href="#assistants">Assistants</a>
       <a class="bm-navlink" href="#why">Why it's different</a>
       <a class="bm-navlink" href="#pricing">Pricing</a>
     </div>
@@ -289,6 +290,23 @@
     </div>
   </section>
 
+  <section class="bm-section" id="assistants">
+    <div class="bm-wrap">
+      <div class="bm-kicker bm-reveal">Built For Your Business</div>
+      <h2 class="bm-h2 bm-reveal">One assistant. Tuned to your industry.</h2>
+      <p class="bm-section-lede bm-reveal">Same grounded engine underneath — the questions it expects, the actions it takes, and the numbers it tracks are shaped around how your kind of business actually runs.</p>
+
+      <div class="bm-demo-tabs bm-reveal" id="assistant-tabs" style="margin-bottom:28px;">
+        <div class="bm-demo-tab active" data-assistant="restaurant">Restaurant &amp; Cafe</div>
+        <div class="bm-demo-tab" data-assistant="salon">Salon &amp; Spa</div>
+        <div class="bm-demo-tab" data-assistant="retail">Retail &amp; Shop</div>
+        <div class="bm-demo-tab" data-assistant="services">Services &amp; Clinics</div>
+      </div>
+
+      <div class="bm-hero-grid" id="assistant-panel"></div>
+    </div>
+  </section>
+
   <section class="bm-section-tight" id="why">
     <div class="bm-wrap">
       <div class="bm-kicker bm-reveal">Why it's different</div>
@@ -389,6 +407,7 @@
         <a href="#channels">WhatsApp</a>
         <a href="#product">Product</a>
         <a href="#operations">Operations</a>
+        <a href="#assistants">Assistants</a>
         <a href="#pricing">Pricing</a>
         <a href="/login">Sign in</a>
       </div>
@@ -503,6 +522,99 @@
 
     tabs.forEach(tab => tab.addEventListener('click', () => selectTab(tab.dataset.demo)));
     selectTab('answer');
+
+    // ---------------------------------------------------- assistant personas
+    // Same grounded engine for every business — this only changes which
+    // already-shipped capabilities are highlighted per industry. The
+    // restaurant tab is the only one with an extra bullet (food-cost/menu
+    // intelligence) because that is the only vertical-specific module
+    // actually built; every other bullet here is a generic capability
+    // (WhatsApp/website chat, leads, reminders, staff tasks, reviews)
+    // that already works identically for every tenant regardless of tab.
+    const assistantPersonas = {
+      restaurant: {
+        label: 'Restaurant & Cafe Assistant',
+        exchange: [
+          { role: 'user', text: 'Aapke paas gluten-free options hai?' },
+          { role: 'ai', text: 'Haan, humare menu mein 3 gluten-free dishes hain — Grilled Chicken Salad, Paneer Steaks, aur Quinoa Bowl.', whatsapp: true, signal: { type: 'whatsapp', label: 'Replied on WhatsApp, in Hinglish' } },
+        ],
+        features: [
+          'Menu &amp; pricing Q&amp;A on WhatsApp and your website, in Hindi, English or Hinglish',
+          'Food-cost &amp; menu intelligence — dish-level margins, high-food-cost alerts, reviewable price suggestions',
+          'Google, Zomato &amp; Swiggy reviews tracked and synced in one place',
+        ],
+      },
+      salon: {
+        label: 'Salon & Spa Assistant',
+        exchange: [
+          { role: 'user', text: 'aapka salon kitne baje khulta hai?' },
+          { role: 'ai', text: 'Hamara salon Monday se Saturday, subah 10 baje se shaam 8 baje tak khulta hai. Hum Sunday ko band rehte hain.', whatsapp: true, signal: { type: 'whatsapp', label: 'Replied on WhatsApp, in Hinglish' } },
+        ],
+        features: [
+          'Service &amp; pricing FAQ answered instantly, day or night',
+          'Appointment booking with automatic WhatsApp reminders — fewer no-shows',
+          'Staff shift scheduling &amp; task handoffs coordinated over WhatsApp',
+        ],
+      },
+      retail: {
+        label: 'Retail & Shop Assistant',
+        exchange: [
+          { role: 'user', text: 'Ye jacket M size mein available hai kya?' },
+          { role: 'ai', text: "I don't have live stock counts for that yet — let me connect you with someone from the team who can check.", signal: { type: 'gap', label: 'Knowledge gap flagged — one-click fix for the owner' } },
+        ],
+        features: [
+          'Product &amp; catalog questions answered from your own content — honest when something isn’t covered yet',
+          'Buying-intent leads captured automatically, with payment/deposit links sent over WhatsApp',
+          'Every unanswered question becomes a one-click knowledge-base fix',
+        ],
+      },
+      services: {
+        label: 'Services & Clinics Assistant',
+        exchange: [
+          { role: 'user', text: 'Konse time slots available hain kal ke liye?' },
+          { role: 'ai', text: "This is the third time nobody's called me back, I'm done.", signal: { type: 'complaint', label: 'Dissatisfaction detected → owner alerted instantly' } },
+        ],
+        features: [
+          'Booking &amp; policy questions answered around the clock',
+          'Appointment reminders sent automatically to cut no-shows',
+          'Real frustration flagged the moment it happens — not buried until tomorrow’s digest',
+        ],
+      },
+    };
+
+    function renderAssistantPanel(key) {
+      const p = assistantPersonas[key];
+      const panel = document.getElementById('assistant-panel');
+      const bubbles = p.exchange.map(msg => {
+        const avatar = msg.role === 'user' ? 'You' : 'AI';
+        let extra = '';
+        if (msg.signal) extra = `<span class="bm-demo-signal ${msg.signal.type}">${escapeHtml(msg.signal.label)}</span>`;
+        return `<div class="bm-demo-msg ${msg.role}${msg.whatsapp ? ' whatsapp' : ''}"><div class="bm-demo-avatar">${avatar}</div><div><div class="bm-demo-bubble">${escapeHtml(msg.text)}</div>${extra}</div></div>`;
+      }).join('');
+      const bullets = p.features.map(f => `
+        <div style="display:flex; gap:10px; align-items:flex-start; font-size:0.9375rem; color:var(--bm-ink-soft); margin-bottom:14px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px; height:18px; color:var(--bm-primary); flex-shrink:0; margin-top:2px;"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>${f}</span>
+        </div>`).join('');
+      panel.innerHTML = `
+        <div class="bm-reveal in">
+          <div class="bm-demo">
+            <div class="bm-demo-bar"><div class="bm-demo-bar-title"><span class="bm-demo-dot"></span> ${escapeHtml(p.label)}</div></div>
+            <div class="bm-demo-body">${bubbles}</div>
+          </div>
+        </div>
+        <div class="bm-reveal in" style="transition-delay:.08s;">
+          ${bullets}
+        </div>`;
+    }
+
+    document.querySelectorAll('#assistant-tabs .bm-demo-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('#assistant-tabs .bm-demo-tab').forEach(t => t.classList.toggle('active', t === tab));
+        renderAssistantPanel(tab.dataset.assistant);
+      });
+    });
+    renderAssistantPanel('restaurant');
 
     async function loadPlatformPricing() {
       const priceEl = document.getElementById('platform-price');
