@@ -23,6 +23,9 @@ def register_static_pages(app: FastAPI, svc, ctx) -> None:
         ("/onboarding", "onboarding.html"), ("/onboarding.html", "onboarding.html"),
         ("/contact", "contact.html"), ("/contact.html", "contact.html"),
         ("/shipping-policy", "shipping-policy.html"), ("/shipping-policy.html", "shipping-policy.html"),
+        ("/terms", "terms.html"), ("/terms.html", "terms.html"),
+        ("/privacy", "privacy.html"), ("/privacy.html", "privacy.html"),
+        ("/cancellation-refunds", "cancellation-refunds.html"), ("/cancellation-refunds.html", "cancellation-refunds.html"),
         ("/404", "404.html"), ("/404.html", "404.html"),
     ):
         def _make_handler(fname: str):
