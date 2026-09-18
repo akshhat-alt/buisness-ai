@@ -194,11 +194,26 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     app = FastAPI(title="Business AI", version="0.1.0", lifespan=lifespan)
 
+    # Public marketing/legal pages only — no login, no authenticated action,
+    # nothing clickjacking could exploit. Exempted from X-Frame-Options so
+    # third-party site-verification tools (e.g. a payment processor's
+    # activation reviewer) can render/screenshot them in an iframe, which
+    # DENY otherwise blocks silently. Every authenticated or form-bearing
+    # page (login, dashboard, chat, onboarding, password reset) keeps DENY.
+    _FRAMEABLE_PATHS = frozenset(
+        {
+            "/", "/terms", "/terms.html", "/privacy", "/privacy.html",
+            "/cancellation-refunds", "/cancellation-refunds.html",
+            "/contact", "/contact.html", "/shipping-policy", "/shipping-policy.html",
+        }
+    )
+
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
             response = await call_next(request)
             response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["X-Frame-Options"] = "DENY"
+            if request.url.path not in _FRAMEABLE_PATHS:
+                response.headers["X-Frame-Options"] = "DENY"
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
             # Scoped to what this app's inline-script/inline-style static
             # pages actually need — NOT a bare default-src 'self' (that

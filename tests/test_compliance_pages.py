@@ -53,6 +53,25 @@ def test_cancellation_refunds_page_serves(client):
     assert r_alias.status_code == 200
 
 
+def test_marketing_pages_are_frameable_for_site_review(client):
+    # X-Frame-Options: DENY blocks any iframe embed, including a payment
+    # processor's automated activation-review tool trying to render the
+    # page — these public, no-auth pages must be exempt.
+    for path in ("/", "/terms", "/privacy", "/cancellation-refunds", "/contact", "/shipping-policy"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert "x-frame-options" not in {k.lower() for k in r.headers.keys()}
+
+
+def test_authenticated_pages_still_deny_framing(client):
+    # Clickjacking protection must stay intact on every page with real
+    # login/session/authenticated-action surface.
+    for path in ("/login", "/dashboard", "/onboarding", "/forgot-password", "/reset-password"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert r.headers.get("x-frame-options") == "DENY"
+
+
 def test_footer_links_to_compliance_pages(client):
     r = client.get("/")
     assert r.status_code == 200
