@@ -43,6 +43,35 @@ def render_dissatisfaction_alert(
     return subject, html
 
 
+def render_rating_drop_alert(
+    *,
+    business_name: str,
+    platform: str,
+    previous_rating: float,
+    new_rating: float,
+    review_count: int | None,
+    dashboard_url: str | None,
+) -> tuple[str, str]:
+    """For the OWNER: their public rating on a platform dropped by a
+    real margin between two syncs — sent immediately, same "catch it
+    before it compounds" philosophy as render_dissatisfaction_alert,
+    rather than waiting for the next digest."""
+    subject = f"Your {platform.capitalize()} rating dropped — {business_name}"
+    dashboard_link = (
+        f'<p><a href="{escape(dashboard_url)}">Open your dashboard &rarr;</a></p>' if dashboard_url else ""
+    )
+    count_note = f" ({review_count} reviews)" if review_count is not None else ""
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px; color:#b91c1c;">Your {escape(platform.capitalize())} rating dropped</h2>
+      <p style="color:#666; margin-top:0;">This is worth a look before it compounds.</p>
+      <p><strong>{previous_rating:.1f} &rarr; {new_rating:.1f} stars</strong>{escape(count_note)}</p>
+      {dashboard_link}
+    </div>
+    """
+    return subject, html
+
+
 def render_urgent_feedback_alert(
     *,
     business_name: str,

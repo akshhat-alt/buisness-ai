@@ -198,3 +198,46 @@ class MenuStore(SqliteStore):
             cur2 = conn.execute("DELETE FROM menu_items WHERE tenant_id = ?", (tenant_id,))
             conn.commit()
             return cur1.rowcount + cur2.rowcount
+
+
+def live_menu_evidence_items(*, tenant_id: str, query: str, menu_store: "MenuStore") -> list:
+    """Phase 3 — closes the "stale menu price" gap: a price change in
+    MenuStore (the source of truth food-cost/menu-engineering already
+    reads) previously had no way to reach the customer-facing assistant
+    except via a full knowledge-base re-index, so a changed price could
+    sit stale in the RAG index indefinitely. Rather than adding LLM tool
+    calling (a real new architecture surface, not justified for this one
+    gap), this does a simple deterministic substring match: any active
+    menu item whose name appears in the customer's query gets injected
+    as a synthetic, maximum-confidence EvidenceItem carrying its CURRENT
+    price — same trust tier as this app's other deterministic-data
+    answers (financials, etc.), flowing through the exact same
+    abstention/citation/generation pipeline as any other evidence, not a
+    side channel. Returns [] for any tenant with no menu items (i.e.
+    every non-restaurant tenant) or no name match — a total no-op for
+    the common case, by construction.
+
+    Local import of retrieval.py to avoid a circular import (retrieval.py
+    does not import menu.py)."""
+    from business_ai.retrieval import Citation, EvidenceItem
+
+    if not query:
+        return []
+    items = menu_store.list_for_tenant(tenant_id, active_only=True)
+    if not items:
+        return []
+    query_lower = query.lower()
+    evidence: list = []
+    for item in items:
+        if item.name.strip().lower() in query_lower:
+            evidence.append(
+                EvidenceItem(
+                    segment_id=f"live_menu_{item.menu_item_id}",
+                    source_id="live_menu",
+                    text=f"{item.name}: ₹{item.price_inr}",
+                    confidence=1.0,
+                    citation=Citation(label="Your current menu"),
+                    tenant_id=tenant_id,
+                )
+            )
+    return evidence

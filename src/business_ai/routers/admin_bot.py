@@ -79,6 +79,7 @@ from business_ai.customer_intelligence import build_repeat_customer_report, rend
 from business_ai.digital_gm import build_digital_gm_briefing, render_digital_gm_whatsapp
 from business_ai.inventory import UnitMismatchError
 from business_ai.leads import Lead, LeadStore, lead_stage
+from business_ai.menu import live_menu_evidence_items
 from business_ai.menu_engineering import (
     build_menu_engineering_report,
     build_menu_recommendations,
@@ -474,6 +475,14 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 # what abstention-language-detection runs on — only the
                 # embedding lookup used the translated version.
                 pack = pack.model_copy(update={"query": query})
+
+            # Phase 3: any current menu item named in the query is injected
+            # as live, maximum-confidence evidence — closes the "stale
+            # price in the RAG index" gap without new LLM-tool-calling
+            # infrastructure. A no-op for every tenant with no menu items.
+            live_items = live_menu_evidence_items(tenant_id=tenant_id, query=query, menu_store=svc.menu_store)
+            if live_items:
+                pack = pack.model_copy(update={"items": live_items + pack.items})
 
             gate = evaluate_evidence_gate(pack)
             if gate.should_abstain:

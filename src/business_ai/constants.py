@@ -85,3 +85,10 @@ HIGH_FOOD_COST_PCT_THRESHOLD = 35.0
 # gets a small suggested price nudge, never a large jump that could
 # scare off the exact demand that makes it popular.
 PLOWHORSE_PRICE_INCREASE_PCT = 0.05
+
+# Phase 3 — a rating snapshot drop of at least this many stars between
+# two consecutive Google Places syncs is treated as a real signal worth
+# an immediate owner alert (same "catch it before tomorrow's digest"
+# philosophy as the chat dissatisfaction alert), not noise from normal
+# rating fluctuation.
+RATING_DROP_ALERT_THRESHOLD = 0.2

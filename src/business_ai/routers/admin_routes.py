@@ -16,6 +16,7 @@ from fastapi import FastAPI, Header, HTTPException
 
 from business_ai.alerts import (
     render_billing_link_email,
+    render_rating_drop_alert,
     render_task_escalation_alert,
     render_tenant_activated_email,
 )
@@ -25,6 +26,7 @@ from business_ai.formatting import _format_appointment_ist, _whatsapp_link
 from business_ai.constants import (
     DEPENDENCY_RISK_RENOTIFY_HOURS,
     INVENTORY_ALERT_RENOTIFY_HOURS,
+    RATING_DROP_ALERT_THRESHOLD,
     REENGAGEMENT_MAX_AGE_HOURS,
     REENGAGEMENT_MIN_AGE_HOURS,
     REMINDER_WINDOW_END_HOURS,
@@ -46,6 +48,28 @@ logger = logging.getLogger(__name__)
 
 
 def register_admin(app: FastAPI, svc, ctx) -> None:
+    def _send_rating_drop_alert(
+        *, tenant: TenantConfig, platform: str, previous_rating: float, new_rating: float, review_count: int | None,
+    ) -> None:
+        """Best-effort on both channels, mirroring
+        admin_bot.py's _send_dissatisfaction_alert exactly — a failed
+        alert must never fail the sync run itself."""
+        ctx._notify_management_whatsapp(
+            tenant,
+            f"⚠️ Your {platform.capitalize()} rating dropped from {previous_rating:.1f} to {new_rating:.1f} stars.",
+        )
+        if not svc.settings.resend_api_key or not svc.settings.digest_from_email:
+            return
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+        subject, html = render_rating_drop_alert(
+            business_name=tenant.business_name, platform=platform, previous_rating=previous_rating,
+            new_rating=new_rating, review_count=review_count, dashboard_url=dashboard_url,
+        )
+        try:
+            svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            logger.warning("Failed to send rating-drop alert for tenant %s: %s", tenant.tenant_id, exc)
+
     @app.post("/api/v1/admin/automation/run")
     def admin_run_automation(authorization: str | None = Header(default=None)) -> dict:
         """The one cron entrypoint for the entire automation engine — meant
@@ -670,10 +694,18 @@ def register_admin(app: FastAPI, svc, ctx) -> None:
             except GooglePlacesError as exc:
                 skipped.append({"tenant_id": tenant.tenant_id, "reason": str(exc)})
                 continue
+
+            previous = svc.review_store.latest_by_platform(tenant.tenant_id).get("google")
             svc.review_store.record(
                 tenant_id=tenant.tenant_id, platform="google", rating=rating, review_count=review_count,
                 source="google_places",
             )
             synced.append(tenant.tenant_id)
+
+            if previous is not None and (previous.rating - rating) >= RATING_DROP_ALERT_THRESHOLD:
+                _send_rating_drop_alert(
+                    tenant=tenant, platform="google", previous_rating=previous.rating,
+                    new_rating=rating, review_count=review_count,
+                )
         return {"synced": synced, "skipped": skipped}
 
