@@ -21,6 +21,8 @@ def register_static_pages(app: FastAPI, svc, ctx) -> None:
         ("/chat", "chat.html"), ("/chat.html", "chat.html"),
         ("/dashboard", "dashboard.html"), ("/dashboard.html", "dashboard.html"),
         ("/onboarding", "onboarding.html"), ("/onboarding.html", "onboarding.html"),
+        ("/contact", "contact.html"), ("/contact.html", "contact.html"),
+        ("/shipping-policy", "shipping-policy.html"), ("/shipping-policy.html", "shipping-policy.html"),
         ("/404", "404.html"), ("/404.html", "404.html"),
     ):
         def _make_handler(fname: str):
