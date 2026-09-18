@@ -11,6 +11,8 @@ persistence choice for every other Business AI store.
 
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
 import threading
 import time
@@ -24,6 +26,8 @@ from pydantic import BaseModel, Field
 from business_ai.auth import Principal
 from business_ai.secrets_vault import decrypt_secret, encrypt_secret
 from business_ai.storage import SqliteStore
+
+logger = logging.getLogger(__name__)
 
 
 class TenantStatus(str, Enum):
@@ -402,6 +406,34 @@ class TenantRegistry(SqliteStore):
                 """
             )
             conn.commit()
+        self.migrate_grandfathered_tenants()
+
+    def migrate_grandfathered_tenants(self) -> int:
+        """One-time, idempotent startup step: for every existing tenant row
+        where `plan` is NULL/missing/absent in storage, set it to "scale".
+        Tenants created after this step run default through the existing normal
+        path to "starter".
+        """
+        migrated = 0
+        with self._lock, self._db() as conn:
+            rows = conn.execute("SELECT tenant_id, config_json FROM tenants").fetchall()
+            for r in rows:
+                try:
+                    raw = json.loads(r["config_json"])
+                except Exception:
+                    continue
+                if "plan" not in raw or raw.get("plan") is None:
+                    raw["plan"] = "scale"
+                    conn.execute(
+                        "UPDATE tenants SET config_json = ? WHERE tenant_id = ?",
+                        (json.dumps(raw), r["tenant_id"]),
+                    )
+                    migrated += 1
+            if migrated:
+                conn.commit()
+        if migrated:
+            logger.info("Migrated %d grandfathered tenant(s) to 'scale' plan.", migrated)
+        return migrated
 
     def register(self, config: TenantConfig, *, override_existing: bool = False) -> TenantConfig:
         # Encrypt onto a COPY for storage — never mutate the plaintext

@@ -8,12 +8,13 @@ import logging
 import secrets
 import time
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 
 from business_ai.alerts import render_password_reset_email
 from business_ai.auth import Principal, create_access_token
 from business_ai.email_sender import EmailSendError
 from business_ai.formatting import _slugify_tenant_id
+from business_ai.rate_limiting import client_ip
 from business_ai.schemas import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, SignupRequest
 from business_ai.security import InvalidTenantIdError, validate_tenant_id
 from business_ai.tenant import TenantConfig, TenantStatus
@@ -31,7 +32,15 @@ def register_auth(app: FastAPI, svc, ctx) -> None:
 
     # -------------------------------------------------------------- auth
     @app.post("/api/auth/signup")
-    def signup(request: SignupRequest) -> dict:
+    def signup(request: SignupRequest, req: Request) -> dict:
+        ip = client_ip(req)
+        if hasattr(svc, "signup_limiter") and svc.signup_limiter:
+            if not svc.signup_limiter.check_and_increment(ip):
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many signup attempts from this address. Please try again later.",
+                )
+
         tenant_id = _slugify_tenant_id(request.business_name)
         try:
             tenant_id = validate_tenant_id(tenant_id)

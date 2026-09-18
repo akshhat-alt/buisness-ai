@@ -146,6 +146,14 @@ class Services:
         self.purchase_store = PurchaseStore(data_root / "purchases.db")
         self.wastage_store = WastageStore(data_root / "wastage.db")
         self.review_store = ReviewStore(data_root / "reviews.db")
+        self.signup_limiter = FixedWindowRateLimiter(
+            limit=settings.signup_requests_per_hour,
+            window_seconds=3600.0,
+        )
+        self.ai_question_limiter = FixedWindowRateLimiter(
+            limit=settings.ai_questions_per_minute,
+            window_seconds=60.0,
+        )
 
     def embeddings(self):
         return OpenAIEmbeddingProvider(model_name=self.settings.embedding_model, api_key=_openai_key())
@@ -192,6 +200,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         errors = [i for i in issues if i.level == "error"]
         if errors and (svc.settings.auth_required or svc.settings.app_env == "production"):
             raise RuntimeError("Startup validation failed: " + "; ".join(i.message for i in errors))
+        svc.tenant_registry.migrate_grandfathered_tenants()
         yield
 
     app = FastAPI(title="Business AI", version="0.1.0", lifespan=lifespan)

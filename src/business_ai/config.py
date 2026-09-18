@@ -173,6 +173,10 @@ class Settings:
     backup_s3_endpoint_url: str | None = None
     backup_s3_region: str | None = None
 
+    # Endpoint-specific rate limits
+    signup_requests_per_hour: int = 10
+    ai_questions_per_minute: int = 30
+
 
 def load_settings() -> Settings:
     raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
@@ -229,6 +233,8 @@ def load_settings() -> Settings:
         backup_s3_secret_access_key=(os.getenv("BACKUP_S3_SECRET_ACCESS_KEY") or "").strip() or None,
         backup_s3_endpoint_url=(os.getenv("BACKUP_S3_ENDPOINT_URL") or "").strip() or None,
         backup_s3_region=(os.getenv("BACKUP_S3_REGION") or "").strip() or None,
+        signup_requests_per_hour=_int_env("SIGNUP_REQUESTS_PER_HOUR", 10),
+        ai_questions_per_minute=_int_env("AI_QUESTIONS_PER_MINUTE", 30),
     )
 
 

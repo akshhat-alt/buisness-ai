@@ -42,36 +42,45 @@ class FixedWindowRateLimiter:
     is reused across both the IP and tenant dimensions (with different
     limits), keyed by whatever string the caller passes in."""
 
-    def __init__(self, *, limit_per_minute: int) -> None:
-        self.limit_per_minute = limit_per_minute
+    def __init__(
+        self,
+        *,
+        limit_per_minute: int | None = None,
+        limit: int | None = None,
+        window_seconds: float = 60.0,
+    ) -> None:
+        self.limit = limit if limit is not None else (limit_per_minute if limit_per_minute is not None else 0)
+        self.limit_per_minute = self.limit
+        self.window_seconds = window_seconds
         self._windows: dict[str, _Window] = {}
         self._lock = threading.Lock()
 
     def check_and_increment(self, key: str, *, now: float | None = None) -> bool:
         """Returns True if this request is allowed (and counts it),
-        False if `key` has already hit its per-minute limit."""
-        if self.limit_per_minute <= 0:
+        False if `key` has already hit its limit for the active window."""
+        if self.limit <= 0:
             return True  # 0/negative = disabled, never blocks
         now = now if now is not None else time.time()
         with self._lock:
             window = self._windows.get(key)
-            if window is None or now - window.window_start >= 60.0:
+            if window is None or now - window.window_start >= self.window_seconds:
                 self._windows[key] = _Window(window_start=now, count=1)
                 return True
-            if window.count >= self.limit_per_minute:
+            if window.count >= self.limit:
                 return False
             window.count += 1
             return True
 
-    def sweep_stale(self, *, older_than_seconds: float = 300.0, now: float | None = None) -> int:
+    def sweep_stale(self, *, older_than_seconds: float | None = None, now: float | None = None) -> int:
         """Drops windows untouched for a while, so a long-running process
         doesn't accumulate one dict entry per IP/tenant ever seen. Not on
         a background timer (this app runs no background threads by
         design — see ARCHITECTURE.md) — called opportunistically by the
         middleware every so often instead."""
+        threshold = older_than_seconds if older_than_seconds is not None else max(300.0, self.window_seconds * 2)
         now = now if now is not None else time.time()
         with self._lock:
-            stale = [k for k, w in self._windows.items() if now - w.window_start > older_than_seconds]
+            stale = [k for k, w in self._windows.items() if now - w.window_start > threshold]
             for k in stale:
                 del self._windows[k]
             return len(stale)

@@ -469,6 +469,16 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                 None,
             )
 
+        if hasattr(svc, "ai_question_limiter") and svc.ai_question_limiter:
+            if not svc.ai_question_limiter.check_and_increment(tenant_id):
+                return (
+                    ReservationResult(
+                        decision=AccessDecision.RATE_LIMITED,
+                        reason=f"RATE_LIMIT_EXCEEDED: Maximum {svc.settings.ai_questions_per_minute} questions per minute allowed.",
+                    ),
+                    None,
+                )
+
         req_id = f"req_{secrets.token_hex(8)}"
         res = svc.usage_limiter.check_and_reserve(tenant_id, session_id, req_id, quota_override=tenant.question_quota)
         if res.decision != AccessDecision.ALLOW:
