@@ -30,6 +30,7 @@ from business_ai.alerts import (
     render_billing_link_email,
     render_dissatisfaction_alert,
     render_new_tenant_signup_alert,
+    render_plan_upgrade_request_alert,
     render_review_request,
     render_task_escalation_alert,
     render_tenant_activated_email,
@@ -316,6 +317,25 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             svc.email_sender().send(to=svc.settings.platform_admin_email, subject=subject, html_body=html)
         except EmailSendError as exc:
             logger.warning("Failed to send self-activation notice for tenant %s: %s", tenant.tenant_id, exc)
+
+    def _notify_admin_of_upgrade_request(tenant: TenantConfig, target_plan: str, note: str | None = None) -> None:
+        """Best-effort notification to platform admin when an owner requests a plan upgrade."""
+        if not (svc.settings.platform_admin_email and svc.settings.resend_api_key and svc.settings.digest_from_email):
+            return
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+        subject, html = render_plan_upgrade_request_alert(
+            business_name=tenant.business_name,
+            tenant_id=tenant.tenant_id,
+            owner_email=tenant.owner_email,
+            current_plan=tenant.plan,
+            target_plan=target_plan,
+            note=note,
+            dashboard_url=dashboard_url,
+        )
+        try:
+            svc.email_sender().send(to=svc.settings.platform_admin_email, subject=subject, html_body=html)
+        except EmailSendError as exc:
+            logger.warning("Failed to send plan-upgrade request notification for tenant %s: %s", tenant.tenant_id, exc)
 
     def _activation_blocker(tenant_id: str) -> str | None:
         """The one bar every activation path must clear — admin-triggered
@@ -2224,6 +2244,7 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
     ctx._notify_admin_of_signup = _notify_admin_of_signup
     ctx._notify_owner_of_activation = _notify_owner_of_activation
     ctx._notify_admin_of_self_activation = _notify_admin_of_self_activation
+    ctx._notify_admin_of_upgrade_request = _notify_admin_of_upgrade_request
     ctx._activation_blocker = _activation_blocker
     ctx._notify_management_whatsapp = _notify_management_whatsapp
     ctx._process_question = _process_question

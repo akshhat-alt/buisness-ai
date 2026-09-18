@@ -260,3 +260,33 @@ def render_password_reset_email(*, user_name: str, reset_link: str) -> tuple[str
     """
     return subject, html
 
+
+def render_plan_upgrade_request_alert(
+    *,
+    business_name: str,
+    tenant_id: str,
+    owner_email: str,
+    current_plan: str,
+    target_plan: str,
+    note: str | None = None,
+    dashboard_url: str | None = None,
+) -> tuple[str, str]:
+    """For the PLATFORM ADMIN: a tenant requested an upgrade to Growth or Scale."""
+    subject = f"Plan upgrade request: {business_name} \u2192 {target_plan.title()}"
+    dashboard_link = (
+        f'<p><a href="{escape(dashboard_url)}">Open the admin panel &rarr;</a></p>' if dashboard_url else ""
+    )
+    note_block = (
+        f"<p><strong>Note from owner:</strong><br>{escape(note)}</p>" if note else ""
+    )
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px;">Plan Upgrade Request</h2>
+      <p><strong>{escape(business_name)}</strong> ({escape(owner_email)}) requested an upgrade from <strong>{escape(current_plan.title())}</strong> to <strong>{escape(target_plan.title())}</strong>.</p>
+      {note_block}
+      <p style="color:#999; font-size:0.875rem;">Tenant ID: {escape(tenant_id)}</p>
+      {dashboard_link}
+    </div>
+    """
+    return subject, html
+

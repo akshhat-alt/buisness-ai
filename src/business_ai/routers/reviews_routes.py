@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Header, HTTPException
 
-from business_ai.reviews import KNOWN_PLATFORMS
+from business_ai.reviews import GooglePlacesError, GooglePlacesReviewClient, KNOWN_PLATFORMS
 from business_ai.schemas import ManualReviewLogRequest
 from business_ai.tenant import TenantAction, TenantNotFoundError, UnauthorizedError, authorize
 
@@ -49,3 +49,32 @@ def register_reviews(app: FastAPI, svc, ctx) -> None:
             metadata={"platform": platform, "rating": request.rating, "review_count": request.review_count, "via": "api"},
         )
         return snapshot.model_dump()
+
+    @app.post("/api/tenant/reviews/sync")
+    def sync_tenant_reviews(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Owner-facing: sync Google review rating if google_place_id is set."""
+        principal = ctx._resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.VIEW_FINANCIALS, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if not tenant.google_place_id:
+            return {"status": "skipped", "message": "No Google Place ID configured in Assistant Settings."}
+        if not svc.settings.google_places_api_key:
+            return {"status": "skipped", "message": "Google Places API key is not configured on this server."}
+
+        client = GooglePlacesReviewClient(api_key=svc.settings.google_places_api_key)
+        try:
+            rating, review_count = client.fetch_rating(tenant.google_place_id)
+        except GooglePlacesError as exc:
+            return {"status": "error", "message": str(exc)}
+
+        snapshot = svc.review_store.record(
+            tenant_id=tenant_id, platform="google", rating=rating, review_count=review_count,
+            source="google_places",
+        )
+        return {"status": "synced", "platform": "google", "rating": rating, "review_count": review_count}
+

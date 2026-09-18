@@ -74,14 +74,120 @@
     .stage-pill.converted { background: var(--ba-primary-soft); color: var(--ba-primary); border-color: transparent; }
     .stage-pill.lost { background: var(--ba-error-bg); color: #C24A38; border-color: transparent; }
     .stage-pill.awaiting_payment, .stage-pill.engaged { background: var(--ba-warn-bg); color: #9A7517; border-color: transparent; }
-    .trend-tag { font-size: 0.75rem; color: var(--ba-muted); margin-left: 6px; }
+    /* AI Executive Brief Styling */
+    .brief-status-dot {
+      width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+    }
+    .brief-status-dot.active {
+      background: var(--ba-accent);
+      box-shadow: 0 0 0 3px rgba(46, 147, 112, 0.25);
+      animation: pulse-dot 2s infinite ease-in-out;
+    }
+    .brief-status-dot.provisioning {
+      background: #C99A2E;
+      box-shadow: 0 0 0 3px rgba(201, 154, 46, 0.25);
+    }
+    .brief-status-dot.suspended {
+      background: #C24A38;
+      box-shadow: 0 0 0 3px rgba(194, 74, 56, 0.25);
+    }
+    @keyframes pulse-dot {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.15); opacity: 0.8; }
+    }
 
-    .mobile-tabbar { display: none; }
+    .ai-brief-card {
+      background: var(--ba-surface);
+      border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius-lg);
+      box-shadow: var(--ba-shadow-md);
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+    .brief-top-bar {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+      padding-bottom: 18px; border-bottom: 1px solid var(--ba-border);
+    }
+    .brief-identity {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .brief-avatar {
+      width: 44px; height: 44px; border-radius: var(--ba-radius);
+      background: linear-gradient(135deg, var(--ba-primary), var(--ba-primary-strong));
+      display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0;
+    }
+    .brief-avatar svg { width: 22px; height: 22px; }
+    .brief-actions-bar {
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    }
+    .brief-actions-bar .ba-btn, .brief-actions-bar a.ba-btn {
+      min-height: 40px; display: inline-flex; align-items: center;
+    }
+    .brief-query-box {
+      margin: 20px 0;
+      background: var(--ba-surface-2);
+      border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius);
+      padding: 16px;
+    }
+    .brief-chips {
+      display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px;
+    }
+    .brief-chip {
+      background: var(--ba-surface); border: 1px solid var(--ba-border);
+      border-radius: 999px; padding: 6px 14px; font-size: 0.8125rem; font-weight: 500;
+      color: var(--ba-ink-soft); cursor: pointer; white-space: nowrap; transition: all 0.15s ease;
+      min-height: 32px;
+    }
+    .brief-chip:hover {
+      border-color: var(--ba-primary); color: var(--ba-primary); background: var(--ba-primary-soft);
+    }
+    .brief-chip:focus-visible {
+      outline: 2px solid var(--ba-accent);
+    }
+    .brief-section-block {
+      margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--ba-border);
+    }
+    .brief-section-title {
+      font-size: 0.9375rem; font-weight: 700; color: var(--ba-ink);
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    }
+    .brief-narrative-text {
+      font-size: 1rem; line-height: 1.6; color: var(--ba-ink-soft); margin-bottom: 16px;
+    }
+    .brief-metrics-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 12px;
+    }
+    .brief-metric-tile {
+      background: var(--ba-surface-sunken); border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius-sm); padding: 10px 14px;
+    }
+    .brief-metric-tile .lbl { font-size: 0.75rem; font-weight: 600; color: var(--ba-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .brief-metric-tile .val { font-size: 1.25rem; font-weight: 700; color: var(--ba-ink); margin-top: 2px; }
+
+    .ba-upgrade-card {
+      border: 1px solid rgba(31,92,78,0.3) !important;
+      background: linear-gradient(180deg, var(--ba-surface) 0%, var(--ba-surface-sunken) 100%) !important;
+      padding: 24px !important;
+      border-radius: var(--ba-radius-lg) !important;
+      margin-bottom: 20px !important;
+    }
+    .brief-toast {
+      position: fixed; bottom: 24px; right: 24px; background: var(--ba-ink); color: #fff;
+      padding: 10px 18px; border-radius: 999px; font-size: 0.875rem; font-weight: 600;
+      box-shadow: var(--ba-shadow-lg); z-index: 100; opacity: 0; transform: translateY(10px);
+      transition: all 0.2s ease; pointer-events: none;
+    }
+    .brief-toast.show { opacity: 1; transform: translateY(0); }
 
     @media (max-width: 900px) {
       .dash-shell { grid-template-columns: 1fr; }
       .dash-sidebar { display: none; }
-      .dash-main { padding: 20px 16px 90px; }
+      .dash-main { padding: 16px 12px 90px; }
+      .grid-2-col { grid-template-columns: 1fr !important; }
+      .ai-brief-card { padding: 16px; margin-bottom: 24px; }
+      .brief-actions-bar { width: 100%; justify-content: flex-start; }
+      .brief-actions-bar .ba-btn, .brief-actions-bar a.ba-btn { flex: 1 1 calc(50% - 8px); justify-content: center; min-width: 140px; }
       .mobile-tabbar {
         display: flex; gap: 6px; overflow-x: auto; padding: 10px 12px; position: sticky; top: 61px; z-index: 15;
         background: var(--ba-surface); border-bottom: 1px solid var(--ba-border);
@@ -170,75 +276,151 @@
       <div id="owner-panel">
 
         <section class="dash-section" id="overview">
-          <div id="attn-banner" class="attn-banner">
-            <div class="ba-skeleton" style="height:28px; width:220px; margin-bottom:8px;"></div>
-            <div class="ba-skeleton" style="height:16px; width:320px;"></div>
-          </div>
-
-          <div class="ba-card-title-row" style="margin-bottom:8px;">
-            <div>
-              <h1 style="margin-bottom:2px;">Your Assistant</h1>
-              <p id="status-line" class="ba-muted" style="margin:0;"></p>
-            </div>
-            <a id="chat-link" href="#" target="_blank" class="ba-btn">Open Chat &rarr;</a>
-          </div>
           <div id="activate-box" style="display:none; margin-bottom:20px;"></div>
 
-          <div class="ba-metric">
-            <div class="ba-metric-box"><div class="ba-metric-label">Questions Asked</div><div class="ba-metric-val" id="m-total">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Answered</div><div class="ba-metric-val" id="m-answered">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Leads Captured</div><div class="ba-metric-val" id="m-leads">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Buying Interest</div><div class="ba-metric-val" id="m-intent">—</div></div>
-          </div>
-        </section>
+          <div class="ai-brief-card" id="ai-executive-brief">
+            <!-- Top bar: Assistant Identity, Status Dot, Plan & Usage, Quick Actions -->
+            <div class="brief-top-bar">
+              <div class="brief-identity">
+                <div class="brief-avatar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                </div>
+                <div>
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <h1 id="brief-assistant-title" style="margin:0; font-size:1.35rem; letter-spacing:-0.02em;">Bizistic Assistant</h1>
+                    <div id="brief-status-pill" style="display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border-radius:999px; background:var(--ba-surface-sunken); font-size:0.75rem; font-weight:600;">
+                      <span id="brief-status-dot" class="brief-status-dot provisioning"></span>
+                      <span id="brief-status-label">Checking status…</span>
+                    </div>
+                    <span id="usage-card" style="display:inline-flex; align-items:center;"><span id="usage-body"></span></span>
+                  </div>
+                  <p id="brief-status-desc" class="ba-muted" style="margin:3px 0 0; font-size:0.84rem;">AI Co-Pilot running customer communications and operational intelligence.</p>
+                  <p id="status-line" style="display:none;"></p>
+                </div>
+              </div>
 
-        <section class="dash-section" id="command-center">
-          <div class="dash-section-head">
-            <h2>Command Center — Your Daily Brief</h2>
-            <p class="ba-muted" style="margin:0;">Everything that needs a decision from you, in one place — what's actually waiting on your approval, what to look at, where the revenue is, and what's already been handled automatically.</p>
-          </div>
+              <!-- Quick action buttons -->
+              <div class="brief-actions-bar">
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="runTenantAutomation(this)" title="Run your active automation rules right now">
+                  ⚡ Run Automation Now
+                </button>
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="syncTenantReviews(this)" title="Fetch latest Google reviews">
+                  ⭐ Sync Reviews
+                </button>
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="copyWhatsAppLink()" title="Copy WhatsApp customer chat link">
+                  📱 WhatsApp Link
+                </button>
+                <a id="chat-link" href="#" target="_blank" class="ba-btn ba-btn-sm">
+                  Open Chat &rarr;
+                </a>
+              </div>
+            </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">💬 Ask Your Business Anything</h3>
-            <p class="ba-muted" style="margin-top:-6px;">Ask in plain language — food cost, reorder suggestions, reservations, repeat customers, supplier spend, reviews, revenue leakage. Answers are always computed from your own data, never guessed.</p>
-            <form class="ba-chat-input-row" onsubmit="askBusinessQuery(event)">
-              <input class="ba-input" id="bq-question-input" placeholder="e.g. what's our food cost looking like?" autocomplete="off">
-              <button type="submit" class="ba-btn" id="bq-ask-btn">Ask</button>
-            </form>
-            <div id="bq-answer" class="ba-muted" style="margin-top:10px; white-space:pre-wrap;"></div>
-          </div>
+            <!-- "Ask Your Business Anything" Conversational Bar -->
+            <div class="brief-query-box">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-weight:700; font-size:0.875rem; color:var(--ba-ink); display:inline-flex; align-items:center; gap:6px;">
+                  💬 Ask Your Business Anything
+                </span>
+                <span class="ba-muted" style="font-size:0.78rem;">Live data &middot; grounded citations</span>
+              </div>
+              <form class="ba-chat-input-row" onsubmit="askBusinessQuery(event)" style="border-radius:var(--ba-radius-sm);">
+                <input class="ba-input" id="bq-question-input" placeholder="Ask in plain language, e.g. what's our revenue leakage or food cost?" autocomplete="off" style="border:none; box-shadow:none;">
+                <button type="submit" class="ba-btn" id="bq-ask-btn" style="min-height:38px;">Ask</button>
+              </form>
+              <div class="brief-chips">
+                <button type="button" class="brief-chip" onclick="setAndAskBusinessQuery('What is our estimated revenue leakage and uncollected deposits?')">💰 Revenue leakage?</button>
+                <button type="button" class="brief-chip" onclick="setAndAskBusinessQuery('How did we perform this week vs last week?')">📈 Weekly scorecard?</button>
+                <button type="button" class="brief-chip" onclick="setAndAskBusinessQuery('Are there any overdue tasks or operational bottlenecks?')">⚠️ Overdue tasks?</button>
+                <button type="button" class="brief-chip" onclick="setAndAskBusinessQuery('What needs my immediate attention today?')">⚡ Attention today?</button>
+              </div>
+              <div id="bq-answer" class="ba-muted" style="margin-top:12px; white-space:pre-wrap; font-size:0.9rem; line-height:1.5;"></div>
+            </div>
 
-          <div class="ba-card" id="usage-card">
-            <h3 style="margin-top:0;">📊 Plan &amp; Usage</h3>
-            <div id="usage-body" class="ba-muted">Loading…</div>
-          </div>
+            <!-- Section 1: "Here's what happened" -->
+            <div class="brief-section-block" style="border-top:none; padding-top:4px;">
+              <div class="brief-section-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Here's what happened
+              </div>
+              <div id="ai-brief-narrative" class="brief-narrative-text">
+                Loading activity summary…
+              </div>
 
-          <div class="ba-card" id="cc-approvals-card">
-            <h3 style="margin-top:0;">✅ Approval Inbox</h3>
-            <div id="cc-approvals-list" class="ba-muted">Loading…</div>
-          </div>
+              <!-- High-density Linear-style metrics bar -->
+              <div class="brief-metrics-row">
+                <div class="brief-metric-tile">
+                  <div class="lbl">Questions Asked</div>
+                  <div class="val" id="m-total">—</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">Answered</div>
+                  <div class="val" id="m-answered">—</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">Leads Captured</div>
+                  <div class="val" id="m-leads">—</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">Buying Interest</div>
+                  <div class="val" id="m-intent">—</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">Confirmed Rev</div>
+                  <div class="val" id="cc-revenue">—</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">Conversion</div>
+                  <div class="val" id="cc-conversion">—</div>
+                </div>
+              </div>
+            </div>
 
-          <div class="ba-card" id="cc-attention-card">
-            <h3 style="margin-top:0;">⚠️ Needs Your Attention</h3>
-            <ul id="cc-attention-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Loading…</li></ul>
-          </div>
+            <div id="attn-banner" class="attn-banner" style="margin-top:20px; margin-bottom:0;">
+              <div class="ba-skeleton" style="height:28px; width:220px; margin-bottom:8px;"></div>
+              <div class="ba-skeleton" style="height:16px; width:320px;"></div>
+            </div>
 
-          <div class="ba-metric">
-            <div class="ba-metric-box"><div class="ba-metric-label">Missed Opportunities</div><div class="ba-metric-val" id="cc-opportunities">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Confirmed Revenue</div><div class="ba-metric-val" id="cc-revenue">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Conversion Rate</div><div class="ba-metric-val" id="cc-conversion">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Tasks Overdue</div><div class="ba-metric-val" id="cc-overdue">—</div></div>
-          </div>
+            <!-- Section 2: "Here's what I need you to decide" -->
+            <div class="brief-section-block" id="command-center">
+              <div class="brief-section-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Here's what I need you to decide
+              </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Recommended Actions</h3>
-            <ul id="cc-recommended-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Nothing to recommend right now.</li></ul>
-          </div>
+              <div id="cc-approvals-card" style="margin-bottom:14px;">
+                <div style="font-weight:600; font-size:0.875rem; margin-bottom:6px; color:var(--ba-ink-soft);">Approvals Waiting on You</div>
+                <div id="cc-approvals-list" class="ba-muted">Loading…</div>
+              </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">🤖 Handled Automatically</h3>
-            <p class="ba-muted" style="margin-top:-6px;">Actions your automation rules already took — configure them under Automation.</p>
-            <ul id="cc-automated-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Nothing yet.</li></ul>
+              <div id="cc-attention-card">
+                <div style="font-weight:600; font-size:0.875rem; margin-bottom:6px; color:var(--ba-ink-soft);">Needs Your Immediate Attention</div>
+                <ul id="cc-attention-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Loading…</li></ul>
+              </div>
+            </div>
+
+            <!-- Section 3: "Here's what I handled automatically" -->
+            <div class="brief-section-block">
+              <div class="brief-section-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
+                Here's what I handled automatically
+              </div>
+              <p class="ba-muted" style="margin:0 0 8px; font-size:0.8125rem;">Actions taken autonomously by your configured rules without interrupting you.</p>
+              <ul id="cc-automated-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Nothing yet — configure rules under Automation.</li></ul>
+            </div>
+
+            <!-- Section 4: "Here's what I recommend" -->
+            <div class="brief-section-block">
+              <div class="brief-section-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                Here's what I recommend
+              </div>
+              <div style="display:flex; gap:16px; margin-bottom:10px; flex-wrap:wrap;">
+                <div style="font-size:0.84rem;"><span class="ba-muted">Missed Opportunities:</span> <strong id="cc-opportunities">—</strong></div>
+                <div style="font-size:0.84rem;"><span class="ba-muted">Tasks Overdue:</span> <strong id="cc-overdue">—</strong></div>
+              </div>
+              <ul id="cc-recommended-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Analyzing business patterns…</li></ul>
+            </div>
           </div>
         </section>
 
@@ -318,7 +500,7 @@
             <div id="task-status" class="ba-muted" style="margin-top:6px;"></div>
           </div>
 
-          <div class="ba-card">
+          <div class="ba-card" id="shifts-card">
             <h3 style="margin-top:0;">Shifts <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— today</span></h3>
             <table class="ba-table" id="shifts-table"><thead><tr><th>Employee</th><th>Time</th><th>Role</th><th></th></tr></thead><tbody></tbody></table>
             <div id="shifts-empty" class="ba-muted" style="display:none;">No shifts scheduled today.</div>
@@ -380,41 +562,43 @@
             <p class="ba-muted" style="margin:0;">How the business actually runs, built automatically from real task/roster history — who depends on whom, and what would break if someone were unavailable. Never a performance ranking, always traceable back to real rows.</p>
           </div>
 
-          <div class="ba-card" id="bm-risks-card">
-            <h3 style="margin-top:0;">⚠️ Dependency Risks</h3>
-            <ul id="bm-risks-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Loading…</li></ul>
-          </div>
+          <div id="business-map-content">
+            <div class="ba-card" id="bm-risks-card">
+              <h3 style="margin-top:0;">⚠️ Dependency Risks</h3>
+              <ul id="bm-risks-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Loading…</li></ul>
+            </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Processes &amp; Bus Factor</h3>
-            <p class="ba-muted" style="margin-top:-6px;">A recurring task counted as one "process" — bus factor is how many different people have ever completed it.</p>
-            <table class="ba-table" id="bm-processes-table"><thead><tr><th>Process</th><th>Instances</th><th>Bus Factor</th><th>Most Relied On</th></tr></thead><tbody></tbody></table>
-          </div>
-
-          <div class="grid-2-col" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
             <div class="ba-card">
-              <h3 style="margin-top:0;">Workload Concentration</h3>
-              <div id="bm-workload" class="ba-muted">No open tasks yet.</div>
+              <h3 style="margin-top:0;">Processes &amp; Bus Factor</h3>
+              <p class="ba-muted" style="margin-top:-6px;">A recurring task counted as one "process" — bus factor is how many different people have ever completed it.</p>
+              <table class="ba-table" id="bm-processes-table"><thead><tr><th>Process</th><th>Instances</th><th>Bus Factor</th><th>Most Relied On</th></tr></thead><tbody></tbody></table>
             </div>
+
+            <div class="grid-2-col" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+              <div class="ba-card">
+                <h3 style="margin-top:0;">Workload Concentration</h3>
+                <div id="bm-workload" class="ba-muted">No open tasks yet.</div>
+              </div>
+              <div class="ba-card">
+                <h3 style="margin-top:0;">Knowledge Concentration</h3>
+                <div id="bm-knowledge" class="ba-muted">No team guidance approved yet.</div>
+              </div>
+            </div>
+
+            <div class="ba-card" id="bm-customers-card" style="display:none;">
+              <h3 style="margin-top:0;">Sole-Contact Customers</h3>
+              <p class="ba-muted" style="margin-top:-6px;">Customers who have only ever been handled by one employee.</p>
+              <ul id="bm-customers-list" style="margin:0; padding-left:20px;"></ul>
+            </div>
+
             <div class="ba-card">
-              <h3 style="margin-top:0;">Knowledge Concentration</h3>
-              <div id="bm-knowledge" class="ba-muted">No team guidance approved yet.</div>
+              <h3 style="margin-top:0;">"What breaks if someone is unavailable?"</h3>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <select class="ba-input" id="bm-simulate-employee" style="max-width:240px;"></select>
+                <button class="ba-btn ba-btn-sm" onclick="runDependencySimulation()">Simulate</button>
+              </div>
+              <div id="bm-simulate-result" style="margin-top:14px;"></div>
             </div>
-          </div>
-
-          <div class="ba-card" id="bm-customers-card" style="display:none;">
-            <h3 style="margin-top:0;">Sole-Contact Customers</h3>
-            <p class="ba-muted" style="margin-top:-6px;">Customers who have only ever been handled by one employee.</p>
-            <ul id="bm-customers-list" style="margin:0; padding-left:20px;"></ul>
-          </div>
-
-          <div class="ba-card">
-            <h3 style="margin-top:0;">"What breaks if someone is unavailable?"</h3>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <select class="ba-input" id="bm-simulate-employee" style="max-width:240px;"></select>
-              <button class="ba-btn ba-btn-sm" onclick="runDependencySimulation()">Simulate</button>
-            </div>
-            <div id="bm-simulate-result" style="margin-top:14px;"></div>
           </div>
         </section>
 
@@ -479,31 +663,33 @@
             <p class="ba-muted" style="margin:0;">Bizistic can propose small, reviewable adjustments to your assistant's tone when it detects a real pattern of customer dissatisfaction — never anything else, and never live until you approve it. Off by default.</p>
           </div>
 
-          <div class="ba-card">
-            <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-              <input type="checkbox" id="evolution-kill-switch" onchange="toggleEvolutionKillSwitch()">
-              <span>Allow Bizistic to propose assistant tone improvements</span>
-            </label>
-          </div>
+          <div id="evolution-content">
+            <div class="ba-card">
+              <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                <input type="checkbox" id="evolution-kill-switch" onchange="toggleEvolutionKillSwitch()">
+                <span>Allow Bizistic to propose assistant tone improvements</span>
+              </label>
+            </div>
 
-          <div class="ba-card" id="evolution-proposals-card">
-            <h3 style="margin-top:0;">Pending Proposals</h3>
-            <div id="evolution-proposals-list" class="ba-muted">Loading…</div>
-          </div>
+            <div class="ba-card" id="evolution-proposals-card">
+              <h3 style="margin-top:0;">Pending Proposals</h3>
+              <div id="evolution-proposals-list" class="ba-muted">Loading…</div>
+            </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Sensitivity Settings</h3>
-            <p class="ba-muted" style="margin:0 0 10px;">Leave any field blank to use Bizistic's platform default. These only change how sensitive detection and automatic rollback are — never what's allowed to happen.</p>
-            <div class="ba-field"><label class="ba-label">Propose a change when dissatisfaction reaches (%)</label><input class="ba-input" type="number" min="1" max="100" id="cfg-evo-threshold" placeholder="e.g. 20"></div>
-            <div class="ba-field"><label class="ba-label">Conversation history to consider (hours)</label><input class="ba-input" type="number" min="1" max="2160" id="cfg-evo-lookback" placeholder="e.g. 336 (2 weeks)"></div>
-            <div class="ba-field"><label class="ba-label">Automatically roll back if dissatisfaction rises by (points)</label><input class="ba-input" type="number" min="1" max="100" id="cfg-evo-regression" placeholder="e.g. 15"></div>
-            <button class="ba-btn" onclick="saveEvolutionSettings(event)">Save</button>
-          </div>
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Sensitivity Settings</h3>
+              <p class="ba-muted" style="margin:0 0 10px;">Leave any field blank to use Bizistic's platform default. These only change how sensitive detection and automatic rollback are — never what's allowed to happen.</p>
+              <div class="ba-field"><label class="ba-label">Propose a change when dissatisfaction reaches (%)</label><input class="ba-input" type="number" min="1" max="100" id="cfg-evo-threshold" placeholder="e.g. 20"></div>
+              <div class="ba-field"><label class="ba-label">Conversation history to consider (hours)</label><input class="ba-input" type="number" min="1" max="2160" id="cfg-evo-lookback" placeholder="e.g. 336 (2 weeks)"></div>
+              <div class="ba-field"><label class="ba-label">Automatically roll back if dissatisfaction rises by (points)</label><input class="ba-input" type="number" min="1" max="100" id="cfg-evo-regression" placeholder="e.g. 15"></div>
+              <button class="ba-btn" onclick="saveEvolutionSettings(event)">Save</button>
+            </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Version History</h3>
-            <table class="ba-table" id="evolution-versions-table"><thead><tr><th>Status</th><th>Tone Guidance</th><th>Created By</th><th>Activated</th><th></th></tr></thead><tbody></tbody></table>
-            <div id="evolution-versions-empty" class="ba-muted" style="display:none;">No self-evolution history yet.</div>
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Version History</h3>
+              <table class="ba-table" id="evolution-versions-table"><thead><tr><th>Status</th><th>Tone Guidance</th><th>Created By</th><th>Activated</th><th></th></tr></thead><tbody></tbody></table>
+              <div id="evolution-versions-empty" class="ba-muted" style="display:none;">No self-evolution history yet.</div>
+            </div>
           </div>
         </section>
 
@@ -513,36 +699,38 @@
             <p class="ba-muted" style="margin:0;">Financials (manual entries, logged via WhatsApp), a week-over-week scorecard, and a radar for concrete missed revenue — all pulled live, no page refresh needed.</p>
           </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Financials <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— manual entries only</span></h3>
-            <div id="bi-financials-summary" class="ba-muted">Loading…</div>
-            <div style="margin-top:10px;">
-              <a class="ba-btn ba-btn-secondary ba-btn-sm" id="bi-financials-csv-link" href="#" target="_blank" rel="noopener">Download CSV</a>
+          <div id="business-intel-content">
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Financials <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— manual entries only</span></h3>
+              <div id="bi-financials-summary" class="ba-muted">Loading…</div>
+              <div style="margin-top:10px;">
+                <a class="ba-btn ba-btn-secondary ba-btn-sm" id="bi-financials-csv-link" href="#" target="_blank" rel="noopener">Download CSV</a>
+              </div>
+              <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center;">
+                <select class="ba-input" id="bi-log-type" style="max-width:130px;">
+                  <option value="sale">Sale</option>
+                  <option value="expense">Expense</option>
+                  <option value="collection">Collection</option>
+                </select>
+                <input class="ba-input" type="number" min="1" id="bi-log-amount" placeholder="Amount (₹)" style="max-width:130px;">
+                <input class="ba-input" id="bi-log-note" placeholder="Note (optional)" style="flex:1; min-width:140px;">
+                <button class="ba-btn ba-btn-sm" onclick="logMetric()">Log</button>
+              </div>
+              <div id="bi-log-status" class="ba-muted" style="margin-top:6px;"></div>
             </div>
-            <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center;">
-              <select class="ba-input" id="bi-log-type" style="max-width:130px;">
-                <option value="sale">Sale</option>
-                <option value="expense">Expense</option>
-                <option value="collection">Collection</option>
-              </select>
-              <input class="ba-input" type="number" min="1" id="bi-log-amount" placeholder="Amount (₹)" style="max-width:130px;">
-              <input class="ba-input" id="bi-log-note" placeholder="Note (optional)" style="flex:1; min-width:140px;">
-              <button class="ba-btn ba-btn-sm" onclick="logMetric()">Log</button>
-            </div>
-            <div id="bi-log-status" class="ba-muted" style="margin-top:6px;"></div>
-          </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Weekly Scorecard</h3>
-            <table class="ba-table" id="bi-scorecard-table"><thead><tr><th>Metric</th><th>This week</th><th>Prior week</th></tr></thead><tbody></tbody></table>
-            <div style="margin-top:10px;">
-              <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="startFollowUpTask(null, 'Review this weeks scorecard')">Create follow-up task from this</button>
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Weekly Scorecard</h3>
+              <table class="ba-table" id="bi-scorecard-table"><thead><tr><th>Metric</th><th>This week</th><th>Prior week</th></tr></thead><tbody></tbody></table>
+              <div style="margin-top:10px;">
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="startFollowUpTask(null, 'Review this weeks scorecard')">Create follow-up task from this</button>
+              </div>
             </div>
-          </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">💰 Revenue Radar</h3>
-            <div id="bi-revenue-radar" class="ba-muted">Loading…</div>
+            <div class="ba-card">
+              <h3 style="margin-top:0;">💰 Revenue Radar</h3>
+              <div id="bi-revenue-radar" class="ba-muted">Loading…</div>
+            </div>
           </div>
         </section>
 
@@ -552,80 +740,82 @@
             <p class="ba-muted" style="margin:0;">Food cost and dish profitability, computed from your own logged sales, recipes, and purchases — nothing estimated. Empty until dishes have both a recipe and purchase history behind them.</p>
           </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">🧑‍💼 Digital GM Briefing</h3>
-            <p class="ba-muted" style="margin-top:-6px;">The most important line from each report below, in one view. Pulled on demand — never a new scheduled push.</p>
-            <div id="ri-gm-briefing" class="ba-muted">Loading…</div>
-            <div style="margin-top:10px;">
-              <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="loadDigitalGmBriefing()">Refresh</button>
+          <div id="restaurant-intel-content">
+            <div class="ba-card">
+              <h3 style="margin-top:0;">🧑‍💼 Digital GM Briefing</h3>
+              <p class="ba-muted" style="margin-top:-6px;">The most important line from each report below, in one view. Pulled on demand — never a new scheduled push.</p>
+              <div id="ri-gm-briefing" class="ba-muted">Loading…</div>
+              <div style="margin-top:10px;">
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="loadDigitalGmBriefing()">Refresh</button>
+              </div>
             </div>
-          </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Menu Engineering <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— last 30 days</span></h3>
-            <table class="ba-table" id="ri-menu-table"><thead><tr><th>Dish</th><th>Sold</th><th>Food cost</th><th>Profit</th><th>Classification</th></tr></thead><tbody></tbody></table>
-            <div id="ri-menu-empty" class="ba-muted" style="display:none;">No active menu items yet — add one from the Restaurant setup screen (API/dashboard-driven, see docs).</div>
-          </div>
-
-          <div class="ba-card">
-            <h3 style="margin-top:0;">🤖 Menu Recommendations</h3>
-            <p class="ba-muted" style="margin-top:-6px;">Reviewable suggestions from the classification above — nothing here is ever applied automatically.</p>
-            <div id="ri-menu-recs-list" class="ba-muted">Loading…</div>
-          </div>
-
-          <div class="ba-card">
-            <h3 style="margin-top:0;">🔮 Business Twin — Price What-If</h3>
-            <p class="ba-muted" style="margin-top:-6px;">A deterministic recomputation of food cost % and margin at a hypothetical price — not a demand forecast.</p>
-            <div class="ba-field-row" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
-              <div class="ba-field"><label class="ba-label">Dish</label>
-                <select class="ba-input" id="ri-sim-dish"></select>
-              </div>
-              <div class="ba-field"><label class="ba-label">Hypothetical price (₹)</label>
-                <input class="ba-input" id="ri-sim-price" type="number" min="1" style="width:120px;">
-              </div>
-              <button class="ba-btn ba-btn-sm" onclick="simulateMenuPrice()">Simulate</button>
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Menu Engineering <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— last 30 days</span></h3>
+              <table class="ba-table" id="ri-menu-table"><thead><tr><th>Dish</th><th>Sold</th><th>Food cost</th><th>Profit</th><th>Classification</th></tr></thead><tbody></tbody></table>
+              <div id="ri-menu-empty" class="ba-muted" style="display:none;">No active menu items yet — add one from the Restaurant setup screen (API/dashboard-driven, see docs).</div>
             </div>
-            <div id="ri-sim-result" class="ba-muted" style="margin-top:10px;"></div>
-          </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Reorder Suggestions</h3>
-            <p class="ba-muted" style="margin-top:-6px;">Ingredients that have run low repeatedly — a suggested, conservative par-level increase, never applied automatically.</p>
-            <div id="ri-reorder-list" class="ba-muted">Loading…</div>
-          </div>
+            <div class="ba-card">
+              <h3 style="margin-top:0;">🤖 Menu Recommendations</h3>
+              <p class="ba-muted" style="margin-top:-6px;">Reviewable suggestions from the classification above — nothing here is ever applied automatically.</p>
+              <div id="ri-menu-recs-list" class="ba-muted">Loading…</div>
+            </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Reservations <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— next 24 hours</span></h3>
-            <div id="ri-reservations-list" class="ba-muted">Loading…</div>
-          </div>
-
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Repeat Customers</h3>
-            <p class="ba-muted" style="margin-top:-6px;">Customers with 2+ confirmed completed visits — never an estimate, only what's actually been recorded.</p>
-            <div id="ri-repeat-customers-list" class="ba-muted">Loading…</div>
-          </div>
-
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Supplier Spend</h3>
-            <table class="ba-table" id="ri-supplier-table"><thead><tr><th>Supplier</th><th>Spend</th><th>Purchases</th><th>Ingredients</th></tr></thead><tbody></tbody></table>
-            <div id="ri-supplier-unattributed" class="ba-muted" style="margin-top:8px;"></div>
-          </div>
-
-          <div class="ba-card">
-            <h3 style="margin-top:0;">⭐ Reviews</h3>
-            <p class="ba-muted" style="margin-top:-6px;">Google syncs automatically once a Place ID is set in Assistant Settings. Zomato/Swiggy have no public rating API yet — log those manually here.</p>
-            <div id="ri-reviews-list" class="ba-muted">Loading…</div>
-            <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:10px;">
-              <div class="ba-field"><label class="ba-label">Platform</label>
-                <select class="ba-input" id="ri-review-platform">
-                  <option value="zomato">Zomato</option>
-                  <option value="swiggy">Swiggy</option>
-                  <option value="google">Google</option>
-                </select>
+            <div class="ba-card">
+              <h3 style="margin-top:0;">🔮 Business Twin — Price What-If</h3>
+              <p class="ba-muted" style="margin-top:-6px;">A deterministic recomputation of food cost % and margin at a hypothetical price — not a demand forecast.</p>
+              <div class="ba-field-row" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+                <div class="ba-field"><label class="ba-label">Dish</label>
+                  <select class="ba-input" id="ri-sim-dish"></select>
+                </div>
+                <div class="ba-field"><label class="ba-label">Hypothetical price (₹)</label>
+                  <input class="ba-input" id="ri-sim-price" type="number" min="1" style="width:120px;">
+                </div>
+                <button class="ba-btn ba-btn-sm" onclick="simulateMenuPrice()">Simulate</button>
               </div>
-              <div class="ba-field"><label class="ba-label">Rating (0-5)</label><input class="ba-input" id="ri-review-rating" type="number" min="0.1" max="5" step="0.1" style="width:90px;"></div>
-              <div class="ba-field"><label class="ba-label">Review count</label><input class="ba-input" id="ri-review-count" type="number" min="0" style="width:110px;"></div>
-              <button class="ba-btn ba-btn-sm" onclick="logReviewManually()">Log</button>
+              <div id="ri-sim-result" class="ba-muted" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Reorder Suggestions</h3>
+              <p class="ba-muted" style="margin-top:-6px;">Ingredients that have run low repeatedly — a suggested, conservative par-level increase, never applied automatically.</p>
+              <div id="ri-reorder-list" class="ba-muted">Loading…</div>
+            </div>
+
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Reservations <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— next 24 hours</span></h3>
+              <div id="ri-reservations-list" class="ba-muted">Loading…</div>
+            </div>
+
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Repeat Customers</h3>
+              <p class="ba-muted" style="margin-top:-6px;">Customers with 2+ confirmed completed visits — never an estimate, only what's actually been recorded.</p>
+              <div id="ri-repeat-customers-list" class="ba-muted">Loading…</div>
+            </div>
+
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Supplier Spend</h3>
+              <table class="ba-table" id="ri-supplier-table"><thead><tr><th>Supplier</th><th>Spend</th><th>Purchases</th><th>Ingredients</th></tr></thead><tbody></tbody></table>
+              <div id="ri-supplier-unattributed" class="ba-muted" style="margin-top:8px;"></div>
+            </div>
+
+            <div class="ba-card">
+              <h3 style="margin-top:0;">⭐ Reviews</h3>
+              <p class="ba-muted" style="margin-top:-6px;">Google syncs automatically once a Place ID is set in Assistant Settings. Zomato/Swiggy have no public rating API yet — log those manually here.</p>
+              <div id="ri-reviews-list" class="ba-muted">Loading…</div>
+              <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:10px;">
+                <div class="ba-field"><label class="ba-label">Platform</label>
+                  <select class="ba-input" id="ri-review-platform">
+                    <option value="zomato">Zomato</option>
+                    <option value="swiggy">Swiggy</option>
+                    <option value="google">Google</option>
+                  </select>
+                </div>
+                <div class="ba-field"><label class="ba-label">Rating (0-5)</label><input class="ba-input" id="ri-review-rating" type="number" min="0.1" max="5" step="0.1" style="width:90px;"></div>
+                <div class="ba-field"><label class="ba-label">Review count</label><input class="ba-input" id="ri-review-count" type="number" min="0" style="width:110px;"></div>
+                <button class="ba-btn ba-btn-sm" onclick="logReviewManually()">Log</button>
+              </div>
             </div>
           </div>
         </section>
@@ -736,6 +926,223 @@
       return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
     }
 
+    let currentTenant = null;
+    let currentPlan = 'starter';
+    let currentAnalytics = { total_questions: 0, answered_count: 0, buying_intent_count: 0, dissatisfaction_count: 0 };
+    let currentLeads = [];
+    let currentCommandCenter = null;
+
+    function renderAssistantStatus(t) {
+      currentTenant = t;
+      currentPlan = (t.plan || 'starter').toLowerCase();
+      const assistantTitle = document.getElementById('brief-assistant-title');
+      if (assistantTitle) assistantTitle.innerText = t.assistant_name || 'Bizistic Assistant';
+
+      const dot = document.getElementById('brief-status-dot');
+      const label = document.getElementById('brief-status-label');
+      const desc = document.getElementById('brief-status-desc');
+
+      if (t.status === 'active') {
+        if (dot) dot.className = 'brief-status-dot active';
+        if (label) label.innerText = 'Active & Answering';
+        if (desc) desc.innerText = 'Answering customer questions 24/7 on website and WhatsApp.';
+      } else if (t.status === 'suspended') {
+        if (dot) dot.className = 'brief-status-dot suspended';
+        if (label) label.innerText = 'Suspended';
+        if (desc) desc.innerText = 'Account is suspended — please contact support to restore service.';
+      } else {
+        if (dot) dot.className = 'brief-status-dot provisioning';
+        if (label) label.innerText = 'Setup in Progress';
+        if (desc) desc.innerText = 'Ready to activate once your first knowledge source is indexed.';
+      }
+    }
+
+    function updateAiBriefNarrative() {
+      const el = document.getElementById('ai-brief-narrative');
+      if (!el) return;
+      const total = currentAnalytics?.total_questions || 0;
+      const answered = currentAnalytics?.answered_count || 0;
+      const leadCount = (currentLeads || []).length;
+      const intent = currentAnalytics?.buying_intent_count || 0;
+      const complaints = currentAnalytics?.dissatisfaction_count || 0;
+      const rev = currentCommandCenter?.revenue_opportunities?.confirmed_revenue_inr || 0;
+      const conv = currentCommandCenter?.revenue_opportunities?.conversion_rate_pct || 0;
+
+      let narrative = `Over the past 7 days, I handled <strong>${total}</strong> customer questions (${answered} answered directly from your verified knowledge base), captured <strong>${leadCount}</strong> qualified leads, and flagged <strong>${intent}</strong> high-buying-intent conversations.`;
+      if (rev > 0) {
+        narrative += ` We have confirmed <strong>₹${rev.toLocaleString('en-IN')}</strong> in booking revenue at a <strong>${conv}%</strong> conversion rate.`;
+      }
+      if (complaints > 0) {
+        narrative += ` <span style="color:var(--ba-error-text); font-weight:600;">⚠️ I caught and alerted you to ${complaints} customer complaint${complaints > 1 ? 's' : ''} to prevent negative reviews.</span>`;
+      } else {
+        narrative += ` Customer interactions are positive with zero customer complaints flagged.`;
+      }
+      el.innerHTML = narrative;
+    }
+
+    function renderPlanGatedEmptyState({ featureTitle, featureDescription, requiredPlan, bulletPoints = [] }) {
+      const planName = requiredPlan === 'scale' ? 'Scale' : 'Growth';
+      const bullets = bulletPoints.length
+        ? `<ul style="margin: 12px 0 16px; padding-left: 20px; font-size: 0.875rem; color: var(--ba-ink-soft); line-height: 1.6;">
+            ${bulletPoints.map(b => `<li>${escapeHtml(b)}</li>`).join('')}
+           </ul>`
+        : '';
+
+      return `
+        <div class="ba-card ba-upgrade-card">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 260px;">
+              <div style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(31,92,78,0.12); color: var(--ba-primary); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                Available on ${escapeHtml(planName)} Plan
+              </div>
+              <h3 style="margin: 4px 0 8px; font-size: 1.15rem; color: var(--ba-ink);">${escapeHtml(featureTitle)}</h3>
+              <p style="margin: 0; color: var(--ba-muted); font-size: 0.9rem; line-height: 1.5;">${escapeHtml(featureDescription)}</p>
+              ${bullets}
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px;">
+              <button class="ba-btn" onclick="submitPlanUpgradeRequest('${escapeHtml(requiredPlan)}', this)" style="min-height: 44px; padding: 10px 20px;">
+                Upgrade to ${escapeHtml(planName)}
+              </button>
+              <span class="ba-muted" style="font-size: 0.75rem;">Instant notification &middot; our team assists within 24h</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function submitPlanUpgradeRequest(targetPlan, buttonEl) {
+      if (buttonEl) {
+        buttonEl.disabled = true;
+        buttonEl.innerText = 'Requesting…';
+      }
+      try {
+        const res = await fetch(`/api/tenant/plan/upgrade-request?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST',
+          headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ target_plan: targetPlan })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(data.detail || 'Could not submit upgrade request.');
+          if (buttonEl) {
+            buttonEl.disabled = false;
+            buttonEl.innerText = `Upgrade to ${targetPlan === 'scale' ? 'Scale' : 'Growth'}`;
+          }
+          return;
+        }
+        if (buttonEl) {
+          buttonEl.innerText = 'Request Received ✓';
+          buttonEl.classList.remove('ba-btn-primary');
+          buttonEl.classList.add('ba-btn-secondary');
+          const parent = buttonEl.parentElement;
+          if (parent) {
+            let conf = parent.querySelector('.upgrade-confirmed-msg');
+            if (!conf) {
+              conf = document.createElement('div');
+              conf.className = 'upgrade-confirmed-msg ba-muted';
+              conf.style.fontSize = '0.8125rem';
+              conf.style.marginTop = '6px';
+              conf.style.color = 'var(--ba-primary)';
+              conf.style.fontWeight = '600';
+              conf.innerText = 'Upgrade request received. Our team will reach out within 24 hours.';
+              parent.appendChild(conf);
+            }
+          }
+        }
+      } catch (err) {
+        alert('Network error submitting upgrade request.');
+        if (buttonEl) {
+          buttonEl.disabled = false;
+          buttonEl.innerText = `Upgrade to ${targetPlan === 'scale' ? 'Scale' : 'Growth'}`;
+        }
+      }
+    }
+
+    async function runTenantAutomation(btn) {
+      if (btn) { btn.disabled = true; btn.innerText = 'Running…'; }
+      try {
+        const res = await fetch(`/api/tenant/automation/run?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders()
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not run automation.');
+        showToast(data.message || `Automation ran: ${data.fired || 0} action(s) triggered.`);
+        loadCommandCenter();
+        loadAutomationRuns();
+      } catch (err) {
+        showToast(`Automation: ${err.message}`);
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerText = '⚡ Run Automation Now'; }
+      }
+    }
+
+    async function syncTenantReviews(btn) {
+      if (btn) { btn.disabled = true; btn.innerText = 'Syncing…'; }
+      try {
+        const res = await fetch(`/api/tenant/reviews/sync?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders()
+        });
+        const data = await res.json();
+        if (res.status === 403) {
+          throw new Error('Available on Growth & Scale plans — click Upgrade below to request access.');
+        }
+        if (!res.ok) throw new Error(data.detail || 'Could not sync reviews.');
+        if (data.status === 'synced') {
+          showToast(`Google reviews synced: ${data.rating}★ (${data.review_count || 0} reviews)`);
+          loadRestaurantIntel();
+        } else {
+          showToast(data.message || 'Review sync skipped.');
+        }
+      } catch (err) {
+        showToast(`Review sync: ${err.message}`);
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerText = '⭐ Sync Reviews'; }
+      }
+    }
+
+    function copyWhatsAppLink() {
+      const waNum = document.getElementById('cfg-whatsapp')?.value || '';
+      if (!waNum) {
+        showToast('Please add your WhatsApp number in Assistant Settings first.');
+        return;
+      }
+      const clean = waNum.replace(/\D/g, '');
+      const url = `https://wa.me/${clean}`;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          showToast('WhatsApp link copied to clipboard!');
+        }).catch(() => {
+          prompt('Copy your WhatsApp link:', url);
+        });
+      } else {
+        prompt('Copy your WhatsApp link:', url);
+      }
+    }
+
+    function showToast(msg) {
+      let toast = document.getElementById('brief-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'brief-toast';
+        toast.className = 'brief-toast';
+        document.body.appendChild(toast);
+      }
+      toast.innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3200);
+    }
+
+    function setAndAskBusinessQuery(promptText) {
+      const input = document.getElementById('bq-question-input');
+      if (input) {
+        input.value = promptText;
+        const askBtn = document.getElementById('bq-ask-btn');
+        if (askBtn) askBtn.click();
+      }
+    }
+
+
     function renderAttention({ gaps, leads, analytics }) {
       const banner = document.getElementById('attn-banner');
       const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -799,6 +1206,7 @@
       const tRes = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (tRes.ok) {
         const t = await tRes.json();
+        renderAssistantStatus(t);
         document.getElementById('status-line').innerText = `Status: ${t.status}`;
         renderActivateBox(t);
         document.getElementById('cfg-assistant-name').value = t.assistant_name || '';
@@ -821,6 +1229,7 @@
       const aRes = await fetch(`/api/analytics?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (aRes.ok) {
         analytics = await aRes.json();
+        currentAnalytics = analytics;
         document.getElementById('m-total').innerText = analytics.total_questions;
         document.getElementById('m-answered').innerText = analytics.answered_count;
         document.getElementById('m-intent').innerText = analytics.buying_intent_count;
@@ -833,6 +1242,7 @@
       if (lRes.ok) {
         const l = await lRes.json();
         leads = l.leads;
+        currentLeads = leads;
         document.getElementById('m-leads').innerText = leads.length;
         const canFollowUp = lead => lead.email || (lead.source === 'whatsapp' && lead.phone);
         const stageLabels = { new: 'New', engaged: 'Engaged', awaiting_payment: 'Awaiting payment', converted: 'Converted', lost: 'Lost', reengaged: 'Re-engaged' };
@@ -871,6 +1281,7 @@
       }
 
       renderAttention({ gaps, leads, analytics });
+      updateAiBriefNarrative();
 
       if (role === 'owner') {
         loadTeam();
@@ -1278,18 +1689,49 @@
     }
 
     async function loadShifts() {
+      const card = document.getElementById('shifts-card');
+      if (currentPlan === 'starter') {
+        if (card) {
+          card.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Shift Management & Team Rosters',
+            featureDescription: 'Schedule employee shifts, manage coverage, track attendance, and dispatch shift reminders to your team over WhatsApp.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'Daily shift schedules with role-based coverage',
+              'Automated WhatsApp shift reminders to on-duty staff',
+              'Shift handoffs and role-based roster visibility'
+            ]
+          });
+        }
+        return;
+      }
       const today = new Date().toISOString().slice(0, 10);
       const res = await fetch(`/api/shifts?tenant_id=${encodeURIComponent(tenantId)}&shift_date=${today}`, { headers: BizAuth.getAuthHeaders() });
+      if (res.status === 403) {
+        if (card) {
+          card.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Shift Management & Team Rosters',
+            featureDescription: 'Schedule employee shifts, manage coverage, track attendance, and dispatch shift reminders to your team over WhatsApp.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'Daily shift schedules with role-based coverage',
+              'Automated WhatsApp shift reminders to on-duty staff',
+              'Shift handoffs and role-based roster visibility'
+            ]
+          });
+        }
+        return;
+      }
       const tbody = document.querySelector('#shifts-table tbody');
       const emptyEl = document.getElementById('shifts-empty');
-      if (!res.ok) return;
+      if (!res.ok || !tbody) return;
       const data = await res.json();
       const rosterById = Object.fromEntries(rosterCache.map(e => [e.employee_id, e.name]));
       if (!data.shifts.length) {
         tbody.innerHTML = '';
-        emptyEl.style.display = 'block';
+        if (emptyEl) emptyEl.style.display = 'block';
       } else {
-        emptyEl.style.display = 'none';
+        if (emptyEl) emptyEl.style.display = 'none';
         tbody.innerHTML = data.shifts.map(s => `
           <tr>
             <td>${escapeHtml(rosterById[s.employee_id] || '—')}</td>
@@ -1504,20 +1946,28 @@
     async function loadUsage() {
       const res = await fetch(`/api/tenant/usage?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       const bodyEl = document.getElementById('usage-body');
-      if (!res.ok) { bodyEl.textContent = ''; return; }
+      if (!res.ok) { if (bodyEl) bodyEl.textContent = ''; return; }
       const data = await res.json();
+      currentPlan = (data.plan || 'starter').toLowerCase();
       const planLabel = PLAN_LABEL[data.plan] || data.plan;
       const metrics = Object.entries(data.usage || {});
       const usageLines = metrics.length
         ? metrics.map(([metric, count]) => `${METRIC_LABEL[metric] || metric}: <strong>${count}</strong>`).join(' &nbsp;&middot;&nbsp; ')
         : 'No usage recorded yet this period.';
-      bodyEl.innerHTML = `<span class="ba-badge ba-badge-primary">${escapeHtml(planLabel)} plan</span> &nbsp; ${usageLines} <span class="ba-muted" style="margin-left:6px;">(${escapeHtml(data.period)})</span>`;
+      if (bodyEl) {
+        bodyEl.innerHTML = `<span class="ba-badge ba-badge-primary">${escapeHtml(planLabel)} plan</span> &nbsp; ${usageLines} <span class="ba-muted" style="margin-left:6px;">(${escapeHtml(data.period)})</span>`;
+      }
     }
 
     async function loadCommandCenter() {
       const res = await fetch(`/api/command-center?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
-      if (!res.ok) return;
+      if (!res.ok) {
+        updateAiBriefNarrative();
+        return;
+      }
       const cc = await res.json();
+      currentCommandCenter = cc;
+      updateAiBriefNarrative();
 
       const attn = [];
       (cc.needs_attention.overdue_task_lines || []).forEach(l => attn.push(`⚠️ ${l}`));
@@ -1601,52 +2051,106 @@
     let bmEmployeesById = {};
 
     async function loadBusinessMap() {
+      const container = document.getElementById('business-map-content');
+      if (currentPlan === 'starter') {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Autonomous Business Dependency Mapping',
+            featureDescription: 'Automatically map operational single points of failure, workload concentration, and process bus factors across your team without manual surveys.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'Continuous single-point-of-failure detection from real work logs',
+              'Bus factor scoring across critical business processes',
+              'Absence simulation to preview what stalls if a key staff member is away',
+              'Knowledge and customer relationship concentration alerts'
+            ]
+          });
+        }
+        return;
+      }
+
       const [mapRes, employeesRes] = await Promise.all([
         fetch(`/api/dependency/map?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/employees?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
       ]);
+
+      if (mapRes.status === 403) {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Autonomous Business Dependency Mapping',
+            featureDescription: 'Automatically map operational single points of failure, workload concentration, and process bus factors across your team without manual surveys.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'Continuous single-point-of-failure detection from real work logs',
+              'Bus factor scoring across critical business processes',
+              'Absence simulation to preview what stalls if a key staff member is away',
+              'Knowledge and customer relationship concentration alerts'
+            ]
+          });
+        }
+        return;
+      }
+
       if (employeesRes.ok) {
         const empData = await employeesRes.json();
         bmEmployeesById = {};
         empData.employees.forEach(e => { bmEmployeesById[e.employee_id] = e; });
         const select = document.getElementById('bm-simulate-employee');
-        select.innerHTML = empData.employees.filter(e => e.active).map(e => `<option value="${e.employee_id}">${escapeHtml(e.name)}</option>`).join('');
+        if (select) {
+          select.innerHTML = empData.employees.filter(e => e.active).map(e => `<option value="${e.employee_id}">${escapeHtml(e.name)}</option>`).join('');
+        }
       }
       if (!mapRes.ok) return;
       const map = await mapRes.json();
 
-      document.getElementById('bm-risks-list').innerHTML = map.risks.length
-        ? map.risks.map(r => `<li>${BM_SEVERITY_ICON[r.severity] || '⚪'} ${escapeHtml(r.summary)}</li>`).join('')
-        : '<li class="ba-muted">No dependency risks detected right now.</li>';
+      const risksList = document.getElementById('bm-risks-list');
+      if (risksList) {
+        risksList.innerHTML = map.risks.length
+          ? map.risks.map(r => `<li>${BM_SEVERITY_ICON[r.severity] || '⚪'} ${escapeHtml(r.summary)}</li>`).join('')
+          : '<li class="ba-muted">No dependency risks detected right now.</li>';
+      }
 
       const processesBody = document.querySelector('#bm-processes-table tbody');
-      processesBody.innerHTML = map.processes.length
-        ? map.processes.map(p => `
-          <tr>
-            <td>${escapeHtml(p.title)}</td>
-            <td>${p.instance_count}</td>
-            <td><span class="stage-pill ${p.bus_factor <= 1 ? 'lost' : ''}">${p.bus_factor}</span></td>
-            <td>${escapeHtml(p.top_employee_name)} (${p.dependency_score_pct}%)</td>
-          </tr>`).join('')
-        : '<tr><td colspan="4" class="ba-muted">No recurring processes yet — a task title needs to repeat at least twice.</td></tr>';
+      if (processesBody) {
+        processesBody.innerHTML = map.processes.length
+          ? map.processes.map(p => `
+            <tr>
+              <td>${escapeHtml(p.title)}</td>
+              <td>${p.instance_count}</td>
+              <td><span class="stage-pill ${p.bus_factor <= 1 ? 'lost' : ''}">${p.bus_factor}</span></td>
+              <td>${escapeHtml(p.top_employee_name)} (${p.dependency_score_pct}%)</td>
+            </tr>`).join('')
+          : '<tr><td colspan="4" class="ba-muted">No recurring processes yet — a task title needs to repeat at least twice.</td></tr>';
+      }
 
       const wc = map.workload_concentration;
-      document.getElementById('bm-workload').innerHTML = wc
-        ? `<b>${escapeHtml(wc.employee_name)}</b> holds ${wc.share_pct}% of open tasks (${wc.open_task_count}/${wc.total_open_tasks}).`
-        : 'No open tasks yet.';
+      const wcEl = document.getElementById('bm-workload');
+      if (wcEl) {
+        wcEl.innerHTML = wc
+          ? `<b>${escapeHtml(wc.employee_name)}</b> holds ${wc.share_pct}% of open tasks (${wc.open_task_count}/${wc.total_open_tasks}).`
+          : 'No open tasks yet.';
+      }
 
       const kc = map.knowledge_concentration;
-      document.getElementById('bm-knowledge').innerHTML = kc
-        ? `<b>${escapeHtml(kc.employee_name)}</b> has authored ${kc.share_pct}% of approved team guidance (${kc.authored_count}/${kc.total_sop_notes}).`
-        : 'No team guidance approved yet.';
+      const kcEl = document.getElementById('bm-knowledge');
+      if (kcEl) {
+        kcEl.innerHTML = kc
+          ? `<b>${escapeHtml(kc.employee_name)}</b> has authored ${kc.share_pct}% of approved team guidance (${kc.authored_count}/${kc.total_sop_notes}).`
+          : 'No team guidance approved yet.';
+      }
 
       const customersCard = document.getElementById('bm-customers-card');
-      if (map.sole_contact_leads.length) {
-        customersCard.style.display = 'block';
-        document.getElementById('bm-customers-list').innerHTML = map.sole_contact_leads.map(l =>
-          `<li>${escapeHtml(l.lead_name)} — only ${escapeHtml(l.employee_name)}</li>`).join('');
-      } else {
-        customersCard.style.display = 'none';
+      if (customersCard) {
+        if (map.sole_contact_leads.length) {
+          customersCard.style.display = 'block';
+          const custEl = document.getElementById('bm-customers-list');
+          if (custEl) {
+            custEl.innerHTML = map.sole_contact_leads.map(l =>
+              `<li>${escapeHtml(l.lead_name)} — only ${escapeHtml(l.employee_name)}</li>`).join('');
+          }
+        } else {
+          customersCard.style.display = 'none';
+        }
       }
     }
 
@@ -1834,13 +2338,52 @@
     };
 
     async function loadEvolution() {
+      const container = document.getElementById('evolution-content');
+      if (currentPlan !== 'scale') {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Self-Evolution Engine',
+            featureDescription: 'Bizistic analyzes real customer interactions, detects dissatisfaction trends, and proposes safe, reviewable prompt adjustments with automatic rollbacks to keep your assistant sharp.',
+            requiredPlan: 'scale',
+            bulletPoints: [
+              'Automatic dissatisfaction spike detection with safety thresholds',
+              'Deterministic sandbox validation before any owner proposal',
+              'Owner one-click review, approve, reject, and instant rollback',
+              'Audited version history and kill-switch control'
+            ]
+          });
+        }
+        return;
+      }
+
       const tenantRes = await fetch(`/api/tenant?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (tenantRes.status === 403) {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Self-Evolution Engine',
+            featureDescription: 'Bizistic analyzes real customer interactions, detects dissatisfaction trends, and proposes safe, reviewable prompt adjustments with automatic rollbacks to keep your assistant sharp.',
+            requiredPlan: 'scale',
+            bulletPoints: [
+              'Automatic dissatisfaction spike detection with safety thresholds',
+              'Deterministic sandbox validation before any owner proposal',
+              'Owner one-click review, approve, reject, and instant rollback',
+              'Audited version history and kill-switch control'
+            ]
+          });
+        }
+        return;
+      }
+
       if (tenantRes.ok) {
         const t = await tenantRes.json();
-        document.getElementById('evolution-kill-switch').checked = t.evolution_enabled === true;
-        document.getElementById('cfg-evo-threshold').value = t.evolution_dissatisfaction_threshold != null ? Math.round(t.evolution_dissatisfaction_threshold * 100) : '';
-        document.getElementById('cfg-evo-lookback').value = t.evolution_lookback_hours || '';
-        document.getElementById('cfg-evo-regression').value = t.evolution_regression_delta != null ? Math.round(t.evolution_regression_delta * 100) : '';
+        const killSwitch = document.getElementById('evolution-kill-switch');
+        if (killSwitch) killSwitch.checked = t.evolution_enabled === true;
+        const threshInput = document.getElementById('cfg-evo-threshold');
+        if (threshInput) threshInput.value = t.evolution_dissatisfaction_threshold != null ? Math.round(t.evolution_dissatisfaction_threshold * 100) : '';
+        const lookbackInput = document.getElementById('cfg-evo-lookback');
+        if (lookbackInput) lookbackInput.value = t.evolution_lookback_hours || '';
+        const regInput = document.getElementById('cfg-evo-regression');
+        if (regInput) regInput.value = t.evolution_regression_delta != null ? Math.round(t.evolution_regression_delta * 100) : '';
       }
 
       const [proposalsRes, versionsRes] = await Promise.all([
@@ -1848,8 +2391,25 @@
         fetch(`/api/evolution/versions?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
       ]);
 
+      if (proposalsRes.status === 403) {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Self-Evolution Engine',
+            featureDescription: 'Bizistic analyzes real customer interactions, detects dissatisfaction trends, and proposes safe, reviewable prompt adjustments with automatic rollbacks to keep your assistant sharp.',
+            requiredPlan: 'scale',
+            bulletPoints: [
+              'Automatic dissatisfaction spike detection with safety thresholds',
+              'Deterministic sandbox validation before any owner proposal',
+              'Owner one-click review, approve, reject, and instant rollback',
+              'Audited version history and kill-switch control'
+            ]
+          });
+        }
+        return;
+      }
+
       const listEl = document.getElementById('evolution-proposals-list');
-      if (proposalsRes.ok) {
+      if (proposalsRes.ok && listEl) {
         const data = await proposalsRes.json();
         const pending = data.proposals.filter(p => p.status === 'pending_owner_review' || p.status === 'pending_sandbox');
         listEl.innerHTML = pending.length ? pending.map(p => `
@@ -1869,11 +2429,12 @@
         const data = await versionsRes.json();
         const tbody = document.querySelector('#evolution-versions-table tbody');
         const emptyEl = document.getElementById('evolution-versions-empty');
+        if (!tbody) return;
         if (!data.versions.length) {
           tbody.innerHTML = '';
-          emptyEl.style.display = 'block';
+          if (emptyEl) emptyEl.style.display = 'block';
         } else {
-          emptyEl.style.display = 'none';
+          if (emptyEl) emptyEl.style.display = 'none';
           tbody.innerHTML = data.versions.map(v => `
             <tr>
               <td><span class="stage-pill ${v.status === 'active' ? '' : v.status === 'rejected' || v.status === 'rolled_back' ? 'lost' : 'neutral'}">${escapeHtml(v.status)}</span></td>
@@ -1952,7 +2513,26 @@
     // ---------------------------------------------------------- Business Intelligence (Phases 12/13/15/16)
 
     async function loadBusinessIntel() {
-      document.getElementById('bi-financials-csv-link').href = `/api/metrics/export.csv?tenant_id=${encodeURIComponent(tenantId)}`;
+      const container = document.getElementById('business-intel-content');
+      if (currentPlan === 'starter') {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Financial Intelligence & Revenue Radar',
+            featureDescription: 'Track revenue, manual sales/expenses logged via WhatsApp, week-over-week performance scorecards, and detect lost revenue from missed buying intent or unpaid deposits.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'WhatsApp conversational financial logging ("log sale 1500 haircut")',
+              'Week-over-week executive scorecard and performance trends',
+              'Revenue leakage radar: detects missed buying intent, unpaid deposit links, and no-shows',
+              'One-click recovery actions: follow-up tasks, nudge messages, and payment link resends'
+            ]
+          });
+        }
+        return;
+      }
+
+      const csvLink = document.getElementById('bi-financials-csv-link');
+      if (csvLink) csvLink.href = `/api/metrics/export.csv?tenant_id=${encodeURIComponent(tenantId)}`;
 
       const [financialsRes, scorecardRes, radarRes] = await Promise.all([
         fetch(`/api/metrics/summary?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
@@ -1960,8 +2540,25 @@
         fetch(`/api/revenue-radar?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
       ]);
 
+      if (financialsRes.status === 403) {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Financial Intelligence & Revenue Radar',
+            featureDescription: 'Track revenue, manual sales/expenses logged via WhatsApp, week-over-week performance scorecards, and detect lost revenue from missed buying intent or unpaid deposits.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'WhatsApp conversational financial logging ("log sale 1500 haircut")',
+              'Week-over-week executive scorecard and performance trends',
+              'Revenue leakage radar: detects missed buying intent, unpaid deposit links, and no-shows',
+              'One-click recovery actions: follow-up tasks, nudge messages, and payment link resends'
+            ]
+          });
+        }
+        return;
+      }
+
       const financialsEl = document.getElementById('bi-financials-summary');
-      if (financialsRes.ok) {
+      if (financialsRes.ok && financialsEl) {
         const data = await financialsRes.json();
         financialsEl.innerHTML = data.summary.length
           ? data.summary.map(s => `<div><b>${escapeHtml(s.metric_type.charAt(0).toUpperCase() + s.metric_type.slice(1))}:</b> ₹${s.total_inr} (${s.entry_count} entr${s.entry_count === 1 ? 'y' : 'ies'})</div>`).join('')
@@ -1977,13 +2574,16 @@
           ['Sales (manual)', `₹${sc.this_week.sales_inr}`, `₹${sc.last_week.sales_inr}`],
           ['Expenses (manual)', `₹${sc.this_week.expenses_inr}`, `₹${sc.last_week.expenses_inr}`],
         ];
-        document.querySelector('#bi-scorecard-table tbody').innerHTML = rows.map(([label, thisV, lastV]) =>
-          `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(String(thisV))}</td><td class="ba-muted">${escapeHtml(String(lastV))}</td></tr>`
-        ).join('');
+        const scTbody = document.querySelector('#bi-scorecard-table tbody');
+        if (scTbody) {
+          scTbody.innerHTML = rows.map(([label, thisV, lastV]) =>
+            `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(String(thisV))}</td><td class="ba-muted">${escapeHtml(String(lastV))}</td></tr>`
+          ).join('');
+        }
       }
 
       const radarEl = document.getElementById('bi-revenue-radar');
-      if (radarRes.ok) {
+      if (radarRes.ok && radarEl) {
         const radar = await radarRes.json();
         const parts = [];
         if (radar.missed_buying_intent_leads.length) {
@@ -2018,6 +2618,24 @@
     const CLASSIFICATION_PILL = { star: '⭐ Star', plowhorse: '🐴 Plowhorse', puzzle: '🧩 Puzzle', dog: '🐕 Dog' };
 
     async function loadRestaurantIntel() {
+      const container = document.getElementById('restaurant-intel-content');
+      if (currentPlan === 'starter') {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Restaurant Intelligence & Menu Engineering',
+            featureDescription: 'Deep menu profitability matrix (Stars, Plowhorses, Puzzles, Dogs), Digital GM daily briefing, inventory reorder triggers, supplier spend tracking, and multi-platform review management.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'Food cost % and contribution margin per recipe',
+              'Menu matrix classification and automated pricing recommendations',
+              'Digital General Manager briefing synthesizing operational highlights',
+              'Automated par-level low stock alerts and multi-platform review aggregation'
+            ]
+          });
+        }
+        return;
+      }
+
       const [menuRes, menuRecsRes, reorderRes, reservationsRes, repeatRes, supplierRes, reviewsRes] = await Promise.all([
         fetch(`/api/menu-engineering?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/menu-recommendations?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
@@ -2027,6 +2645,23 @@
         fetch(`/api/supplier-intelligence?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
         fetch(`/api/reviews?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
       ]);
+
+      if (menuRes.status === 403) {
+        if (container) {
+          container.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Restaurant Intelligence & Menu Engineering',
+            featureDescription: 'Deep menu profitability matrix (Stars, Plowhorses, Puzzles, Dogs), Digital GM daily briefing, inventory reorder triggers, supplier spend tracking, and multi-platform review management.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'Food cost % and contribution margin per recipe',
+              'Menu matrix classification and automated pricing recommendations',
+              'Digital General Manager briefing synthesizing operational highlights',
+              'Automated par-level low stock alerts and multi-platform review aggregation'
+            ]
+          });
+        }
+        return;
+      }
 
       if (menuRes.ok) {
         const report = await menuRes.json();
@@ -2185,6 +2820,7 @@
 
     async function loadDigitalGmBriefing() {
       const el = document.getElementById('ri-gm-briefing');
+      if (!el) return;
       el.innerText = 'Loading…';
       try {
         const res = await fetch(`/api/digital-gm-briefing?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -2322,5 +2958,6 @@
       loadAdminPanel();
     }
   </script>
+  <div id="brief-toast" class="brief-toast"></div>
 </body>
 </html>

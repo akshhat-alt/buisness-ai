@@ -138,3 +138,30 @@ def register_automation(app: FastAPI, svc, ctx) -> None:
         )
         return {"automation_enabled": updated.automation_enabled}
 
+    @app.post("/api/tenant/automation/run")
+    def run_tenant_automation(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """Owner-facing: manually triggers enabled automation rules right now."""
+        principal = ctx._resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.MANAGE_AUTOMATION, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if not tenant.automation_enabled:
+            return {"status": "skipped", "reason": "Automation kill switch is off."}
+
+        rules = svc.automation_rule_store.list_for_tenant(tenant_id, enabled_only=True)
+        if not rules:
+            return {"status": "no_rules", "message": "No enabled automation rules."}
+
+        tenant_result: dict[str, list[str]] = {"fired": [], "given_up": [], "failed": []}
+        for rule in rules:
+            outcome = ctx._fire_automation_rule(tenant, rule)
+            for key in tenant_result:
+                tenant_result[key].extend(f"{rule.rule_id}:{t}" for t in outcome[key])
+
+        return {"status": "ok", "fired": len(tenant_result["fired"]), "results": tenant_result}
+
+

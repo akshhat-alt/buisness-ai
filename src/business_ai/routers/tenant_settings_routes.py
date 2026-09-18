@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException
 
 from business_ai.leads import lead_stage
 from business_ai.payments import PaymentLinkError
-from business_ai.schemas import EmbeddedSignupRequest, TenantConfigUpdate, TenantDeleteRequest
+from business_ai.schemas import EmbeddedSignupRequest, PlanUpgradeRequest, TenantConfigUpdate, TenantDeleteRequest
 from business_ai.tenant import TenantAction, TenantNotFoundError, TenantStatus, UnauthorizedError, authorize
 from business_ai.tenant_data import delete_tenant_data, export_tenant_data
 from business_ai.usage_meter import current_period
@@ -183,6 +183,41 @@ def register_tenant_settings(app: FastAPI, svc, ctx) -> None:
         tenant activates for free, exactly like before this endpoint
         existed."""
         return {"price_inr": svc.settings.platform_subscription_price_inr}
+
+    @app.post("/api/tenant/plan/upgrade-request")
+    def request_plan_upgrade(
+        request: PlanUpgradeRequest, tenant_id: str, authorization: str | None = Header(default=None)
+    ) -> dict:
+        """Owner-facing request to upgrade to Growth or Scale plan.
+        Notifies platform admin via email; does not change plan directly or touch billing."""
+        principal = ctx._resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.MANAGE_ASSISTANT, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        target = request.target_plan.lower().strip()
+        if target not in {"growth", "scale"}:
+            raise HTTPException(status_code=400, detail="Invalid target plan. Must be 'growth' or 'scale'.")
+        if tenant.plan == target:
+            raise HTTPException(status_code=400, detail=f"Already on the {target} plan.")
+        if tenant.plan == "scale" and target == "growth":
+            raise HTTPException(status_code=400, detail="Cannot request downgrade via upgrade request.")
+
+        if hasattr(ctx, "_notify_admin_of_upgrade_request"):
+            ctx._notify_admin_of_upgrade_request(tenant, target, request.note)
+
+        logger.info("Plan upgrade requested for tenant %s to %s by %s", tenant_id, target, principal.principal_id)
+        return {
+            "status": "received",
+            "tenant_id": tenant_id,
+            "current_plan": tenant.plan,
+            "target_plan": target,
+            "message": f"Upgrade request for {target.title()} plan received. Our team has been notified and will reach out shortly.",
+        }
+
 
     @app.post("/api/tenant/billing/checkout")
     def self_serve_billing_checkout(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:
