@@ -522,37 +522,39 @@
             <p class="ba-muted" style="margin:0;">One transparent snapshot — every number here traces back to something real: a confirmed payment, a completed task, a logged conversation. Never an estimate.</p>
           </div>
 
-          <div class="ba-metric" id="health-metrics">
-            <div class="ba-metric-box"><div class="ba-metric-label">Tasks Completed</div><div class="ba-metric-val" id="h-tasks">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Leads</div><div class="ba-metric-val" id="h-leads">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Converted</div><div class="ba-metric-val" id="h-converted">—</div></div>
-            <div class="ba-metric-box"><div class="ba-metric-label">Confirmed Revenue</div><div class="ba-metric-val" id="h-revenue">—</div></div>
-          </div>
-
-          <div class="ba-card" id="health-overdue-card" style="display:none;">
-            <h3 style="margin-top:0;">⚠️ Overdue Tasks</h3>
-            <ul id="health-overdue-list" style="margin:0; padding-left:20px;"></ul>
-          </div>
-
-          <div class="ba-card" id="health-opportunity-card" style="display:none;">
-            <h3 style="margin-top:0;">⚠️ Missed Opportunities</h3>
-            <p class="ba-muted" style="margin-top:-6px;">Showed real buying interest in conversation, never booked.</p>
-            <ul id="health-opportunity-list" style="margin:0; padding-left:20px;"></ul>
-          </div>
-
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Recurring Employee Feedback</h3>
-            <div id="health-feedback-list" class="ba-muted">No recurring issues yet.</div>
-            <div class="sop-form-row" id="sop-form" style="display:none;">
-              <input class="ba-input" id="sop-theme" placeholder="Theme key (e.g. software_or_tools)" style="max-width:220px;">
-              <input class="ba-input" id="sop-text" placeholder="Guidance note" style="flex:1; min-width:200px;">
-              <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="approveSop()">Save Guidance</button>
+          <div id="health-body">
+            <div class="ba-metric" id="health-metrics">
+              <div class="ba-metric-box"><div class="ba-metric-label">Tasks Completed</div><div class="ba-metric-val" id="h-tasks">—</div></div>
+              <div class="ba-metric-box"><div class="ba-metric-label">Leads</div><div class="ba-metric-val" id="h-leads">—</div></div>
+              <div class="ba-metric-box"><div class="ba-metric-label">Converted</div><div class="ba-metric-val" id="h-converted">—</div></div>
+              <div class="ba-metric-box"><div class="ba-metric-label">Confirmed Revenue</div><div class="ba-metric-val" id="h-revenue">—</div></div>
             </div>
-          </div>
 
-          <div class="ba-card">
-            <h3 style="margin-top:0;">Recent Activity</h3>
-            <ul id="health-timeline-list" style="margin:0; padding-left:20px;"></ul>
+            <div class="ba-card" id="health-overdue-card" style="display:none;">
+              <h3 style="margin-top:0;">⚠️ Overdue Tasks</h3>
+              <ul id="health-overdue-list" style="margin:0; padding-left:20px;"></ul>
+            </div>
+
+            <div class="ba-card" id="health-opportunity-card" style="display:none;">
+              <h3 style="margin-top:0;">⚠️ Missed Opportunities</h3>
+              <p class="ba-muted" style="margin-top:-6px;">Showed real buying interest in conversation, never booked.</p>
+              <ul id="health-opportunity-list" style="margin:0; padding-left:20px;"></ul>
+            </div>
+
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Recurring Employee Feedback</h3>
+              <div id="health-feedback-list" class="ba-muted">No recurring issues yet.</div>
+              <div class="sop-form-row" id="sop-form" style="display:none;">
+                <input class="ba-input" id="sop-theme" placeholder="Theme key (e.g. software_or_tools)" style="max-width:220px;">
+                <input class="ba-input" id="sop-text" placeholder="Guidance note" style="flex:1; min-width:200px;">
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="approveSop()">Save Guidance</button>
+              </div>
+            </div>
+
+            <div class="ba-card">
+              <h3 style="margin-top:0;">Recent Activity</h3>
+              <ul id="health-timeline-list" style="margin:0; padding-left:20px;"></ul>
+            </div>
           </div>
         </section>
 
@@ -1844,7 +1846,36 @@
     }
 
     async function loadHealth() {
+      const body = document.getElementById('health-body');
+      if (currentPlan === 'starter') {
+        if (body) {
+          body.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Business Health',
+            featureDescription: 'A transparent operational snapshot — tasks, leads, conversions, and confirmed revenue — with overdue tasks and missed opportunities flagged automatically.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'Real-time task, lead, and conversion tracking with no manual entry',
+              'Overdue tasks and missed buying-interest opportunities flagged automatically',
+            ],
+          });
+        }
+        return;
+      }
       const res = await fetch(`/api/business-health?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (res.status === 403) {
+        if (body) {
+          body.innerHTML = renderPlanGatedEmptyState({
+            featureTitle: 'Business Health',
+            featureDescription: 'A transparent operational snapshot — tasks, leads, conversions, and confirmed revenue — with overdue tasks and missed opportunities flagged automatically.',
+            requiredPlan: 'growth',
+            bulletPoints: [
+              'Real-time task, lead, and conversion tracking with no manual entry',
+              'Overdue tasks and missed buying-interest opportunities flagged automatically',
+            ],
+          });
+        }
+        return;
+      }
       if (res.ok) {
         const h = await res.json();
         const t = h.trends || {};
@@ -1959,9 +1990,42 @@
       }
     }
 
+    function renderCommandCenterUpgradeState() {
+      const upgradeCard = renderPlanGatedEmptyState({
+        featureTitle: 'Command Center',
+        featureDescription: 'Automatic approval routing and immediate-attention alerts across leads, complaints, and overdue tasks — surfaced the moment they need you, not buried in tomorrow\'s digest.',
+        requiredPlan: 'growth',
+        bulletPoints: [
+          'Approvals for staff task sign-off and assistant tone changes routed to you automatically',
+          'Overdue tasks, unresolved complaints, and recurring issues flagged the moment they cross a threshold',
+        ],
+      });
+      const approvalsList = document.getElementById('cc-approvals-list');
+      if (approvalsList) approvalsList.innerHTML = '';
+      const approvalsCard = document.getElementById('cc-approvals-card');
+      if (approvalsCard) approvalsCard.style.display = 'none';
+      const attentionCard = document.getElementById('cc-attention-card');
+      if (attentionCard) {
+        attentionCard.style.display = 'none';
+      }
+      const block = document.getElementById('command-center');
+      if (block && !document.getElementById('cc-upgrade-slot')) {
+        const slot = document.createElement('div');
+        slot.id = 'cc-upgrade-slot';
+        slot.innerHTML = upgradeCard;
+        block.appendChild(slot);
+      }
+    }
+
     async function loadCommandCenter() {
+      if (currentPlan === 'starter') {
+        renderCommandCenterUpgradeState();
+        updateAiBriefNarrative();
+        return;
+      }
       const res = await fetch(`/api/command-center?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (!res.ok) {
+        if (res.status === 403) renderCommandCenterUpgradeState();
         updateAiBriefNarrative();
         return;
       }
