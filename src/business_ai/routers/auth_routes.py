@@ -15,7 +15,7 @@ from business_ai.auth import Principal, create_access_token
 from business_ai.email_sender import EmailSendError
 from business_ai.formatting import _slugify_tenant_id
 from business_ai.rate_limiting import client_ip
-from business_ai.schemas import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, SignupRequest
+from business_ai.schemas import ChangePasswordRequest, ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, SignupRequest
 from business_ai.security import InvalidTenantIdError, validate_tenant_id
 from business_ai.tenant import TenantConfig, TenantStatus
 
@@ -86,6 +86,24 @@ def register_auth(app: FastAPI, svc, ctx) -> None:
     def me(authorization: str | None = Header(default=None)) -> dict:
         principal = ctx._require(authorization)
         return {"principal_id": principal.principal_id, "tenant_id": principal.tenant_id, "role": principal.role}
+
+    @app.post("/api/auth/change-password")
+    def change_password(request: ChangePasswordRequest, authorization: str | None = Header(default=None)) -> dict:
+        """Logged-in password change — distinct from forgot/reset-password
+        (which is for someone who's lost access entirely and proves
+        identity via an emailed token instead of their current
+        password)."""
+        principal = ctx._require(authorization)
+        user = svc.user_store.get_user_by_id(principal.principal_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Account not found.")
+        if not svc.user_store.verify_password(request.current_password, user.password_hash, user.salt):
+            raise HTTPException(status_code=400, detail="Current password is incorrect.")
+        try:
+            svc.user_store.update_password(user.user_id, request.new_password)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"message": "Password updated successfully."}
 
     @app.post("/api/auth/forgot-password")
     def forgot_password(request: ForgotPasswordRequest) -> dict:

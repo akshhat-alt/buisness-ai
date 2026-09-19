@@ -72,7 +72,13 @@
                   <label class="ba-label" for="signin-password" style="margin:0;">Password</label>
                   <a href="/forgot-password" style="font-size:0.8125rem; color:var(--ba-primary); text-decoration:none;">Forgot password?</a>
                 </div>
-                <input class="ba-input" type="password" id="signin-password" required autocomplete="current-password">
+                <div class="ba-password-field">
+                  <input class="ba-input" type="password" id="signin-password" required autocomplete="current-password">
+                  <button type="button" class="ba-password-toggle" data-target="signin-password" aria-label="Show password">
+                    <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  </button>
+                </div>
               </div>
               <button type="submit" class="ba-btn ba-btn-block" id="signin-btn">Sign In</button>
             </form>
@@ -94,7 +100,13 @@
               </div>
               <div class="ba-field">
                 <label class="ba-label" for="signup-password">Password (min 6 characters)</label>
-                <input class="ba-input" type="password" id="signup-password" minlength="6" required autocomplete="new-password">
+                <div class="ba-password-field">
+                  <input class="ba-input" type="password" id="signup-password" minlength="6" required autocomplete="new-password">
+                  <button type="button" class="ba-password-toggle" data-target="signup-password" aria-label="Show password">
+                    <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  </button>
+                </div>
               </div>
               <button type="submit" class="ba-btn ba-btn-block" id="signup-btn">Create Account</button>
             </form>
@@ -182,6 +194,17 @@
         btn.disabled = false;
       }
     }
+
+    document.querySelectorAll('.ba-password-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = document.getElementById(btn.dataset.target);
+        if (!input) return;
+        const showing = input.type === 'password';
+        input.type = showing ? 'text' : 'password';
+        btn.classList.toggle('showing', showing);
+        btn.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+      });
+    });
   </script>
 </body>
 </html>

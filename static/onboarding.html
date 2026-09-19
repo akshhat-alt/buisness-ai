@@ -130,7 +130,13 @@
           </div>
           <div class="ba-field">
             <label class="ba-label" for="wiz-wa-token">WhatsApp Access Token</label>
-            <input class="ba-input" type="password" id="wiz-wa-token" placeholder="Permanent access token from Meta">
+            <div class="ba-password-field">
+              <input class="ba-input" type="password" id="wiz-wa-token" placeholder="Permanent access token from Meta">
+              <button type="button" class="ba-password-toggle" data-target="wiz-wa-token" aria-label="Show token">
+                <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+            </div>
             <div class="ba-muted" style="font-size:0.75rem; margin-top:4px;">Generated under <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Meta Business Settings &gt; System Users</a> with <code>whatsapp_business_messaging</code> permission (or temporary test token).</div>
           </div>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px;">
@@ -702,6 +708,17 @@
     loadKnowledgeStep();
     loadTeamStep();
     loadAutomationStep();
+
+    document.querySelectorAll('.ba-password-toggle').forEach(toggleBtn => {
+      toggleBtn.addEventListener('click', () => {
+        const input = document.getElementById(toggleBtn.dataset.target);
+        if (!input) return;
+        const showing = input.type === 'password';
+        input.type = showing ? 'text' : 'password';
+        toggleBtn.classList.toggle('showing', showing);
+        toggleBtn.setAttribute('aria-label', showing ? 'Hide token' : 'Show token');
+      });
+    });
   </script>
 </body>
 </html>

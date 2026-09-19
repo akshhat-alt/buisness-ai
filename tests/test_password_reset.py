@@ -206,6 +206,50 @@ def test_reset_password_short_password_rejected(client):
     assert r.status_code == 422
 
 
+def test_change_password_requires_auth(client):
+    r = client.post("/api/auth/change-password", json={"current_password": "x", "new_password": "newpass123"})
+    assert r.status_code == 401
+
+
+def test_change_password_wrong_current_password_rejected(client, owner_session):
+    headers, _ = owner_session
+    r = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "totally-wrong", "new_password": "newpass123"},
+        headers=headers,
+    )
+    assert r.status_code == 400
+    assert "incorrect" in r.json()["detail"].lower()
+
+
+def test_change_password_success_and_can_login_with_new_password(client, owner_session):
+    headers, _ = owner_session
+    r = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "secret123", "new_password": "brand-new-password-456"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+
+    # old password no longer works
+    r_old = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "secret123"})
+    assert r_old.status_code == 401
+
+    # new password works
+    r_new = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "brand-new-password-456"})
+    assert r_new.status_code == 200, r_new.text
+
+
+def test_change_password_too_short_rejected(client, owner_session):
+    headers, _ = owner_session
+    r = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "secret123", "new_password": "abc"},
+        headers=headers,
+    )
+    assert r.status_code == 422
+
+
 def test_static_password_reset_pages(client):
     r_forgot = client.get("/forgot-password")
     assert r_forgot.status_code == 200

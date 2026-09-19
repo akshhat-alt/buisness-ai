@@ -164,6 +164,20 @@ a { color: var(--ba-primary); }
 .ba-field { margin-bottom: 16px; }
 .ba-hint { font-size: 0.8125rem; color: var(--ba-muted); margin-top: -10px; margin-bottom: 14px; }
 
+.ba-password-field { position: relative; }
+.ba-password-field .ba-input { padding-right: 42px; }
+.ba-password-toggle {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; color: var(--ba-muted); border-radius: var(--ba-radius-sm);
+  padding: 0;
+}
+.ba-password-toggle:hover { color: var(--ba-ink-soft); background: var(--ba-surface-sunken); }
+.ba-password-toggle svg { width: 18px; height: 18px; }
+.ba-password-toggle .eye-off { display: none; }
+.ba-password-toggle.showing .eye { display: none; }
+.ba-password-toggle.showing .eye-off { display: block; }
+
 /* --------------------------------------------------------------- alerts */
 
 .ba-alert {

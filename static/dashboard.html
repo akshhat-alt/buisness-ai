@@ -234,6 +234,7 @@
     <a href="#business-map">Business Map</a>
     <a href="#evolution">Self-Evolution</a>
     <a href="#settings">Settings</a>
+    <a href="#account">Account</a>
   </nav>
 
   <div class="dash-shell">
@@ -270,6 +271,7 @@
       <div class="dash-nav-group-label">Setup</div>
       <a class="dash-nav-link" href="#knowledge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Knowledge</a>
       <a class="dash-nav-link" href="#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg> Settings</a>
+      <a class="dash-nav-link" href="#account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg> Account</a>
     </aside>
 
     <main class="dash-main">
@@ -870,6 +872,53 @@
           </div>
         </section>
 
+        <section class="dash-section" id="account">
+          <div class="dash-section-head">
+            <h2>Account</h2>
+            <p class="ba-muted" style="margin:0;">Your own login and data — separate from your assistant's settings above.</p>
+          </div>
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Change Password</h3>
+            <div class="ba-field">
+              <label class="ba-label" for="acct-current-password">Current Password</label>
+              <div class="ba-password-field">
+                <input class="ba-input" type="password" id="acct-current-password" autocomplete="current-password">
+                <button type="button" class="ba-password-toggle" data-target="acct-current-password" aria-label="Show password">
+                  <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="ba-field">
+              <label class="ba-label" for="acct-new-password">New Password (min 6 characters)</label>
+              <div class="ba-password-field">
+                <input class="ba-input" type="password" id="acct-new-password" minlength="6" autocomplete="new-password">
+                <button type="button" class="ba-password-toggle" data-target="acct-new-password" aria-label="Show password">
+                  <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
+            </div>
+            <button class="ba-btn" onclick="changeAccountPassword(event)">Update Password</button>
+            <p id="acct-password-status" class="ba-muted" style="margin-bottom:0; margin-top:8px;"></p>
+          </div>
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Export Your Data</h3>
+            <p class="ba-muted" style="margin-top:0;">Download every record Bizistic holds for your business — leads, tasks, knowledge sources, conversations, and settings — as a JSON file.</p>
+            <button class="ba-btn ba-btn-secondary" onclick="exportAccountData()">Download My Data</button>
+          </div>
+          <div class="ba-card" style="border-color:var(--ba-error-border);">
+            <h3 style="margin-top:0; color:var(--ba-error-text);">Delete Account</h3>
+            <p class="ba-muted" style="margin-top:0;">Permanently deletes every record for this business — leads, conversations, knowledge, settings. This cannot be undone.</p>
+            <div class="ba-field">
+              <label class="ba-label" for="acct-delete-confirm">Type your business name to confirm</label>
+              <input class="ba-input" id="acct-delete-confirm" placeholder="Exact business name">
+            </div>
+            <button class="ba-btn ba-btn-danger" onclick="deleteAccountData()">Permanently Delete</button>
+            <p id="acct-delete-status" class="ba-muted" style="margin-bottom:0; margin-top:8px;"></p>
+          </div>
+        </section>
+
         <section class="dash-section" id="whatsapp">
           <div class="dash-section-head">
             <h2>WhatsApp Assistant</h2>
@@ -896,17 +945,24 @@
         <section class="dash-section" id="growth">
           <div class="dash-section-head">
             <h2>Deposits &amp; Win-Back</h2>
-            <p class="ba-muted" style="margin:0;">Reduce no-shows with a booking deposit, and automatically reach out to regulars who've drifted away.</p>
+            <p class="ba-muted" style="margin:0;">Two separate, optional tools — set up only the ones that fit your business. Neither does anything until you fill it in and save.</p>
           </div>
           <div class="ba-card">
-            <p class="ba-muted" style="margin-top:0;">Deposits are collected straight into your own
+            <h3 style="margin-top:0;">1. Booking Deposits <span class="ba-badge" style="font-weight:600;">Optional</span></h3>
+            <p class="ba-muted" style="margin-top:0;">For businesses that take advance bookings (salons, clinics, event spaces): your assistant can send a customer a deposit-payment link on WhatsApp to reduce no-shows. Money goes straight into your own
               <a href="https://razorpay.com" target="_blank" rel="noopener">Razorpay</a> account — Bizistic never
-              holds your money. Find your Key ID/Secret under Razorpay → Settings → API Keys.</p>
+              holds it. Leave this blank if you don't take deposits. Find your Key ID/Secret under Razorpay → Settings → API Keys.</p>
             <div class="ba-field"><label class="ba-label">Deposit Amount (₹)</label><input class="ba-input" type="number" min="1" id="cfg-deposit-amount" placeholder="e.g. 200"></div>
             <div class="ba-field"><label class="ba-label">Razorpay Key ID</label><input class="ba-input" id="cfg-rzp-key-id" placeholder="rzp_live_..."></div>
             <div class="ba-field"><label class="ba-label">Razorpay Key Secret</label><input class="ba-input" type="password" id="cfg-rzp-key-secret" placeholder="Leave blank to keep the saved one"></div>
+          </div>
+          <div class="ba-card">
+            <h3 style="margin-top:0;">2. Customer Win-Back <span class="ba-badge" style="font-weight:600;">Optional</span></h3>
+            <p class="ba-muted" style="margin-top:0;">For repeat-visit businesses (salons, restaurants, gyms): a regular customer who hasn't messaged or visited in a while automatically gets one warm "we miss you" WhatsApp nudge — never spammed, sent once per gap.</p>
             <div class="ba-field"><label class="ba-label">Win back a customer after (days of no visit)</label><input class="ba-input" type="number" min="1" id="cfg-winback-days" placeholder="Default: 45"></div>
-            <button class="ba-btn" onclick="saveGrowthSettings(event)">Save</button>
+          </div>
+          <div class="ba-card">
+            <button class="ba-btn" onclick="saveGrowthSettings(event)">Save Both</button>
           </div>
         </section>
 
@@ -1546,6 +1602,74 @@
       });
       btn.innerText = 'Saved ✓';
       setTimeout(() => { btn.innerText = original; }, 1600);
+    }
+
+    async function changeAccountPassword(e) {
+      const btn = e.target;
+      const statusEl = document.getElementById('acct-password-status');
+      const current = document.getElementById('acct-current-password').value;
+      const next = document.getElementById('acct-new-password').value;
+      if (!current || !next) { statusEl.textContent = 'Enter your current and new password.'; return; }
+      btn.disabled = true;
+      const original = btn.innerText;
+      btn.innerText = 'Updating…';
+      try {
+        const res = await fetch('/api/auth/change-password', {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ current_password: current, new_password: next }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not update password.');
+        statusEl.textContent = 'Password updated ✓';
+        statusEl.style.color = 'var(--ba-primary)';
+        document.getElementById('acct-current-password').value = '';
+        document.getElementById('acct-new-password').value = '';
+      } catch (err) {
+        statusEl.textContent = err.message;
+        statusEl.style.color = 'var(--ba-error-text)';
+      } finally {
+        btn.disabled = false;
+        btn.innerText = original;
+      }
+    }
+
+    async function exportAccountData() {
+      try {
+        const res = await fetch(`/api/tenant/export?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+        if (!res.ok) throw new Error('Could not export data.');
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `bizistic-data-export-${tenantId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showToast(err.message);
+      }
+    }
+
+    async function deleteAccountData() {
+      const statusEl = document.getElementById('acct-delete-status');
+      const confirmName = document.getElementById('acct-delete-confirm').value.trim();
+      if (!confirmName) { statusEl.textContent = 'Type your business name to confirm.'; return; }
+      if (!confirm('This permanently deletes every record for this business. This cannot be undone. Continue?')) return;
+      try {
+        const res = await fetch(`/api/tenant/delete?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ confirm_business_name: confirmName }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not delete account.');
+        statusEl.textContent = 'Account deleted. Signing out…';
+        setTimeout(() => { BizAuth.logout('/'); }, 1500);
+      } catch (err) {
+        statusEl.textContent = err.message;
+        statusEl.style.color = 'var(--ba-error-text)';
+      }
     }
 
     async function saveWhatsappSettings(e) {
@@ -3074,6 +3198,17 @@
       if (!res.ok) { alert('Could not mark as paid.'); return; }
       loadAdminPanel();
     }
+
+    document.querySelectorAll('.ba-password-toggle').forEach(toggleBtn => {
+      toggleBtn.addEventListener('click', () => {
+        const input = document.getElementById(toggleBtn.dataset.target);
+        if (!input) return;
+        const showing = input.type === 'password';
+        input.type = showing ? 'text' : 'password';
+        toggleBtn.classList.toggle('showing', showing);
+        toggleBtn.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+      });
+    });
   </script>
   <div id="brief-toast" class="brief-toast"></div>
 </body>
