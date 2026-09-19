@@ -423,3 +423,31 @@ body.bm-body {
   .bm-phone { animation: none; }
   .bm-wa-msg { animation: none; opacity: 1; }
 }
+
+/* ------------------------------------------------------------ polish motion */
+
+/* Lift on hover for revealed card grids. Uses a rule at higher specificity
+   than the reveal's own `transform: none` and does NOT redefine
+   `transition`, so the staggered reveal timing above is untouched. The
+   featured price card already sits 8px up, so it is excluded. */
+.bm-reveal-stagger.in > *:not(.featured):hover { transform: translateY(-4px); box-shadow: var(--bm-shadow-md); transition-delay: 0s; }
+.bm-price-card.featured { transition: box-shadow 0.25s ease; }
+.bm-price-card.featured:hover { box-shadow: var(--bm-shadow-lg); }
+
+.bm-btn:active { transform: translateY(0) scale(0.98); }
+
+.bm-nav { transition: box-shadow 0.25s ease, background 0.25s ease; }
+.bm-nav.scrolled { box-shadow: 0 6px 20px -12px rgba(20, 24, 22, 0.25); background: rgba(247, 246, 241, 0.94); }
+
+.bm-hero-glow { animation: bm-drift 14s ease-in-out infinite alternate; }
+@keyframes bm-drift {
+  from { transform: translateX(-50%) translate(-20px, 0); }
+  to   { transform: translateX(-50%) translate(24px, 14px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bm-hero-glow { animation: none; }
+  .bm-reveal, .bm-reveal-stagger > * { opacity: 1; transform: none; transition: none; }
+  .bm-reveal-stagger.in > *:not(.featured):hover { transform: none; }
+  .bm-btn:active { transform: none; }
+}

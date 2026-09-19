@@ -355,10 +355,12 @@
         <div class="bm-demo-tab active" data-assistant="restaurant">Restaurant &amp; Cafe</div>
         <div class="bm-demo-tab" data-assistant="salon">Salon &amp; Spa</div>
         <div class="bm-demo-tab" data-assistant="retail">Retail &amp; Shop</div>
+        <div class="bm-demo-tab" data-assistant="fitness">Fitness &amp; Coaching</div>
         <div class="bm-demo-tab" data-assistant="services">Services &amp; Clinics</div>
       </div>
 
       <div class="bm-hero-grid" id="assistant-panel"></div>
+      <p class="bm-phones-note">Example conversations — prices, timings and offers shown are made up. Your assistant answers only from your own content.</p>
     </div>
   </section>
 
@@ -492,6 +494,15 @@
   <script src="/static/js/motion.js"></script>
   <script>
     BizMotion.initReveal();
+
+    // Soft shadow under the sticky nav once the page has scrolled.
+    (function () {
+      const nav = document.querySelector('.bm-nav');
+      if (!nav) return;
+      const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 8);
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+    })();
 
     // Smooth scroll only for user-initiated in-page nav clicks, driven
     // by BizMotion.smoothScrollTo (a self-run rAF animation, not the
@@ -635,11 +646,23 @@
           'Every unanswered question becomes a one-click knowledge-base fix',
         ],
       },
+      fitness: {
+        label: 'Fitness & Coaching Assistant',
+        exchange: [
+          { role: 'user', text: 'Trial class ke liye kya fees hai aur timing kya hai?' },
+          { role: 'ai', text: 'Pehli trial class free hai! Batches subah 6\u20138 aur shaam 6\u20138 baje chalte hain. Kaunsa batch aapko suit karega?', whatsapp: true, signal: { type: 'lead', label: 'Buying intent detected → lead captured' } },
+        ],
+        features: [
+          'Batch timings, fees and trial-class questions answered instantly on WhatsApp and your website',
+          'Trial-class enquiries captured as leads, with automatic reminders before the class',
+          'Members who go quiet get one warm "we miss you" nudge — automatically',
+        ],
+      },
       services: {
         label: 'Services & Clinics Assistant',
         exchange: [
-          { role: 'user', text: 'Konse time slots available hain kal ke liye?' },
-          { role: 'ai', text: "This is the third time nobody's called me back, I'm done.", signal: { type: 'complaint', label: 'Dissatisfaction detected → owner alerted instantly' } },
+          { role: 'user', text: 'Kal shaam ko appointment book karni hai.' },
+          { role: 'ai', text: 'Zaroor! Aapka naam aur number share kar dijiye — hamari team kal ke slot confirm karke aapko WhatsApp karegi.', signal: { type: 'lead', label: 'Buying intent detected → lead captured' } },
         ],
         features: [
           'Booking &amp; policy questions answered around the clock',
