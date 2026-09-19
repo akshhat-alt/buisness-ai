@@ -201,25 +201,31 @@
     <section class="wiz-panel" data-step="4">
       <div class="ba-card">
         <h3 style="margin-top:0;">Set Up Automation <span class="wiz-optional-tag">Optional</span></h3>
-        <p class="ba-muted" style="margin-top:0;">Have Bizistic watch for problems and act on your behalf — notify you, or create a follow-up task. Add more later from Automation.</p>
-        <table class="ba-table" id="wiz-rules-table"><thead><tr><th>Name</th><th>Trigger</th><th>Action</th></tr></thead><tbody></tbody></table>
-        <div style="margin-top:14px; display:flex; flex-direction:column; gap:8px; max-width:480px;">
-          <input class="ba-input" id="wiz-rule-name" placeholder="Rule name (e.g. Chase overdue tasks)">
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <select class="ba-input" id="wiz-rule-trigger" style="flex:1; min-width:200px;">
-              <option value="task_overdue">Task overdue by at least (hours)</option>
-              <option value="negative_feedback_unresolved">Feedback unresolved for at least (hours)</option>
-              <option value="recurring_feedback_theme">Feedback theme repeated at least (count)</option>
-              <option value="deposit_unpaid_after_appointment">Deposit unpaid after appointment (hours)</option>
-            </select>
-            <input class="ba-input" type="number" min="1" id="wiz-rule-threshold" style="max-width:100px;" value="24">
+        <p class="ba-muted" style="margin-top:0;">Automation means "when this happens, Bizistic does that" — so you don't have to keep watching. Not sure where to start? Turn on the recipes below with one click. You can change or switch them off anytime from the dashboard.</p>
+        <div id="wiz-recipes" style="display:grid; gap:10px; margin-bottom:14px;"></div>
+        <table class="ba-table" id="wiz-rules-table"><thead><tr><th>Running now</th><th>When</th><th>Bizistic will</th></tr></thead><tbody></tbody></table>
+        <details style="margin-top:14px;">
+          <summary style="cursor:pointer; font-weight:600;">Or build your own rule</summary>
+          <div style="margin-top:12px; display:flex; flex-direction:column; gap:10px; max-width:480px;">
+            <div class="ba-field" style="margin:0;"><label class="ba-label" for="wiz-rule-name">Give it a name</label>
+              <input class="ba-input" id="wiz-rule-name" placeholder="e.g. Chase overdue tasks"></div>
+            <div class="ba-field" style="margin:0;"><label class="ba-label" for="wiz-rule-trigger">When this happens…</label>
+              <select class="ba-input" id="wiz-rule-trigger">
+                <option value="task_overdue">A task is overdue</option>
+                <option value="negative_feedback_unresolved">A complaint is still unresolved</option>
+                <option value="recurring_feedback_theme">The same feedback keeps coming up</option>
+                <option value="deposit_unpaid_after_appointment">A deposit is still unpaid after the appointment</option>
+              </select></div>
+            <div class="ba-field" style="margin:0;"><label class="ba-label" for="wiz-rule-threshold">…for at least this many hours (or times, for repeating feedback)</label>
+              <input class="ba-input" type="number" min="1" id="wiz-rule-threshold" style="max-width:140px;" value="24"></div>
+            <div class="ba-field" style="margin:0;"><label class="ba-label" for="wiz-rule-action">Then Bizistic should…</label>
+              <select class="ba-input" id="wiz-rule-action">
+                <option value="notify_owner">Message me on WhatsApp</option>
+                <option value="create_task">Create a follow-up task for the team</option>
+              </select></div>
+            <button class="ba-btn ba-btn-sm" onclick="wizAddRule()" style="align-self:flex-start;">Create Rule</button>
           </div>
-          <select class="ba-input" id="wiz-rule-action">
-            <option value="notify_owner">Notify me on WhatsApp</option>
-            <option value="create_task">Create a follow-up task</option>
-          </select>
-          <button class="ba-btn ba-btn-sm" onclick="wizAddRule()" style="align-self:flex-start;">Create Rule</button>
-        </div>
+        </details>
         <div id="wiz-rule-status" class="ba-muted" style="margin-top:6px;"></div>
       </div>
       <div class="wiz-nav-row"><button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(3)">Back</button><button class="ba-btn ba-btn-sm" onclick="goToStep(5)">Continue</button></div>
@@ -567,18 +573,71 @@
       recurring_feedback_theme: 'min_count', deposit_unpaid_after_appointment: 'hours',
     };
     const WIZ_TRIGGER_LABELS = {
-      task_overdue: 'Task overdue', negative_feedback_unresolved: 'Feedback unresolved',
-      recurring_feedback_theme: 'Recurring feedback', deposit_unpaid_after_appointment: 'Deposit unpaid',
+      task_overdue: 'A task is overdue', negative_feedback_unresolved: 'A complaint is unresolved',
+      recurring_feedback_theme: 'Same feedback keeps repeating', deposit_unpaid_after_appointment: 'A deposit is unpaid',
     };
-    const WIZ_ACTION_LABELS = { notify_owner: 'Notify owner (WhatsApp)', create_task: 'Create follow-up task' };
+    const WIZ_ACTION_LABELS = { notify_owner: 'Message you on WhatsApp', create_task: 'Create a team task', message_lead: 'Message the customer' };
+
+    // Same recipes as the dashboard's Automation section (owner-facing
+    // ones only — nothing here messages a customer, and the restaurant
+    // low-stock recipe stays dashboard-only since most businesses aren't
+    // restaurants). Plain rules posted to the same endpoint.
+    const WIZ_RECIPES = [
+      { name: 'Chase overdue tasks', why: 'If a team task is a day overdue, you get a WhatsApp message so nothing quietly slips.',
+        trigger_type: 'task_overdue', trigger_params: { hours: 24 }, action_type: 'notify_owner', escalate_after_hours: 48 },
+      { name: 'Never leave a complaint hanging', why: 'If a customer complaint is still unresolved after 12 hours, you get a WhatsApp nudge to close it.',
+        trigger_type: 'negative_feedback_unresolved', trigger_params: { hours: 12 }, action_type: 'notify_owner', escalate_after_hours: 24 },
+      { name: 'Spot repeating problems', why: 'When the same complaint shows up 3 times, a task is created so someone fixes the root cause.',
+        trigger_type: 'recurring_feedback_theme', trigger_params: { min_count: 3 }, action_type: 'create_task', escalate_after_hours: null },
+    ];
+    let wizRuleNames = new Set();
+
+    function renderWizRecipes() {
+      const el = document.getElementById('wiz-recipes');
+      if (!el) return;
+      el.innerHTML = WIZ_RECIPES.map((r, i) => `
+        <div style="display:flex; align-items:center; gap:14px; padding:12px 14px; border:1px solid var(--ba-border); border-radius:var(--ba-radius-sm);">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:700;">${escapeHtml(r.name)}</div>
+            <div class="ba-muted" style="font-size:0.8125rem; margin-top:2px;">${escapeHtml(r.why)}</div>
+          </div>
+          ${wizRuleNames.has(r.name)
+            ? '<span class="ba-badge ba-badge-primary" style="white-space:nowrap;">On &#10003;</span>'
+            : `<button class="ba-btn ba-btn-sm" onclick="wizEnableRecipe(${i}, this)">Turn on</button>`}
+        </div>`).join('');
+    }
+
+    async function wizEnableRecipe(index, btn) {
+      const r = WIZ_RECIPES[index];
+      const statusEl = document.getElementById('wiz-rule-status');
+      btn.disabled = true; btn.textContent = 'Turning on…';
+      try {
+        const res = await fetch(`/api/automation/rules?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            name: r.name, trigger_type: r.trigger_type, trigger_params: r.trigger_params,
+            action_type: r.action_type, action_params: {}, escalate_after_hours: r.escalate_after_hours,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not turn this on.');
+        statusEl.textContent = '';
+        loadAutomationStep();
+      } catch (e) {
+        statusEl.textContent = e.message;
+        btn.disabled = false; btn.textContent = 'Turn on';
+      }
+    }
 
     async function loadAutomationStep() {
       const res = await fetch(`/api/automation/rules?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
-      if (!res.ok) return;
+      if (!res.ok) { renderWizRecipes(); return; }
       const data = await res.json();
+      wizRuleNames = new Set(data.rules.map(r => r.name));
       document.querySelector('#wiz-rules-table tbody').innerHTML = data.rules.length
         ? data.rules.map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(WIZ_TRIGGER_LABELS[r.trigger_type] || r.trigger_type)}</td><td>${escapeHtml(WIZ_ACTION_LABELS[r.action_type] || r.action_type)}</td></tr>`).join('')
-        : '<tr><td colspan="3" class="ba-muted">No automation rules yet.</td></tr>';
+        : '<tr><td colspan="3" class="ba-muted">Nothing running yet — turn on a recipe above.</td></tr>';
+      renderWizRecipes();
     }
 
     async function wizAddRule() {

@@ -182,6 +182,11 @@
       border-radius: var(--ba-radius-lg) !important;
       margin-bottom: 20px !important;
     }
+    .automation-recipes { display: grid; gap: 10px; }
+    .automation-recipe {
+      display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+      border: 1px solid var(--ba-border); border-radius: var(--ba-radius-sm); background: var(--ba-surface);
+    }
     .brief-toast {
       position: fixed; bottom: 24px; right: 24px; background: var(--ba-ink); color: #fff;
       padding: 10px 18px; border-radius: 999px; font-size: 0.875rem; font-weight: 600;
@@ -624,7 +629,13 @@
         <section class="dash-section" id="automation">
           <div class="dash-section-head">
             <h2>Automation</h2>
-            <p class="ba-muted" style="margin:0;">Trigger → condition → action rules that watch your business and act on your behalf — notify you, or create a task — without you having to ask.</p>
+            <p class="ba-muted" style="margin:0;">Tell Bizistic "when this happens, do that" — and it watches your business for you. Not sure where to start? Turn on a ready-made recipe below with one click; you can switch any of them off anytime.</p>
+          </div>
+
+          <div class="ba-card">
+            <h3 style="margin-top:0;">Ready-made recipes</h3>
+            <p class="ba-muted" style="margin-top:0;">Each one is a rule already set up for you. Bizistic messages <em>you</em> (or creates a task) — it only contacts a customer if you pick the deposit reminder.</p>
+            <div id="automation-recipes" class="automation-recipes"></div>
           </div>
 
           <div class="ba-card">
@@ -643,29 +654,46 @@
             <h3 style="margin-top:0;">Rules</h3>
             <table class="ba-table" id="automation-rules-table"><thead><tr><th>Name</th><th>Trigger</th><th>Action</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
 
-            <div style="margin-top:16px; display:flex; flex-direction:column; gap:8px; max-width:520px;">
-              <input class="ba-input" id="new-rule-name" placeholder="Rule name (e.g. Chase overdue tasks)">
-              <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <select class="ba-input" id="new-rule-trigger" style="flex:1; min-width:220px;" onchange="onAutomationRuleFormChange()">
-                  <option value="task_overdue">Task overdue by at least (hours)</option>
-                  <option value="negative_feedback_unresolved">Negative feedback unresolved for at least (hours)</option>
-                  <option value="recurring_feedback_theme">Feedback theme repeated at least (count)</option>
-                  <option value="deposit_unpaid_after_appointment">Deposit unpaid after appointment by at least (hours)</option>
-                  <option value="low_stock">Ingredient below its par level (restaurant)</option>
-                </select>
-                <input class="ba-input" type="number" min="1" id="new-rule-threshold" placeholder="Threshold" style="max-width:110px;" value="24">
+            <details style="margin-top:16px;">
+              <summary style="cursor:pointer; font-weight:600;">Build your own rule</summary>
+              <div style="margin-top:12px; display:flex; flex-direction:column; gap:10px; max-width:520px;">
+                <div class="ba-field" style="margin:0;">
+                  <label class="ba-label" for="new-rule-name">Give it a name</label>
+                  <input class="ba-input" id="new-rule-name" placeholder="e.g. Chase overdue tasks">
+                </div>
+                <div class="ba-field" style="margin:0;">
+                  <label class="ba-label" for="new-rule-trigger">When this happens…</label>
+                  <select class="ba-input" id="new-rule-trigger" onchange="onAutomationRuleFormChange()">
+                    <option value="task_overdue">A task is overdue</option>
+                    <option value="negative_feedback_unresolved">A complaint is still unresolved</option>
+                    <option value="recurring_feedback_theme">The same feedback keeps coming up</option>
+                    <option value="deposit_unpaid_after_appointment">A deposit is still unpaid after the appointment</option>
+                    <option value="low_stock">An ingredient runs low (restaurants)</option>
+                  </select>
+                </div>
+                <div class="ba-field" id="new-rule-threshold-wrap" style="margin:0;">
+                  <label class="ba-label" for="new-rule-threshold" id="new-rule-threshold-label">…for at least how many hours?</label>
+                  <input class="ba-input" type="number" min="1" id="new-rule-threshold" value="24" style="max-width:140px;">
+                </div>
+                <div class="ba-field" style="margin:0;">
+                  <label class="ba-label" for="new-rule-action">Then Bizistic should…</label>
+                  <select class="ba-input" id="new-rule-action" onchange="onAutomationRuleFormChange()">
+                    <option value="notify_owner">Message me on WhatsApp</option>
+                    <option value="create_task">Create a follow-up task for the team</option>
+                    <option value="message_lead">Message the customer directly</option>
+                  </select>
+                </div>
+                <textarea class="ba-input" id="new-rule-message" placeholder="What should it say to the customer? e.g. Hi {name}, just checking in on your deposit!" style="display:none; min-height:60px;"></textarea>
+                <details>
+                  <summary class="ba-muted" style="cursor:pointer;">More options</summary>
+                  <div class="ba-field" style="margin:8px 0 0;">
+                    <label class="ba-label" for="new-rule-escalate">If it's still not fixed, remind me again after (hours) — optional</label>
+                    <input class="ba-input" type="number" min="1" id="new-rule-escalate" placeholder="e.g. 48" style="max-width:140px;">
+                  </div>
+                </details>
+                <button class="ba-btn ba-btn-sm" onclick="addAutomationRule()" style="align-self:flex-start;">Create Rule</button>
               </div>
-              <select class="ba-input" id="new-rule-action" onchange="onAutomationRuleFormChange()">
-                <option value="notify_owner">Notify me on WhatsApp</option>
-                <option value="create_task">Create a follow-up task</option>
-                <option value="message_lead">Message the customer directly</option>
-              </select>
-              <textarea class="ba-input" id="new-rule-message" placeholder="Message to send the customer, e.g. Hi {name}, just checking in on your deposit!" style="display:none; min-height:60px;"></textarea>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <input class="ba-input" type="number" min="1" id="new-rule-escalate" placeholder="Re-notify after (hours) — optional" style="max-width:220px;">
-              </div>
-              <button class="ba-btn ba-btn-sm" onclick="addAutomationRule()" style="align-self:flex-start;">Create Rule</button>
-            </div>
+            </details>
             <div id="automation-rule-status" class="ba-muted" style="margin-top:6px;"></div>
           </div>
 
@@ -2441,20 +2469,114 @@
       // par_level (set from the Restaurant section), never omitted.
     };
     const AUTOMATION_TRIGGER_LABELS = {
-      task_overdue: 'Task overdue', negative_feedback_unresolved: 'Feedback unresolved',
-      recurring_feedback_theme: 'Recurring feedback', deposit_unpaid_after_appointment: 'Deposit unpaid',
-      low_stock: 'Ingredient low on stock',
+      task_overdue: 'A task is overdue', negative_feedback_unresolved: 'A complaint is unresolved',
+      recurring_feedback_theme: 'Same feedback keeps repeating', deposit_unpaid_after_appointment: 'A deposit is unpaid',
+      low_stock: 'An ingredient runs low',
     };
     const AUTOMATION_ACTION_LABELS = {
-      notify_owner: 'Notify owner (WhatsApp)', create_task: 'Create follow-up task',
+      notify_owner: 'Message you on WhatsApp', create_task: 'Create a team task',
       message_lead: 'Message the customer',
+    };
+
+    const AUTOMATION_THRESHOLD_LABEL = {
+      task_overdue: '…for at least how many hours?',
+      negative_feedback_unresolved: '…for at least how many hours?',
+      deposit_unpaid_after_appointment: '…for at least how many hours after the appointment?',
+      recurring_feedback_theme: '…how many times has it come up?',
     };
 
     function onAutomationRuleFormChange() {
       const triggerType = document.getElementById('new-rule-trigger').value;
       const actionType = document.getElementById('new-rule-action').value;
-      document.getElementById('new-rule-threshold').style.display = AUTOMATION_TRIGGER_PARAM_KEY[triggerType] ? '' : 'none';
+      document.getElementById('new-rule-threshold-wrap').style.display = AUTOMATION_TRIGGER_PARAM_KEY[triggerType] ? '' : 'none';
+      document.getElementById('new-rule-threshold-label').textContent = AUTOMATION_THRESHOLD_LABEL[triggerType] || '';
       document.getElementById('new-rule-message').style.display = actionType === 'message_lead' ? '' : 'none';
+    }
+
+    // One-click starting points. Each is just a normal rule posted to the
+    // same POST /api/automation/rules endpoint the custom form uses —
+    // nothing here is a new backend concept. Duplicate detection is by
+    // exact rule name, so a recipe shows "On" once its rule exists.
+    const AUTOMATION_RECIPES = [
+      {
+        name: 'Chase overdue tasks',
+        why: 'If a team task is a day overdue, Bizistic messages you on WhatsApp so nothing quietly slips.',
+        trigger_type: 'task_overdue', trigger_params: { hours: 24 },
+        action_type: 'notify_owner', action_params: {}, escalate_after_hours: 48,
+      },
+      {
+        name: 'Never leave a complaint hanging',
+        why: 'If a customer complaint is still unresolved after 12 hours, you get a WhatsApp nudge to close it.',
+        trigger_type: 'negative_feedback_unresolved', trigger_params: { hours: 12 },
+        action_type: 'notify_owner', action_params: {}, escalate_after_hours: 24,
+      },
+      {
+        name: 'Spot repeating problems',
+        why: 'When the same complaint shows up 3 times, Bizistic creates a task so someone fixes the root cause.',
+        trigger_type: 'recurring_feedback_theme', trigger_params: { min_count: 3 },
+        action_type: 'create_task', action_params: {}, escalate_after_hours: null,
+      },
+      {
+        name: 'Remind about unpaid deposits',
+        why: 'If a customer’s booking deposit is still unpaid a day after their appointment, Bizistic sends them a polite reminder. This one messages the customer.',
+        trigger_type: 'deposit_unpaid_after_appointment', trigger_params: { hours: 24 },
+        action_type: 'message_lead',
+        action_params: { message: 'Hi {name}, just a gentle reminder about your booking deposit. Let us know if you need the payment link again!' },
+        escalate_after_hours: null,
+      },
+      {
+        name: 'Low stock alert',
+        why: 'When an ingredient drops below its par level, you get a WhatsApp alert so you can reorder in time. For restaurants and cafes.',
+        trigger_type: 'low_stock', trigger_params: {},
+        action_type: 'notify_owner', action_params: {}, escalate_after_hours: 24,
+        restaurantOnly: true,
+      },
+    ];
+
+    function renderAutomationRecipes() {
+      const el = document.getElementById('automation-recipes');
+      if (!el) return;
+      const existing = new Set(Object.values(automationRuleNames));
+      const showRestaurant = Array.from(document.querySelectorAll('.dash-restaurant-nav')).some(n => n.style.display !== 'none');
+      el.innerHTML = AUTOMATION_RECIPES
+        .filter(r => !r.restaurantOnly || showRestaurant || existing.has(r.name))
+        .map((r, i) => {
+          const on = existing.has(r.name);
+          return `
+            <div class="automation-recipe">
+              <div style="flex:1; min-width:0;">
+                <div style="font-weight:700;">${escapeHtml(r.name)}</div>
+                <div class="ba-muted" style="font-size:0.8125rem; margin-top:2px;">${escapeHtml(r.why)}</div>
+              </div>
+              ${on
+                ? '<span class="stage-pill converted" style="white-space:nowrap;">On &#10003;</span>'
+                : `<button class="ba-btn ba-btn-sm" onclick="enableAutomationRecipe(${i}, this)">Turn on</button>`}
+            </div>`;
+        }).join('');
+    }
+
+    async function enableAutomationRecipe(index, btn) {
+      const r = AUTOMATION_RECIPES[index];
+      const statusEl = document.getElementById('automation-rule-status');
+      if (btn) { btn.disabled = true; btn.textContent = 'Turning on…'; }
+      try {
+        const res = await fetch(`/api/automation/rules?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            name: r.name, trigger_type: r.trigger_type, trigger_params: r.trigger_params,
+            action_type: r.action_type, action_params: r.action_params,
+            escalate_after_hours: r.escalate_after_hours,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not turn this on.');
+        statusEl.textContent = '';
+        showToast(`"${r.name}" is on.`);
+        await loadAutomationRules();
+      } catch (e) {
+        statusEl.textContent = e.message;
+        if (btn) { btn.disabled = false; btn.textContent = 'Turn on'; }
+      }
     }
     const AUTOMATION_STATUS_PILL = { success: 'converted', failed: 'awaiting_payment', given_up: 'lost' };
     let automationRuleNames = {};
@@ -2498,7 +2620,8 @@
             <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="toggleAutomationRule('${r.rule_id}', ${!r.enabled})">${r.enabled ? 'Disable' : 'Enable'}</button>
             <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="deleteAutomationRule('${r.rule_id}')">Delete</button>
           </td>
-        </tr>`).join('') : '<tr><td colspan="5" class="ba-muted">No automation rules yet — create one below.</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="5" class="ba-muted">Nothing running yet — turn on a ready-made recipe above to get started.</td></tr>';
+      renderAutomationRecipes();
     }
 
     async function addAutomationRule() {
