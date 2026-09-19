@@ -1391,8 +1391,10 @@
     // actually have at least one menu item, instead of showing an empty
     // vertical-specific tool to a salon or retail shop owner.
     async function applyRestaurantNavVisibility() {
-      if (currentTenant && currentTenant.vertical !== 'restaurant') return;
-      if (currentPlan !== 'scale') return;
+      // Menu/inventory endpoints are Growth+ (VIEW_INVENTORY); Basic tenants
+      // would only get a 403, so skip the call. There is no tenant
+      // "vertical" field — visibility is decided purely by having menu items.
+      if (currentPlan === 'starter') return;
       try {
         const res = await fetch(`/api/menu/items?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
         if (!res.ok) return;
@@ -1414,6 +1416,8 @@
     };
 
     let currentTenant = null;
+    let platformPriceInr = null;
+    fetch('/api/platform/plan').then(r => r.json()).then(d => { platformPriceInr = d.price_inr || null; if (typeof currentTenant !== 'undefined' && currentTenant) { try { updateSetupChecklist({ tenant: currentTenant }); } catch (e) {} } }).catch(() => {});
     let currentPlan = 'starter';
     let currentAnalytics = { total_questions: 0, answered_count: 0, buying_intent_count: 0, dissatisfaction_count: 0 };
     let currentLeads = [];
@@ -1724,7 +1728,10 @@
         if (isActivated) {
           actAction.innerHTML = '<span class="ba-muted" style="font-size:0.75rem; color:var(--ba-primary); font-weight:600;">Active ✓</span>';
         } else {
-          actAction.innerHTML = '<button class="ba-btn ba-btn-sm" style="font-size:0.75rem; padding:3px 8px; min-height:26px;" onclick="selfActivate()">Activate Now</button>';
+          const unpaid = platformPriceInr && (t.subscription_price_inr || platformPriceInr) && t.billing_status !== 'paid';
+          actAction.innerHTML = unpaid
+            ? `<a class="ba-btn ba-btn-sm" style="font-size:0.75rem; padding:3px 8px; min-height:26px;" href="/onboarding">Pay &#8377;${Number(t.subscription_price_inr || platformPriceInr).toLocaleString('en-IN')} to go live</a>`
+            : '<button class="ba-btn ba-btn-sm" style="font-size:0.75rem; padding:3px 8px; min-height:26px;" onclick="selfActivate()">Activate Now</button>';
         }
       }
 
@@ -2126,7 +2133,7 @@
         method: 'POST', headers: BizAuth.getAuthHeaders(),
       });
       const data = await res.json();
-      if (!res.ok) { alert(data.detail || 'Could not activate yet.'); return; }
+      if (!res.ok) { alert(BizAuth.formatError(data, 'Could not activate yet.')); return; }
       loadDashboard();
     }
 
