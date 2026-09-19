@@ -341,3 +341,39 @@ body.bm-body {
   .bm-hero-stats { gap: 22px; }
   .bm-cta { padding: 52px 22px; border-radius: 20px; }
 }
+
+/* ------------------------------------------------------------ pricing tiers */
+
+.bm-pricing-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+  max-width: 1080px; margin: 0 auto; text-align: left; align-items: stretch;
+}
+.bm-price-card {
+  background: var(--bm-surface); border: 1px solid var(--bm-border);
+  border-radius: var(--bm-radius-lg); padding: 32px 28px; display: flex; flex-direction: column;
+  box-shadow: var(--bm-shadow-sm);
+}
+.bm-price-card.featured {
+  border-color: var(--bm-primary); box-shadow: var(--bm-shadow-md);
+  transform: translateY(-8px);
+}
+.bm-price-featured-tag {
+  display: inline-block; align-self: flex-start; background: var(--bm-primary); color: #fff;
+  font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 4px 10px; border-radius: 999px; margin-bottom: 12px;
+}
+.bm-price-card h3 { font-family: var(--bm-font-serif); font-size: 1.25rem; margin: 0 0 6px; color: var(--bm-ink); }
+.bm-price-card .bm-price-for { font-size: 0.8125rem; color: var(--bm-muted); margin-bottom: 20px; min-height: 2.6em; }
+.bm-price-amount { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
+.bm-price-amount .num { font-family: var(--bm-font-serif); font-size: 2.25rem; font-weight: 700; color: var(--bm-ink); line-height: 1; }
+.bm-price-amount .period { font-size: 0.875rem; color: var(--bm-muted); }
+.bm-price-why { font-size: 0.8125rem; color: var(--bm-primary); font-weight: 600; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--bm-border); }
+.bm-price-features { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; flex: 1; }
+.bm-price-features .feat { display: flex; gap: 9px; align-items: flex-start; font-size: 0.8438rem; color: var(--bm-ink-soft); }
+.bm-price-features .feat svg { width: 16px; height: 16px; color: var(--bm-primary); flex-shrink: 0; margin-top: 2px; }
+.bm-price-features .feat.everything { font-weight: 700; color: var(--bm-ink); }
+
+@media (max-width: 900px) {
+  .bm-pricing-grid { grid-template-columns: 1fr; max-width: 480px; }
+  .bm-price-card.featured { transform: none; }
+}
