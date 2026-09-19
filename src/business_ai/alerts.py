@@ -290,3 +290,33 @@ def render_plan_upgrade_request_alert(
     """
     return subject, html
 
+
+def render_whatsapp_help_request_alert(
+    *,
+    business_name: str,
+    tenant_id: str,
+    owner_email: str,
+    phone_number: str,
+    note: str | None = None,
+    dashboard_url: str | None = None,
+) -> tuple[str, str]:
+    """For the PLATFORM ADMIN: a tenant requested concierge assistance to connect WhatsApp."""
+    subject = f"WhatsApp setup assistance requested: {business_name}"
+    dashboard_link = (
+        f'<p><a href="{escape(dashboard_url)}">Open the admin panel &rarr;</a></p>' if dashboard_url else ""
+    )
+    note_block = (
+        f"<p><strong>Note from owner:</strong><br>{escape(note)}</p>" if note else ""
+    )
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px;">WhatsApp Setup Assistance Request</h2>
+      <p><strong>{escape(business_name)}</strong> ({escape(owner_email)}) requested concierge assistance connecting WhatsApp.</p>
+      <p><strong>Target WhatsApp Number:</strong> {escape(phone_number)}</p>
+      {note_block}
+      <p style="color:#999; font-size:0.875rem;">Tenant ID: {escape(tenant_id)}</p>
+      {dashboard_link}
+    </div>
+    """
+    return subject, html
+

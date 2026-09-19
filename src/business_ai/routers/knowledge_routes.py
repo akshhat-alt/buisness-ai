@@ -9,7 +9,7 @@ import secrets
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 
 from business_ai.ingestion import IngestionError, extract_pdf_text, fetch_website_text, ingest_text
-from business_ai.schemas import GapPublishRequest, WebsiteIngestRequest
+from business_ai.schemas import GapPublishRequest, TextIngestRequest, WebsiteIngestRequest
 from business_ai.security import UnsafeUrlError
 from business_ai.tenant import TenantAction, TenantNotFoundError, UnauthorizedError, authorize
 
@@ -87,6 +87,57 @@ def register_knowledge(app: FastAPI, svc, ctx) -> None:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         svc.source_store.record(tenant_id=tenant_id, source_id=source_id, label=filename, source_type=source_type, chunks_indexed=result.chunks_indexed)
+        return {"source_id": source_id, "chunks_indexed": result.chunks_indexed}
+
+    @app.post("/api/knowledge/text")
+    def ingest_text_knowledge(
+        request: TextIngestRequest,
+        tenant_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> dict:
+        principal = ctx._resolve(authorization)
+        try:
+            authorize(principal, TenantAction.INGEST_KNOWLEDGE, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        raw_text = request.text.strip()
+        if not raw_text:
+            raise HTTPException(status_code=400, detail="Text cannot be empty.")
+
+        from business_ai.security import MAX_UPLOAD_BYTES
+
+        if len(request.text.encode("utf-8")) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="Text exceeds the maximum allowed size.")
+
+        raw_title = (request.title or "").strip()
+        clean_title = " ".join(raw_title.split()) if raw_title else "Pasted Notes"
+        if not clean_title:
+            clean_title = "Pasted Notes"
+
+        source_id = f"text_{secrets.token_hex(6)}"
+        try:
+            result = ingest_text(
+                text=raw_text,
+                tenant_id=tenant_id,
+                source_id=source_id,
+                source_label=clean_title,
+                source_url=None,
+                embeddings=svc.embeddings(),
+                store=svc.vector_store,
+            )
+        except IngestionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        svc.source_store.record(
+            tenant_id=tenant_id,
+            source_id=source_id,
+            label=clean_title,
+            source_type="text",
+            chunks_indexed=result.chunks_indexed,
+        )
         return {"source_id": source_id, "chunks_indexed": result.chunks_indexed}
 
     @app.get("/api/knowledge/sources")

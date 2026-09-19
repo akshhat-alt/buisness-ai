@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 def register_auth(app: FastAPI, svc, ctx) -> None:
 
     # -------------------------------------------------------------- health
-    @app.get("/healthz")
+    @app.api_route("/healthz", methods=["GET", "HEAD"])
     def healthz() -> dict:
         return {"status": "ok"}
 

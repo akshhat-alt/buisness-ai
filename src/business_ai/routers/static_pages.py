@@ -34,7 +34,7 @@ def register_static_pages(app: FastAPI, svc, ctx) -> None:
 
             return _handler
 
-        app.get(route)(_make_handler(filename))
+        app.api_route(route, methods=["GET", "HEAD"])(_make_handler(filename))
 
     if STATIC_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

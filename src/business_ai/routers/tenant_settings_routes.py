@@ -9,11 +9,22 @@ from __future__ import annotations
 import logging
 import time
 
+import re
+
 from fastapi import FastAPI, Header, HTTPException
 
+from business_ai.alerts import render_whatsapp_help_request_alert
+from business_ai.email_sender import EmailSendError
 from business_ai.leads import lead_stage
 from business_ai.payments import PaymentLinkError
-from business_ai.schemas import EmbeddedSignupRequest, PlanUpgradeRequest, TenantConfigUpdate, TenantDeleteRequest
+from business_ai.rate_limiting import FixedWindowRateLimiter
+from business_ai.schemas import (
+    EmbeddedSignupRequest,
+    PlanUpgradeRequest,
+    TenantConfigUpdate,
+    TenantDeleteRequest,
+    WhatsAppHelpRequest,
+)
 from business_ai.tenant import TenantAction, TenantNotFoundError, TenantStatus, UnauthorizedError, authorize
 from business_ai.tenant_data import delete_tenant_data, export_tenant_data
 from business_ai.usage_meter import current_period
@@ -141,6 +152,58 @@ def register_tenant_settings(app: FastAPI, svc, ctx) -> None:
             tenant_id, whatsapp_phone_number_id=request.phone_number_id, whatsapp_access_token=access_token,
         )
         return {"whatsapp_phone_number_id": updated.whatsapp_phone_number_id, "connected": True}
+
+    @app.post("/api/tenant/whatsapp/help-request")
+    def request_whatsapp_help(
+        request: WhatsAppHelpRequest,
+        tenant_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> dict:
+        """Owner-facing request for concierge WhatsApp setup assistance.
+        Validates phone, rate-limits to 3/hour per tenant, and alerts the platform admin."""
+        principal = ctx._resolve(authorization)
+        try:
+            tenant = authorize(principal, TenantAction.MANAGE_ASSISTANT, target_tenant_id=tenant_id, registry=svc.tenant_registry)
+        except UnauthorizedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TenantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        limiter = getattr(svc, "whatsapp_help_limiter", None)
+        if limiter is None:
+            limiter = FixedWindowRateLimiter(limit=3, window_seconds=3600.0)
+            svc.whatsapp_help_limiter = limiter
+
+        if not limiter.check_and_increment(tenant_id):
+            raise HTTPException(
+                status_code=429,
+                detail="You have already submitted assistance requests recently. Our team is working on your setup and will contact you shortly.",
+            )
+
+        stripped_phone = re.sub(r"[\s\+\-\(\)]", "", request.phone_number)
+        if not (stripped_phone.isdigit() and 10 <= len(stripped_phone) <= 15):
+            raise HTTPException(status_code=400, detail="Please provide a valid phone number (10 to 15 digits).")
+
+        if svc.settings.platform_admin_email and svc.settings.resend_api_key and svc.settings.digest_from_email:
+            dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+            subject, html = render_whatsapp_help_request_alert(
+                business_name=tenant.business_name,
+                tenant_id=tenant.tenant_id,
+                owner_email=tenant.owner_email,
+                phone_number=request.phone_number,
+                note=request.note,
+                dashboard_url=dashboard_url,
+            )
+            try:
+                svc.email_sender().send(to=svc.settings.platform_admin_email, subject=subject, html_body=html)
+            except EmailSendError as exc:
+                logger.warning("Failed to send WhatsApp help request alert for tenant %s: %s", tenant_id, exc)
+
+        logger.info("WhatsApp concierge help requested for tenant %s (phone=%s) by %s", tenant_id, request.phone_number, principal.principal_id)
+        return {
+            "status": "received",
+            "message": "We've received your request. Our team will contact you within 24 hours to connect your WhatsApp number.",
+        }
 
     @app.post("/api/tenant/activate")
     def self_activate_tenant(tenant_id: str, authorization: str | None = Header(default=None)) -> dict:

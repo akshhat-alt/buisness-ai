@@ -57,6 +57,16 @@ class WebsiteIngestRequest(BaseModel):
     label: str | None = None
 
 
+class TextIngestRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    text: str = Field(min_length=1, max_length=1_000_000)
+
+
+class WhatsAppHelpRequest(BaseModel):
+    phone_number: str = Field(min_length=1, max_length=50)
+    note: str | None = Field(default=None, max_length=1000)
+
+
 class GapPublishRequest(BaseModel):
     answer_text: str = Field(min_length=1, max_length=2000)
 
