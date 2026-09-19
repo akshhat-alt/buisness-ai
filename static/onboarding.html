@@ -654,11 +654,22 @@
         return;
       }
 
-      const sourcesRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      const [sourcesRes, planRes] = await Promise.all([
+        fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() }),
+        fetch(`/api/platform/plan`),
+      ]);
       const sources = await sourcesRes.json();
+      const plan = await planRes.json();
       const reasons = [];
       if (!sources.sources || sources.sources.length === 0) reasons.push('Add at least one knowledge source (Step 3).');
-      if (tenant.subscription_price_inr && tenant.billing_status !== 'paid') reasons.push('Complete payment (Step 1).');
+      // Same precedence as the backend's _activation_blocker: an
+      // admin-set per-tenant price wins when present, otherwise this
+      // falls back to the platform-wide price /api/platform/plan
+      // advertises — checking only tenant.subscription_price_inr here
+      // let every self-serve signup activate for free, since that field
+      // is never populated outside the admin billing-link flow.
+      const effectivePrice = tenant.subscription_price_inr || plan.price_inr;
+      if (effectivePrice && tenant.billing_status !== 'paid') reasons.push('Complete payment (Step 1).');
 
       if (reasons.length) {
         document.getElementById('activate-blocked').style.display = 'block';

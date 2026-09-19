@@ -240,6 +240,52 @@ def test_self_activation_blocked_when_priced_and_unpaid(client_billing, services
     assert "payment" in r.json()["detail"].lower()
 
 
+def test_self_activation_blocked_by_platform_price_even_without_checkout(client_billing, services_billing):
+    """The actual production bug: _activation_blocker used to check ONLY
+    tenant.subscription_price_inr, a field that stays None for a
+    self-serve signup unless /api/tenant/billing/checkout was called at
+    least once. A tenant who skipped straight to Activate without ever
+    clicking "Pay Now" activated for free, even with a real platform
+    price configured — this is the exploit path the fix closes."""
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=2000)
+    headers, tenant_id = _signup(client_billing)
+    _add_knowledge(client_billing, headers, tenant_id)
+    # Deliberately never calls /api/tenant/billing/checkout.
+
+    r = client_billing.post(f"/api/tenant/activate?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 400, r.text
+    assert "payment" in r.json()["detail"].lower()
+
+
+def test_self_activation_succeeds_after_platform_price_checkout_and_webhook_payment(client_billing, services_billing):
+    """The legitimate counterpart: once the platform-priced checkout link
+    is actually paid (tenant.subscription_price_inr gets set by checkout,
+    billing_status flips via mark-paid/webhook), self-activation works."""
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=2000)
+    headers, tenant_id = _signup(client_billing)
+    _add_knowledge(client_billing, headers, tenant_id)
+    client_billing.post(f"/api/tenant/billing/checkout?tenant_id={tenant_id}", headers=headers)
+    admin_headers = _admin_headers(client_billing, services_billing.settings)
+    client_billing.post(f"/api/v1/admin/tenants/{tenant_id}/mark-paid", json={}, headers=admin_headers)
+
+    r = client_billing.post(f"/api/tenant/activate?tenant_id={tenant_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "active"
+
+
+def test_admin_activation_also_blocked_by_platform_price_alone(client_billing, services_billing):
+    """Same fix, admin-triggered path — both activation entry points
+    share the one _activation_blocker function."""
+    services_billing.settings = dataclasses.replace(services_billing.settings, platform_subscription_price_inr=2000)
+    headers, tenant_id = _signup(client_billing)
+    _add_knowledge(client_billing, headers, tenant_id)
+    admin_headers = _admin_headers(client_billing, services_billing.settings)
+
+    r = client_billing.post(f"/api/v1/admin/tenants/{tenant_id}/activate", headers=admin_headers)
+    assert r.status_code == 400, r.text
+    assert "payment" in r.json()["detail"].lower()
+
+
 def test_self_activation_is_tenant_isolated(client_billing, services_billing):
     headers_a, tenant_a = _signup(client_billing, business_name="Salon A", email="a@example.com")
     headers_b, tenant_b = _signup(client_billing, business_name="Salon B", email="b@example.com")

@@ -340,11 +340,23 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
     def _activation_blocker(tenant_id: str) -> str | None:
         """The one bar every activation path must clear — admin-triggered
         or owner self-service alike. Returns a human-readable reason to
-        block, or None when clear to activate."""
+        block, or None when clear to activate.
+
+        Price precedence: an admin-set tenant.subscription_price_inr (a
+        manually negotiated per-tenant price, set only via the admin
+        billing-link flow) wins when present; every other tenant falls
+        back to the operator-wide svc.settings.platform_subscription_price_inr
+        — the price /api/platform/plan advertises and self-serve
+        billing/checkout actually charges. Checking ONLY the per-tenant
+        field here was the bug: it is never populated for a normal
+        self-serve signup, so this always evaluated falsy and let every
+        tenant activate for free regardless of the configured platform
+        price."""
         if svc.vector_store.count_for_tenant(tenant_id) == 0:
             return "Cannot activate: no knowledge sources ingested yet."
         tenant = svc.tenant_registry.get_config(tenant_id)
-        if tenant.subscription_price_inr and tenant.billing_status != "paid":
+        effective_price = tenant.subscription_price_inr or svc.settings.platform_subscription_price_inr
+        if effective_price and tenant.billing_status != "paid":
             return "Payment is required before activating — check your email for the payment link."
         return None
 
