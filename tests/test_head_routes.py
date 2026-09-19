@@ -3,6 +3,8 @@
 def test_head_healthz(client):
     res = client.head("/healthz")
     assert res.status_code == 200
+    res_health = client.head("/health")
+    assert res_health.status_code == 200
 
 
 def test_head_static_routes(client):

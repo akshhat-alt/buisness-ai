@@ -27,6 +27,7 @@ def register_auth(app: FastAPI, svc, ctx) -> None:
 
     # -------------------------------------------------------------- health
     @app.api_route("/healthz", methods=["GET", "HEAD"])
+    @app.api_route("/health", methods=["GET", "HEAD"])
     def healthz() -> dict:
         return {"status": "ok"}
 

@@ -169,6 +169,10 @@ def register_tenant_settings(app: FastAPI, svc, ctx) -> None:
         except TenantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+        stripped_phone = re.sub(r"[\s\+\-\(\)]", "", request.phone_number)
+        if not (stripped_phone.isdigit() and 10 <= len(stripped_phone) <= 15):
+            raise HTTPException(status_code=400, detail="Please provide a valid phone number (10 to 15 digits).")
+
         limiter = getattr(svc, "whatsapp_help_limiter", None)
         if limiter is None:
             limiter = FixedWindowRateLimiter(limit=3, window_seconds=3600.0)
@@ -179,10 +183,6 @@ def register_tenant_settings(app: FastAPI, svc, ctx) -> None:
                 status_code=429,
                 detail="You have already submitted assistance requests recently. Our team is working on your setup and will contact you shortly.",
             )
-
-        stripped_phone = re.sub(r"[\s\+\-\(\)]", "", request.phone_number)
-        if not (stripped_phone.isdigit() and 10 <= len(stripped_phone) <= 15):
-            raise HTTPException(status_code=400, detail="Please provide a valid phone number (10 to 15 digits).")
 
         if svc.settings.platform_admin_email and svc.settings.resend_api_key and svc.settings.digest_from_email:
             dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None

@@ -1391,6 +1391,8 @@
     // actually have at least one menu item, instead of showing an empty
     // vertical-specific tool to a salon or retail shop owner.
     async function applyRestaurantNavVisibility() {
+      if (currentTenant && currentTenant.vertical !== 'restaurant') return;
+      if (currentPlan !== 'scale') return;
       try {
         const res = await fetch(`/api/menu/items?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
         if (!res.ok) return;

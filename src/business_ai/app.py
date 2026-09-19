@@ -263,7 +263,7 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-        is_api_path = request.url.path.startswith(("/api/", "/healthz"))
+        is_api_path = request.url.path.startswith(("/api/", "/healthz", "/health"))
         if exc.status_code == 404 and not is_api_path and STATIC_DIR.is_dir():
             page = STATIC_DIR / "404.html"
             if page.is_file():
