@@ -175,7 +175,7 @@
               <div class="bm-phone-head"><div class="bm-phone-avatar">B</div><div><div class="bm-phone-name">Your business number</div><div class="bm-phone-sub">Owner chat</div></div></div>
               <div class="bm-phone-body">
                 <div class="bm-wa-msg out">What needs my attention today?<span class="meta">09:00</span></div>
-                <div class="bm-wa-msg in">2 new leads, 1 complaint flagged, 3 knowledge gaps open.<span class="meta">09:00</span></div>
+                <div class="bm-wa-msg in">2 new leads, 1 complaint flagged, 3 customer questions to answer.<span class="meta">09:00</span></div>
                 <div class="bm-wa-msg out">Who is on shift today?<span class="meta">09:01</span></div>
                 <div class="bm-wa-msg in">Ravi 9am&ndash;5pm (Kitchen). Meera 12pm&ndash;8pm (Front desk).<span class="meta">09:01</span></div>
               </div>
@@ -249,7 +249,8 @@
           <p>Message your own business number, any time, and get an instant status pull — new leads, complaints, open gaps — no dashboard login needed.</p>
           <div class="bm-tile-visual bm-mock-stack">
             <div class="bm-mock-row"><span>"What needs my attention today?"</span></div>
-            <div class="bm-mock-row"><span>2 new leads, 1 complaint flagged, 3 knowledge gaps open.</span><span class="bm-mock-pill whatsapp">WhatsApp</span></div>
+            <div class="bm-mock-row"><span>2 new leads, 1 complaint flagged, 3 customer questions to answer.</span><span class="bm-mock-pill whatsapp">WhatsApp</span></div>
+            <div class="bm-mock-row"><span>Ravi clocked in &middot; 08:58</span><span class="bm-mock-pill status">On time</span></div>
           </div>
         </div>
         <div class="bm-tile bm-tile-md">
@@ -270,7 +271,7 @@
       <div class="bm-bento bm-reveal-stagger">
         <div class="bm-tile bm-tile-md">
           <div class="bm-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
-          <h3>Knowledge-gap improvement</h3>
+          <h3>Questions I couldn't answer</h3>
           <p>Every question your assistant can't answer becomes a one-click fix: AI drafts it, you approve it, it's published.</p>
           <div class="bm-tile-visual bm-mock-chip-row">
             <span class="bm-mock-chip">1 · Draft</span><span class="bm-mock-chip">2 · Edit</span><span class="bm-mock-chip">3 · Publish</span>
@@ -439,10 +440,10 @@
             <span class="num">₹20,000</span>
             <span class="period">/ month</span>
           </div>
-          <div class="bm-price-why">Adds Self-Evolution — the most sensitive lever in the system, with full safety rails.</div>
+          <div class="bm-price-why">Adds Assistant improvements — the most sensitive lever in the system, with full safety rails.</div>
           <div class="bm-price-features">
             <div class="feat everything"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Everything in Pro, plus:</span></div>
-            <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Self-Evolution: detects dissatisfaction trends and proposes safer, better responses automatically — sandbox-tested, owner-approved, instantly reversible</span></div>
+            <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Assistant improvements: detects dissatisfaction trends and proposes safer, better responses automatically — tested for safety before you see it, owner-approved, instantly reversible</span></div>
             <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Dedicated onboarding &amp; priority phone support</span></div>
             <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>First access to new features</span></div>
           </div>
@@ -638,12 +639,12 @@
         label: 'Retail & Shop Assistant',
         exchange: [
           { role: 'user', text: 'Ye jacket M size mein available hai kya?' },
-          { role: 'ai', text: "I don't have live stock counts for that yet — let me connect you with someone from the team who can check.", signal: { type: 'gap', label: 'Knowledge gap flagged — one-click fix for the owner' } },
+          { role: 'ai', text: "I don't have live stock counts for that yet — let me connect you with someone from the team who can check.", signal: { type: 'gap', label: 'Customer question flagged — one-click fix for the owner' } },
         ],
         features: [
           'Product &amp; catalog questions answered from your own content — honest when something isn’t covered yet',
           'Buying-intent leads captured automatically, with payment/deposit links sent over WhatsApp',
-          'Every unanswered question becomes a one-click knowledge-base fix',
+          'Every unanswered question becomes a one-click business info fix',
         ],
       },
       fitness: {

@@ -84,6 +84,29 @@
         <p class="ba-muted" style="margin-top:0;">
           Connecting WhatsApp is <strong>completely optional</strong> — your assistant's website chat works immediately regardless. You can skip this step now and connect or change your WhatsApp number anytime later from Settings.
         </p>
+
+        <!-- Lead with: We'll connect it for you -->
+        <div style="padding:16px; background:var(--ba-surface-sunken); border:1px solid var(--ba-border); border-radius:var(--ba-radius-sm); margin-bottom:18px;">
+          <h4 style="margin:0 0 6px; font-size:0.95rem; color:var(--ba-ink);">We'll connect it for you</h4>
+          <p class="ba-muted" style="margin:0 0 12px; font-size:0.84rem;">
+            Meta's Cloud API setup has technical steps. Leave your number and our onboarding team will configure your WhatsApp connection within 24 hours.
+          </p>
+          <div style="display:flex; flex-direction:column; gap:10px; max-width:440px;">
+            <div>
+              <label class="ba-label" for="wiz-help-phone">WhatsApp phone number to use</label>
+              <input class="ba-input" id="wiz-help-phone" placeholder="e.g. +91 98260 12345">
+            </div>
+            <div>
+              <label class="ba-label" for="wiz-help-note">Optional note</label>
+              <textarea class="ba-input" id="wiz-help-note" rows="2" placeholder="e.g. Preferred call time, existing WhatsApp Business app details"></textarea>
+            </div>
+            <div>
+              <button class="ba-btn ba-btn-sm" id="wiz-help-btn" onclick="requestWizWhatsappHelp()">Request WhatsApp Setup</button>
+            </div>
+            <div id="wiz-help-status" style="font-size:0.84rem; margin-top:4px;"></div>
+          </div>
+        </div>
+
         <div id="wa-embedded-box" style="display:none; margin-bottom:14px;">
           <button class="ba-btn" id="wa-connect-btn" onclick="launchWhatsAppEmbeddedSignup()">Connect WhatsApp</button>
         </div>
@@ -102,48 +125,53 @@
           </div>
           <div id="wiz-wa-test-status" style="margin-top:10px;"></div>
         </div>
-        <div id="wa-manual-box">
-          <div style="margin-bottom:18px; padding:14px 16px; background:var(--ba-surface-sunken); border:1px solid var(--ba-border); border-radius:var(--ba-radius-sm);">
-            <div style="font-weight:600; font-size:0.875rem; margin-bottom:10px; color:var(--ba-ink);">Manual Cloud API Setup Checklist (~10 minutes):</div>
-            <ol style="margin:0; padding-left:20px; font-size:0.8125rem; color:var(--ba-ink-soft); line-height:1.6;">
-              <li style="margin-bottom:8px;">
-                <strong>Meta App &amp; WhatsApp Product:</strong> In <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers &rarr; My Apps</a>, create a Meta App (type: <strong>Business</strong>) and add the <strong>WhatsApp</strong> product to it.
-              </li>
-              <li style="margin-bottom:8px;">
-                <strong>Phone Number ID:</strong> Under <strong>WhatsApp &gt; API Setup</strong> in your Meta App, add or select your phone number. Copy the numeric <strong>Phone Number ID</strong> (not the phone number itself).
-              </li>
-              <li style="margin-bottom:8px;">
-                <strong>Permanent Access Token:</strong> In <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Meta Business Settings &rarr; System Users</a>, create a System User, assign your WhatsApp account asset with the <code>whatsapp_business_messaging</code> permission, and generate a <strong>permanent access token</strong> (for quick testing, you can also copy the temporary 24-hour access token from the API Setup page).
-              </li>
-              <li style="margin-bottom:8px;">
-                <strong>Save Connection:</strong> Paste your <strong>Phone Number ID</strong> and <strong>access token</strong> into the fields below and click <strong>Save Connection</strong>.
-              </li>
-              <li>
-                <strong>Message your number:</strong> Message that WhatsApp number from any phone — your assistant will answer from your ingested knowledge base within seconds!
-              </li>
-            </ol>
-          </div>
-          <div class="ba-field">
-            <label class="ba-label" for="wiz-wa-phone-id">WhatsApp Phone Number ID</label>
-            <input class="ba-input" id="wiz-wa-phone-id" placeholder="e.g. 109876543210987">
-            <div class="ba-muted" style="font-size:0.75rem; margin-top:4px;">Find this on the <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">WhatsApp &gt; API Setup</a> page in your Meta App.</div>
-          </div>
-          <div class="ba-field">
-            <label class="ba-label" for="wiz-wa-token">WhatsApp Access Token</label>
-            <div class="ba-password-field">
-              <input class="ba-input" type="password" id="wiz-wa-token" placeholder="Permanent access token from Meta">
-              <button type="button" class="ba-password-toggle" data-target="wiz-wa-token" aria-label="Show token">
-                <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
-                <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-              </button>
+
+        <!-- Collapsed manual checklist -->
+        <details style="margin-top:14px;" id="wa-manual-details">
+          <summary style="cursor:pointer; font-weight:600; font-size:0.875rem; color:var(--ba-ink-soft); padding:4px 0;">I'll do it myself (advanced)</summary>
+          <div id="wa-manual-box" style="margin-top:12px;">
+            <div style="margin-bottom:18px; padding:14px 16px; background:var(--ba-surface-sunken); border:1px solid var(--ba-border); border-radius:var(--ba-radius-sm);">
+              <div style="font-weight:600; font-size:0.875rem; margin-bottom:10px; color:var(--ba-ink);">Manual Cloud API Setup Checklist (~10 minutes):</div>
+              <ol style="margin:0; padding-left:20px; font-size:0.8125rem; color:var(--ba-ink-soft); line-height:1.6;">
+                <li style="margin-bottom:8px;">
+                  <strong>Meta App &amp; WhatsApp Product:</strong> In <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers &rarr; My Apps</a>, create a Meta App (type: <strong>Business</strong>) and add the <strong>WhatsApp</strong> product to it.
+                </li>
+                <li style="margin-bottom:8px;">
+                  <strong>Phone Number ID:</strong> Under <strong>WhatsApp &gt; API Setup</strong> in your Meta App, add or select your phone number. Copy the numeric <strong>Phone Number ID</strong> (not the phone number itself).
+                </li>
+                <li style="margin-bottom:8px;">
+                  <strong>Permanent Access Token:</strong> In <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Meta Business Settings &rarr; System Users</a>, create a System User, assign your WhatsApp account asset with the <code>whatsapp_business_messaging</code> permission, and generate a <strong>permanent access token</strong> (for quick testing, you can also copy the temporary 24-hour access token from the API Setup page).
+                </li>
+                <li style="margin-bottom:8px;">
+                  <strong>Save Connection:</strong> Paste your <strong>Phone Number ID</strong> and <strong>access token</strong> into the fields below and click <strong>Save Connection</strong>.
+                </li>
+                <li>
+                  <strong>Message your number:</strong> Message that WhatsApp number from any phone — your assistant will answer from your ingested business info within seconds!
+                </li>
+              </ol>
             </div>
-            <div class="ba-muted" style="font-size:0.75rem; margin-top:4px;">Generated under <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Meta Business Settings &gt; System Users</a> with <code>whatsapp_business_messaging</code> permission (or temporary test token).</div>
+            <div class="ba-field">
+              <label class="ba-label" for="wiz-wa-phone-id">WhatsApp Phone Number ID</label>
+              <input class="ba-input" id="wiz-wa-phone-id" placeholder="e.g. 109876543210987">
+              <div class="ba-muted" style="font-size:0.75rem; margin-top:4px;">Find this on the <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">WhatsApp &gt; API Setup</a> page in your Meta App.</div>
+            </div>
+            <div class="ba-field">
+              <label class="ba-label" for="wiz-wa-token">WhatsApp Access Token</label>
+              <div class="ba-password-field">
+                <input class="ba-input" type="password" id="wiz-wa-token" placeholder="Permanent access token from Meta">
+                <button type="button" class="ba-password-toggle" data-target="wiz-wa-token" aria-label="Show token">
+                  <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
+              <div class="ba-muted" style="font-size:0.75rem; margin-top:4px;">Generated under <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Meta Business Settings &gt; System Users</a> with <code>whatsapp_business_messaging</code> permission (or temporary test token).</div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px;">
+              <button class="ba-btn ba-btn-secondary ba-btn-sm" id="wiz-wa-save-btn" onclick="saveManualWhatsapp()">Save Connection</button>
+            </div>
+            <div id="wiz-wa-status" class="ba-muted" style="margin-top:8px;"></div>
           </div>
-          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px;">
-            <button class="ba-btn ba-btn-secondary ba-btn-sm" id="wiz-wa-save-btn" onclick="saveManualWhatsapp()">Save Connection</button>
-          </div>
-          <div id="wiz-wa-status" class="ba-muted" style="margin-top:8px;"></div>
-        </div>
+        </details>
       </div>
       <div class="wiz-nav-row">
         <button class="ba-btn ba-btn-ghost ba-btn-sm" onclick="goToStep(0)">Back</button>
@@ -154,11 +182,11 @@
       </div>
     </section>
 
-    <!-- Step 3: Add Knowledge -->
+    <!-- Step 3: Add Business Info -->
     <section class="wiz-panel" data-step="2">
       <div class="ba-card">
-        <h3 style="margin-top:0;">Add Knowledge <span class="wiz-optional-tag" style="background:var(--ba-warn-bg); color:var(--ba-warn-text);">Required to activate</span></h3>
-        <p class="ba-muted" style="margin-top:0;">Your assistant only answers from what you give it here — add your website, or upload a PDF/FAQ.</p>
+        <h3 style="margin-top:0;">Add Business Info <span class="wiz-optional-tag" style="background:var(--ba-warn-bg); color:var(--ba-warn-text);">Required to activate</span></h3>
+        <p class="ba-muted" style="margin-top:0;">Your assistant only answers from what you give it here — add your website, upload a document, or paste your menu and policies.</p>
         <div class="ba-field">
           <label class="ba-label">Your website</label>
           <div style="display:flex; gap:8px;">
@@ -171,6 +199,12 @@
           <input type="file" id="wiz-upload-file" accept=".pdf,.txt,.md">
           <button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:8px;" onclick="wizUploadFile()">Upload</button>
         </div>
+        <div class="ba-field" style="margin-top:14px; margin-bottom:6px;">
+          <label class="ba-label">Or paste text (menu, timings, policies)</label>
+          <input class="ba-input" id="wiz-paste-title" placeholder="Title (e.g. Menu, Timings, Cancellation rules)" style="margin-bottom:6px;">
+          <textarea class="ba-input" id="wiz-paste-text" rows="4" placeholder="Paste your text here..."></textarea>
+          <button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:8px;" onclick="wizIngestText()">Save Text</button>
+        </div>
         <div id="wiz-knowledge-status" class="ba-muted"></div>
         <div id="wiz-sources-list" style="margin-top:12px;"></div>
       </div>
@@ -182,7 +216,9 @@
       <div class="ba-card">
         <h3 style="margin-top:0;">Add Your Team <span class="wiz-optional-tag">Optional</span></h3>
         <p class="ba-muted" style="margin-top:0;">Add employees who'll coordinate tasks with you over WhatsApp. You can always add more later from Team &amp; Tasks.</p>
-        <table class="ba-table" id="wiz-employees-table"><thead><tr><th>Name</th><th>WhatsApp</th><th>Role</th></tr></thead><tbody></tbody></table>
+        <div class="ba-table-responsive">
+          <table class="ba-table" id="wiz-employees-table"><thead><tr><th>Name</th><th>WhatsApp</th><th>Role</th></tr></thead><tbody></tbody></table>
+        </div>
         <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
           <input class="ba-input" id="wiz-emp-name" placeholder="Name" style="max-width:160px;">
           <input class="ba-input" id="wiz-emp-whatsapp" placeholder="WhatsApp number, no +" style="max-width:180px;">
@@ -201,9 +237,11 @@
     <section class="wiz-panel" data-step="4">
       <div class="ba-card">
         <h3 style="margin-top:0;">Set Up Automation <span class="wiz-optional-tag">Optional</span></h3>
-        <p class="ba-muted" style="margin-top:0;">Automation means "when this happens, Bizistic does that" — so you don't have to keep watching. Not sure where to start? Turn on the recipes below with one click. You can change or switch them off anytime from the dashboard.</p>
+        <p class="ba-muted" style="margin-top:0;">Automation means "when this happens, Bizistic does that" — so you don't have to keep watching. Turn on automation — start with 3 ready-made recipes below with one click. You can change or switch them off anytime from the dashboard.</p>
         <div id="wiz-recipes" style="display:grid; gap:10px; margin-bottom:14px;"></div>
-        <table class="ba-table" id="wiz-rules-table"><thead><tr><th>Running now</th><th>When</th><th>Bizistic will</th></tr></thead><tbody></tbody></table>
+        <div class="ba-table-responsive">
+          <table class="ba-table" id="wiz-rules-table"><thead><tr><th>Running now</th><th>When</th><th>Bizistic will</th></tr></thead><tbody></tbody></table>
+        </div>
         <details style="margin-top:14px;">
           <summary style="cursor:pointer; font-weight:600;">Or build your own rule</summary>
           <div style="margin-top:12px; display:flex; flex-direction:column; gap:10px; max-width:480px;">
@@ -337,7 +375,7 @@
           method: 'POST', headers: BizAuth.getAuthHeaders(),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Could not start checkout.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not start checkout.'));
         if (data.payment_url) {
           window.open(data.payment_url, '_blank', 'noopener');
           statusEl.textContent = 'Complete payment in the new tab, then come back and click "I\'ve paid — check now".';
@@ -431,9 +469,44 @@
           body: JSON.stringify({ code, phone_number_id: phoneNumberId }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Could not connect WhatsApp.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not connect WhatsApp.'));
         loadWhatsappStep();
       } catch (e) { alert(e.message); }
+    }
+
+    async function requestWizWhatsappHelp() {
+      const statusEl = document.getElementById('wiz-help-status');
+      const phoneInput = document.getElementById('wiz-help-phone');
+      const noteInput = document.getElementById('wiz-help-note');
+      const btn = document.getElementById('wiz-help-btn');
+      const phone = phoneInput ? phoneInput.value.trim() : '';
+      const note = noteInput ? noteInput.value.trim() : '';
+      const method = (document.querySelector('input[name="wiz_contact_method"]:checked') || {}).value || 'whatsapp';
+
+      if (!phone) {
+        statusEl.innerHTML = '<span style="color:var(--ba-danger);">Please enter a phone number.</span>';
+        return;
+      }
+      btn.disabled = true;
+      statusEl.innerHTML = '<span class="ba-muted">Sending request...</span>';
+
+      try {
+        const res = await fetch(`/api/tenant/whatsapp/help-request?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST',
+          headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ phone, preferred_contact_method: method, note: note || null }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(BizAuth.formatError(data, 'Could not submit request. Please try again.'));
+        }
+        statusEl.innerHTML = `<span style="color:var(--ba-success); font-weight:600;">✓ Request received! We will reach out on ${escapeHtml(method === 'call' ? 'phone call' : 'WhatsApp')} within a few hours.</span>`;
+        if (noteInput) noteInput.value = '';
+      } catch (err) {
+        statusEl.innerHTML = `<span style="color:var(--ba-danger);">${escapeHtml(err.message)}</span>`;
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     async function saveManualWhatsapp() {
@@ -447,7 +520,8 @@
           method: 'PUT', headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ whatsapp_phone_number_id: phoneId, whatsapp_access_token: token }),
         });
-        if (!res.ok) throw new Error((await res.json()).detail || 'Could not save.');
+        const data = await res.json();
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not save.'));
         statusEl.textContent = '✓ Saved successfully!';
         await loadWhatsappStep();
       } catch (e) { statusEl.textContent = e.message; }
@@ -463,7 +537,7 @@
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || 'Could not verify account connection.');
+          throw new Error(BizAuth.formatError(data, 'Could not verify account connection.'));
         }
         const tenant = await res.json();
         if (tenant.whatsapp_phone_number_id) {
@@ -508,7 +582,7 @@
           body: JSON.stringify({ url }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Could not add this page.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not add this page.'));
         statusEl.textContent = `Added — ${data.chunks_indexed} section(s) indexed.`;
         document.getElementById('wiz-website-url').value = '';
         loadKnowledgeStep();
@@ -528,9 +602,35 @@
           method: 'POST', headers: BizAuth.getAuthHeaders(), body: formData,
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Upload failed.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Upload failed.'));
         statusEl.textContent = `Added — ${data.chunks_indexed} section(s) indexed.`;
         fileInput.value = '';
+        loadKnowledgeStep();
+      } catch (e) { statusEl.textContent = e.message; }
+    }
+
+    async function wizIngestText() {
+      const titleInput = document.getElementById('wiz-paste-title');
+      const textInput = document.getElementById('wiz-paste-text');
+      const text = textInput ? textInput.value.trim() : '';
+      const title = titleInput ? titleInput.value.trim() : '';
+      const statusEl = document.getElementById('wiz-knowledge-status');
+      if (!text) {
+        statusEl.textContent = 'Please enter some text to save.';
+        return;
+      }
+      statusEl.textContent = 'Saving and indexing text...';
+      try {
+        const res = await fetch(`/api/knowledge/text?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST',
+          headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ title: title || 'Pasted text', text }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not save text.'));
+        statusEl.textContent = `Added — ${data.chunks_indexed} section(s) indexed.`;
+        if (titleInput) titleInput.value = '';
+        if (textInput) textInput.value = '';
         loadKnowledgeStep();
       } catch (e) { statusEl.textContent = e.message; }
     }
@@ -558,7 +658,7 @@
           body: JSON.stringify({ name, whatsapp_number: whatsapp, role: roleVal }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Could not add employee.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not add employee.'));
         document.getElementById('wiz-emp-name').value = '';
         document.getElementById('wiz-emp-whatsapp').value = '';
         statusEl.textContent = '';
@@ -620,7 +720,7 @@
           }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Could not turn this on.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not turn this on.'));
         statusEl.textContent = '';
         loadAutomationStep();
       } catch (e) {
@@ -654,7 +754,7 @@
           body: JSON.stringify({ name, trigger_type: triggerType, trigger_params: { [paramKey]: threshold }, action_type: actionType, action_params: {} }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Could not create rule.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not create rule.'));
         document.getElementById('wiz-rule-name').value = '';
         statusEl.textContent = '';
         loadAutomationStep();
@@ -752,7 +852,7 @@
           method: 'POST', headers: BizAuth.getAuthHeaders(),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Could not activate yet.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Could not activate yet.'));
         resultEl.textContent = '🎉 Your assistant is live!';
         setTimeout(() => { window.location.href = '/dashboard'; }, 1200);
       } catch (e) { resultEl.textContent = e.message; }

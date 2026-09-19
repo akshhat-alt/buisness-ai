@@ -155,7 +155,7 @@
           }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Sign in failed.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Sign in failed.'));
         BizAuth.setSession(data.access_token, data.tenant_id, data.role);
         const params = new URLSearchParams(window.location.search);
         const fallback = data.role === 'platform_admin' ? '/dashboard' : '/dashboard';
@@ -183,7 +183,7 @@
           }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Sign up failed.');
+        if (!res.ok) throw new Error(BizAuth.formatError(data, 'Sign up failed.'));
         BizAuth.setSession(data.access_token, data.tenant_id, data.role);
         // New owners land on the guided setup wizard, not the full
         // dashboard — everything there is still reachable via "Skip to

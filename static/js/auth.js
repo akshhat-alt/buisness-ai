@@ -69,6 +69,27 @@
       }
       return true;
     },
+
+    formatError(data, fallback = 'An unexpected error occurred.') {
+      if (!data) return fallback;
+      if (typeof data === 'string') return data;
+      if (data.detail) {
+        if (typeof data.detail === 'string') return data.detail;
+        if (Array.isArray(data.detail)) {
+          const msgs = data.detail.map(err => {
+            const field = Array.isArray(err.loc) ? err.loc.filter(x => x !== 'body').join('.') : '';
+            const msg = err.msg || 'Invalid value';
+            return field ? `${field}: ${msg}` : msg;
+          }).filter(Boolean);
+          if (msgs.length > 0) return msgs.join(', ');
+        }
+        if (typeof data.detail === 'object') {
+          try { return JSON.stringify(data.detail); } catch (e) { return fallback; }
+        }
+      }
+      if (data.message && typeof data.message === 'string') return data.message;
+      return fallback;
+    },
   };
 
   window.BizAuth = BizAuth;

@@ -195,6 +195,138 @@
     }
     .brief-toast.show { opacity: 1; transform: translateY(0); }
 
+    .mobile-tabbar {
+      display: none;
+    }
+
+    .ba-table-responsive {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: 12px;
+    }
+
+    .setup-checklist-card {
+      background: var(--ba-surface);
+      border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius-lg);
+      padding: 20px 22px;
+      margin-bottom: 24px;
+      box-shadow: var(--ba-shadow-sm);
+    }
+    .setup-checklist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin: 14px 0 16px;
+    }
+    .setup-checklist-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--ba-surface-sunken);
+      border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius-sm);
+      transition: all 0.15s ease;
+    }
+    .setup-checklist-item.done {
+      background: var(--ba-primary-soft);
+      border-color: rgba(31,92,78,0.25);
+    }
+    .setup-checklist-item .chk-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .setup-checklist-item.done .chk-icon {
+      background: var(--ba-primary);
+      color: #fff;
+    }
+    .setup-checklist-item:not(.done) .chk-icon {
+      border: 2px solid var(--ba-border-strong);
+      color: transparent;
+      background: var(--ba-surface);
+    }
+    .setup-checklist-tip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--ba-surface-2);
+      border: 1px solid var(--ba-border);
+      border-radius: var(--ba-radius-sm);
+      font-size: 0.8125rem;
+      color: var(--ba-ink-soft);
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 700px) {
+      #leads-table, #tasks-table, #automation-rules-table {
+        display: block !important;
+        width: 100% !important;
+      }
+      #leads-table thead, #tasks-table thead, #automation-rules-table thead {
+        display: none !important;
+      }
+      #leads-table tbody, #tasks-table tbody, #automation-rules-table tbody {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+        width: 100% !important;
+      }
+      #leads-table tr, #tasks-table tr, #automation-rules-table tr {
+        display: flex !important;
+        flex-direction: column !important;
+        background: var(--ba-surface) !important;
+        border: 1px solid var(--ba-border) !important;
+        border-radius: var(--ba-radius) !important;
+        padding: 12px 14px !important;
+        gap: 6px !important;
+      }
+      #leads-table td, #tasks-table td, #automation-rules-table td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        padding: 4px 0 !important;
+        border-bottom: 1px dashed var(--ba-border) !important;
+        font-size: 0.84rem !important;
+      }
+      #leads-table td:last-child, #tasks-table td:last-child, #automation-rules-table td:last-child {
+        border-bottom: none !important;
+        padding-top: 8px !important;
+        flex-wrap: wrap !important;
+        justify-content: flex-start !important;
+        gap: 6px !important;
+      }
+      #leads-table td:before, #tasks-table td:before, #automation-rules-table td:before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: var(--ba-muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        margin-right: 8px;
+        flex-shrink: 0;
+      }
+      #leads-table td[colspan], #tasks-table td[colspan], #automation-rules-table td[colspan] {
+        display: block !important;
+        border: none !important;
+        text-align: center !important;
+      }
+      #leads-table td[colspan]:before, #tasks-table td[colspan]:before, #automation-rules-table td[colspan]:before {
+        display: none !important;
+      }
+    }
+
     @media (max-width: 900px) {
       .dash-shell { grid-template-columns: 1fr; }
       .dash-sidebar { display: none; }
@@ -226,7 +358,7 @@
 
   <nav class="mobile-tabbar" aria-label="Dashboard sections">
     <a href="#overview">Overview</a>
-    <a href="#knowledge">Knowledge</a>
+    <a href="#knowledge">Business Info</a>
     <a href="#leads">Leads</a>
     <a href="#team">Team &amp; Tasks</a>
     <a href="#health">Business Health</a>
@@ -237,7 +369,7 @@
     <a href="#whatsapp">WhatsApp</a>
     <a href="#growth">Deposits</a>
     <a href="#business-map">Business Map</a>
-    <a href="#evolution">Self-Evolution</a>
+    <a href="#evolution">Assistant Improvements</a>
     <a href="#settings">Settings</a>
     <a href="#account">Account</a>
   </nav>
@@ -270,11 +402,11 @@
       </button>
       <div class="dash-nav-advanced-group" id="dash-advanced-group">
         <a class="dash-nav-link" href="#business-map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8.2 7.3 10 15.5M15.8 7.3 14 15.5M8.5 6h7"/></svg> Business Map</a>
-        <a class="dash-nav-link" href="#evolution"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg> Self-Evolution</a>
+        <a class="dash-nav-link" href="#evolution"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg> Assistant Improvements</a>
       </div>
 
       <div class="dash-nav-group-label">Setup</div>
-      <a class="dash-nav-link" href="#knowledge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Knowledge</a>
+      <a class="dash-nav-link" href="#knowledge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Business Info</a>
       <a class="dash-nav-link" href="#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg> Settings</a>
       <a class="dash-nav-link" href="#account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg> Account</a>
     </aside>
@@ -297,11 +429,82 @@
 
       <div id="owner-panel">
 
-        <section class="dash-section" id="overview">
+        <section class="dash-section active" id="overview">
           <div id="activate-box" style="display:none; margin-bottom:20px;"></div>
 
+          <!-- Setup Checklist Card (Owner only, auto-hides when 4 steps complete & active) -->
+          <div class="setup-checklist-card" id="setup-checklist-card" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+              <div>
+                <h3 style="margin:0 0 4px; font-size:1.1rem; color:var(--ba-ink);">🚀 Setup Checklist</h3>
+                <p class="ba-muted" style="margin:0; font-size:0.84rem;">Complete these 4 steps to get your assistant fully up and running.</p>
+              </div>
+              <span id="setup-checklist-progress" class="ba-badge ba-badge-neutral" style="font-weight:600;">0 of 4 complete</span>
+            </div>
+
+            <div class="setup-checklist-grid">
+              <!-- Item 1: Pay & activate -->
+              <div class="setup-checklist-item" id="chk-item-activate">
+                <span class="chk-icon" id="chk-icon-activate">○</span>
+                <div style="flex:1; min-width:0;">
+                  <div style="font-weight:600; font-size:0.875rem; color:var(--ba-ink);">1. Pay &amp; activate</div>
+                  <div class="ba-muted" id="chk-desc-activate" style="font-size:0.8125rem; margin-top:2px;">Complete payment and launch your assistant.</div>
+                  <div id="chk-action-activate" style="margin-top:6px;"></div>
+                </div>
+              </div>
+
+              <!-- Item 2: Add business info -->
+              <div class="setup-checklist-item" id="chk-item-knowledge">
+                <span class="chk-icon" id="chk-icon-knowledge">○</span>
+                <div style="flex:1; min-width:0;">
+                  <div style="font-weight:600; font-size:0.875rem; color:var(--ba-ink);">2. Add business info</div>
+                  <div class="ba-muted" id="chk-desc-knowledge" style="font-size:0.8125rem; margin-top:2px;">Add your website, PDF, or text policies.</div>
+                  <div id="chk-action-knowledge" style="margin-top:6px;">
+                    <a href="#knowledge" class="ba-btn ba-btn-secondary ba-btn-sm" style="font-size:0.75rem; padding:3px 8px; min-height:26px;">Add Info &rarr;</a>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Item 3: Connect WhatsApp -->
+              <div class="setup-checklist-item" id="chk-item-whatsapp">
+                <span class="chk-icon" id="chk-icon-whatsapp">○</span>
+                <div style="flex:1; min-width:0;">
+                  <div style="font-weight:600; font-size:0.875rem; color:var(--ba-ink);">3. Connect WhatsApp</div>
+                  <div class="ba-muted" id="chk-desc-whatsapp" style="font-size:0.8125rem; margin-top:2px;">Connect your phone number or request setup.</div>
+                  <div id="chk-action-whatsapp" style="margin-top:6px;">
+                    <a href="#whatsapp" class="ba-btn ba-btn-secondary ba-btn-sm" style="font-size:0.75rem; padding:3px 8px; min-height:26px;">Connect &rarr;</a>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Item 4: Turn on automation -->
+              <div class="setup-checklist-item" id="chk-item-automation">
+                <span class="chk-icon" id="chk-icon-automation">○</span>
+                <div style="flex:1; min-width:0;">
+                  <div style="font-weight:600; font-size:0.875rem; color:var(--ba-ink);">4. Turn on automation — start with 3 ready-made recipes</div>
+                  <div class="ba-muted" id="chk-desc-automation" style="font-size:0.8125rem; margin-top:2px;">Enable recipes to watch tasks and complaints.</div>
+                  <div id="chk-action-automation" style="margin-top:6px;">
+                    <a href="#automation" class="ba-btn ba-btn-secondary ba-btn-sm" style="font-size:0.75rem; padding:3px 8px; min-height:26px;">Turn on recipes &rarr;</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tip: Copy link (NOT a checklist item, no fake tick) -->
+            <div class="setup-checklist-tip">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:1.1rem;">💡</span>
+                <span><strong>Tip:</strong> Share your chat link with customers so they can start asking questions anytime.</span>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <button type="button" class="ba-btn ba-btn-secondary ba-btn-sm" onclick="copyWebChatLink()" style="font-size:0.78rem; min-height:28px;">📋 Copy Link</button>
+                <a id="chk-open-chat" href="#" target="_blank" class="ba-btn ba-btn-sm" style="font-size:0.78rem; min-height:28px;">Open Chat</a>
+              </div>
+            </div>
+          </div>
+
           <div class="ai-brief-card" id="ai-executive-brief">
-            <!-- Top bar: Assistant Identity, Status Dot, Plan & Usage, Quick Actions -->
+            <!-- Top bar: Identity, Status Dots, Plan & Usage, Quick Actions -->
             <div class="brief-top-bar">
               <div class="brief-identity">
                 <div class="brief-avatar">
@@ -318,6 +521,14 @@
                   </div>
                   <p id="brief-status-desc" class="ba-muted" style="margin:3px 0 0; font-size:0.84rem;">AI Co-Pilot running customer communications and operational intelligence.</p>
                   <p id="status-line" style="display:none;"></p>
+                  <!-- Status Strip: WhatsApp status & Chat link -->
+                  <div class="brief-status-strip" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:8px; font-size:0.8125rem;">
+                    <div id="strip-wa-status" style="display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; background:var(--ba-surface-sunken); border:1px solid var(--ba-border); font-weight:600;">
+                      <span class="brief-status-dot provisioning" id="strip-wa-dot"></span>
+                      <span id="strip-wa-label">Checking WhatsApp…</span>
+                    </div>
+                    <button type="button" class="ba-btn ba-btn-secondary ba-btn-sm" onclick="copyWebChatLink()" style="min-height:28px; padding:3px 10px; font-size:0.75rem;">📋 Copy Chat Link</button>
+                  </div>
                 </div>
               </div>
 
@@ -359,20 +570,86 @@
               <div id="bq-answer" class="ba-muted" style="margin-top:12px; white-space:pre-wrap; font-size:0.9rem; line-height:1.5;"></div>
             </div>
 
-            <!-- Section 1: "Here's what happened" -->
-            <div class="brief-section-block" style="border-top:none; padding-top:4px;">
+            <!-- Legacy attn-banner kept in DOM for backwards compatibility -->
+            <div id="attn-banner" class="attn-banner" style="display:none;"></div>
+
+            <!-- Section 1: "Needs you" Merged List -->
+            <div class="brief-section-block" id="command-center">
               <div class="brief-section-title">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Here's what happened
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Needs you
               </div>
+              <p class="ba-muted" style="margin:0 0 12px; font-size:0.8125rem;">Items that require your human decision or review.</p>
+
+              <!-- Merged Needs You List Container -->
+              <div id="cc-merged-needs-you">
+                <div class="ba-muted" style="font-size:0.875rem;">Loading…</div>
+              </div>
+
+              <!-- Approvals Card & Attention Card kept for ID compatibility -->
+              <div id="cc-approvals-card" style="display:none;">
+                <div id="cc-approvals-list"></div>
+              </div>
+              <div id="cc-attention-card" style="display:none;">
+                <ul id="cc-attention-list"></ul>
+              </div>
+
+              <!-- Quiet upgrade line for starter plan (no giant blocking banner) -->
+              <div id="cc-quiet-upgrade-line" style="display:none; margin-top:10px; font-size:0.8125rem; padding:8px 12px; background:var(--ba-surface-sunken); border:1px solid var(--ba-border); border-radius:var(--ba-radius-sm); color:var(--ba-ink-soft);">
+                Want automated approval routing and proactive complaint escalation? <a href="#growth" style="color:var(--ba-primary); font-weight:600;">Upgrade to Growth</a>
+              </div>
+            </div>
+
+            <!-- Section 2: "Bizistic handled" (7-day truthful summary) -->
+            <div class="brief-section-block">
+              <div class="brief-section-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
+                Bizistic handled (last 7 days)
+              </div>
+              <p class="ba-muted" style="margin:0 0 10px; font-size:0.8125rem;">Actions taken autonomously by Bizistic without interrupting you.</p>
+
               <div id="ai-brief-narrative" class="brief-narrative-text">
                 Loading activity summary…
               </div>
 
-              <!-- High-density Linear-style metrics bar -->
+              <!-- 7-day truthful counts row -->
+              <div class="brief-metrics-row" id="handled-metrics-row" style="margin-top:10px; margin-bottom:14px;">
+                <div class="brief-metric-tile">
+                  <div class="lbl">Questions Answered</div>
+                  <div class="val" id="handled-answered">0</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">Leads Captured</div>
+                  <div class="val" id="handled-leads">0</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">WhatsApp Replies</div>
+                  <div class="val" id="handled-whatsapp">0</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">Automations Run</div>
+                  <div class="val" id="handled-automations">0</div>
+                </div>
+                <div class="brief-metric-tile">
+                  <div class="lbl">Complaints Caught</div>
+                  <div class="val" id="handled-complaints">0</div>
+                </div>
+              </div>
+
+              <ul id="cc-automated-list" style="margin:0; padding-left:20px; font-size:0.84rem;">
+                <li class="ba-muted">Nothing yet — configure recipes under Automation.</li>
+              </ul>
+            </div>
+
+            <!-- Section 3: Numbers (At most 4 tiles, hide revenue/conversion on basic/starter) -->
+            <div class="brief-section-block">
+              <div class="brief-section-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Numbers
+              </div>
               <div class="brief-metrics-row">
                 <div class="brief-metric-tile">
-                  <div class="lbl">Questions Asked</div>
+                  <div class="lbl">Total Questions</div>
                   <div class="val" id="m-total">—</div>
                 </div>
                 <div class="brief-metric-tile">
@@ -387,74 +664,42 @@
                   <div class="lbl">Buying Interest</div>
                   <div class="val" id="m-intent">—</div>
                 </div>
-                <div class="brief-metric-tile">
+                <!-- Extra tiles: hidden on Basic/starter or when 0 -->
+                <div class="brief-metric-tile" id="tile-revenue" style="display:none;">
                   <div class="lbl">Confirmed Rev</div>
                   <div class="val" id="cc-revenue">—</div>
                 </div>
-                <div class="brief-metric-tile">
+                <div class="brief-metric-tile" id="tile-conversion" style="display:none;">
                   <div class="lbl">Conversion</div>
                   <div class="val" id="cc-conversion">—</div>
                 </div>
               </div>
             </div>
 
-            <div id="attn-banner" class="attn-banner" style="margin-top:20px; margin-bottom:0;">
-              <div class="ba-skeleton" style="height:28px; width:220px; margin-bottom:8px;"></div>
-              <div class="ba-skeleton" style="height:16px; width:320px;"></div>
-            </div>
-
-            <!-- Section 2: "Here's what I need you to decide" -->
-            <div class="brief-section-block" id="command-center">
-              <div class="brief-section-title">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                Here's what I need you to decide
-              </div>
-
-              <div id="cc-approvals-card" style="margin-bottom:14px;">
-                <div style="font-weight:600; font-size:0.875rem; margin-bottom:6px; color:var(--ba-ink-soft);">Approvals Waiting on You</div>
-                <div id="cc-approvals-list" class="ba-muted">Loading…</div>
-              </div>
-
-              <div id="cc-attention-card">
-                <div style="font-weight:600; font-size:0.875rem; margin-bottom:6px; color:var(--ba-ink-soft);">Needs Your Immediate Attention</div>
-                <ul id="cc-attention-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Loading…</li></ul>
-              </div>
-            </div>
-
-            <!-- Section 3: "Here's what I handled automatically" -->
-            <div class="brief-section-block">
-              <div class="brief-section-title">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
-                Here's what I handled automatically
-              </div>
-              <p class="ba-muted" style="margin:0 0 8px; font-size:0.8125rem;">Actions taken autonomously by your configured rules without interrupting you.</p>
-              <ul id="cc-automated-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Nothing yet — configure rules under Automation.</li></ul>
-            </div>
-
-            <!-- Section 4: "Here's what I recommend" -->
-            <div class="brief-section-block">
+            <!-- Section 4: Recommendations (Collapsed/hidden when empty) -->
+            <div class="brief-section-block" id="cc-recommendations-block" style="display:none;">
               <div class="brief-section-title">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-                Here's what I recommend
+                Recommendations
               </div>
               <div style="display:flex; gap:16px; margin-bottom:10px; flex-wrap:wrap;">
                 <div style="font-size:0.84rem;"><span class="ba-muted">Missed Opportunities:</span> <strong id="cc-opportunities">—</strong></div>
                 <div style="font-size:0.84rem;"><span class="ba-muted">Tasks Overdue:</span> <strong id="cc-overdue">—</strong></div>
               </div>
-              <ul id="cc-recommended-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Analyzing business patterns…</li></ul>
+              <ul id="cc-recommended-list" style="margin:0; padding-left:20px;"><li class="ba-muted">Nothing to recommend right now.</li></ul>
             </div>
           </div>
         </section>
 
         <section class="dash-section" id="knowledge">
           <div class="dash-section-head">
-            <h2>Knowledge Gaps</h2>
-            <p class="ba-muted" style="margin:0;">Questions your assistant couldn't answer — draft with AI, edit, and publish in one click.</p>
+            <h2>Questions to Answer</h2>
+            <p class="ba-muted" style="margin:0;">Questions your assistant couldn't answer — draft with AI, edit, and save in one click.</p>
           </div>
           <div id="gaps-list"></div>
 
           <div class="ba-card" style="margin-top: 20px;">
-            <h3 style="margin-top:0;">Add Knowledge</h3>
+            <h3 style="margin-top:0;">Add Business Info</h3>
             <div class="ba-field">
               <label class="ba-label">Add your website</label>
               <div style="display:flex; gap:8px;">
@@ -467,9 +712,17 @@
               <input type="file" id="upload-file" accept=".pdf,.txt,.md">
               <button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:8px;" onclick="uploadFile()">Upload</button>
             </div>
+            <div class="ba-field" style="margin-top:14px; margin-bottom:6px;">
+              <label class="ba-label">Or paste text (menu, timings, policies)</label>
+              <input class="ba-input" id="paste-text-title" placeholder="Title (e.g. Menu, Timings, Cancellation rules)" style="margin-bottom:6px;">
+              <textarea class="ba-input" id="paste-text-content" rows="4" placeholder="Paste your text here..."></textarea>
+              <button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:8px;" onclick="ingestPastedText()">Save Text</button>
+            </div>
             <div id="knowledge-status" class="ba-muted"></div>
             <h3 style="font-size: 0.875rem; margin-top:18px;">Sources added</h3>
-            <table class="ba-table" id="sources-table"><tbody></tbody></table>
+            <div class="ba-table-responsive">
+              <table class="ba-table" id="sources-table"><tbody></tbody></table>
+            </div>
           </div>
         </section>
 
@@ -479,10 +732,12 @@
             <p class="ba-muted" style="margin:0;">Once you've completed a service for a lead, request a review — sent on WhatsApp for WhatsApp leads, or by email otherwise.</p>
           </div>
           <div class="ba-card" style="padding:0; overflow:hidden;">
-            <table class="ba-table" id="leads-table" style="margin:0;">
-              <thead><tr><th>Channel</th><th>Name</th><th>Stage</th><th>Phone</th><th>Email</th><th>Message</th><th>Appointment</th><th>Actions</th></tr></thead>
-              <tbody></tbody>
-            </table>
+            <div class="ba-table-responsive" style="margin-bottom:0;">
+              <table class="ba-table" id="leads-table" style="margin:0;">
+                <thead><tr><th>Channel</th><th>Name</th><th>Stage</th><th>Phone</th><th>Email</th><th>Message</th><th>Appointment</th><th>Actions</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -494,7 +749,9 @@
 
           <div class="ba-card">
             <h3 style="margin-top:0;">Employees</h3>
-            <table class="ba-table" id="employees-table"><thead><tr><th>Name</th><th>WhatsApp</th><th>Role</th><th>Status</th></tr></thead><tbody></tbody></table>
+            <div class="ba-table-responsive">
+              <table class="ba-table" id="employees-table"><thead><tr><th>Name</th><th>WhatsApp</th><th>Role</th><th>Status</th></tr></thead><tbody></tbody></table>
+            </div>
             <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
               <input class="ba-input" id="new-emp-name" placeholder="Name" style="max-width:160px;">
               <input class="ba-input" id="new-emp-whatsapp" placeholder="WhatsApp number, no +" style="max-width:180px;">
@@ -509,7 +766,9 @@
 
           <div class="ba-card">
             <h3 style="margin-top:0;">Open Tasks</h3>
-            <table class="ba-table" id="tasks-table"><thead><tr><th>Task</th><th>Assigned to</th><th>Due</th><th>Status</th></tr></thead><tbody></tbody></table>
+            <div class="ba-table-responsive">
+              <table class="ba-table" id="tasks-table"><thead><tr><th>Task</th><th>Assigned to</th><th>Due</th><th>Status</th></tr></thead><tbody></tbody></table>
+            </div>
             <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center;">
               <input class="ba-input" id="new-task-title" placeholder="Task title" style="flex:1; min-width:160px;">
               <select class="ba-input" id="new-task-assignee" style="max-width:160px;"></select>
@@ -524,7 +783,9 @@
 
           <div class="ba-card" id="shifts-card">
             <h3 style="margin-top:0;">Shifts <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— today</span></h3>
-            <table class="ba-table" id="shifts-table"><thead><tr><th>Employee</th><th>Time</th><th>Role</th><th></th></tr></thead><tbody></tbody></table>
+            <div class="ba-table-responsive">
+              <table class="ba-table" id="shifts-table"><thead><tr><th>Employee</th><th>Time</th><th>Role</th><th></th></tr></thead><tbody></tbody></table>
+            </div>
             <div id="shifts-empty" class="ba-muted" style="display:none;">No shifts scheduled today.</div>
             <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
               <select class="ba-input" id="new-shift-employee" style="max-width:160px;"></select>
@@ -595,7 +856,9 @@
             <div class="ba-card">
               <h3 style="margin-top:0;">Processes &amp; Bus Factor</h3>
               <p class="ba-muted" style="margin-top:-6px;">A recurring task counted as one "process" — bus factor is how many different people have ever completed it.</p>
-              <table class="ba-table" id="bm-processes-table"><thead><tr><th>Process</th><th>Instances</th><th>Bus Factor</th><th>Most Relied On</th></tr></thead><tbody></tbody></table>
+              <div class="ba-table-responsive">
+                <table class="ba-table" id="bm-processes-table"><thead><tr><th>Process</th><th>Instances</th><th>Bus Factor</th><th>Most Relied On</th></tr></thead><tbody></tbody></table>
+              </div>
             </div>
 
             <div class="grid-2-col" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
@@ -652,7 +915,9 @@
 
           <div class="ba-card">
             <h3 style="margin-top:0;">Rules</h3>
-            <table class="ba-table" id="automation-rules-table"><thead><tr><th>Name</th><th>Trigger</th><th>Action</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
+            <div class="ba-table-responsive">
+              <table class="ba-table" id="automation-rules-table"><thead><tr><th>Name</th><th>Trigger</th><th>Action</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
+            </div>
 
             <details style="margin-top:16px;">
               <summary style="cursor:pointer; font-weight:600;">Build your own rule</summary>
@@ -699,15 +964,17 @@
 
           <div class="ba-card">
             <h3 style="margin-top:0;">Execution History</h3>
-            <table class="ba-table" id="automation-runs-table"><thead><tr><th>When</th><th>Rule</th><th>Action</th><th>Target</th><th>Status</th></tr></thead><tbody></tbody></table>
+            <div class="ba-table-responsive">
+              <table class="ba-table" id="automation-runs-table"><thead><tr><th>When</th><th>Rule</th><th>Action</th><th>Target</th><th>Status</th></tr></thead><tbody></tbody></table>
+            </div>
             <div id="automation-runs-empty" class="ba-muted" style="display:none;">No automated actions have run yet.</div>
           </div>
         </section>
 
         <section class="dash-section" id="evolution">
           <div class="dash-section-head">
-            <h2>Self-Evolution</h2>
-            <p class="ba-muted" style="margin:0;">Bizistic can propose small, reviewable adjustments to your assistant's tone when it detects a real pattern of customer dissatisfaction — never anything else, and never live until you approve it. Off by default.</p>
+            <h2>Assistant Improvements</h2>
+            <p class="ba-muted" style="margin:0;">Bizistic can propose small, reviewable adjustments to your assistant's tone when it detects a real pattern of customer dissatisfaction — tested for safety and never live until you approve it. Off by default.</p>
           </div>
 
           <div id="evolution-content">
@@ -734,8 +1001,10 @@
 
             <div class="ba-card">
               <h3 style="margin-top:0;">Version History</h3>
-              <table class="ba-table" id="evolution-versions-table"><thead><tr><th>Status</th><th>Tone Guidance</th><th>Created By</th><th>Activated</th><th></th></tr></thead><tbody></tbody></table>
-              <div id="evolution-versions-empty" class="ba-muted" style="display:none;">No self-evolution history yet.</div>
+              <div class="ba-table-responsive">
+                <table class="ba-table" id="evolution-versions-table"><thead><tr><th>Status</th><th>Tone Guidance</th><th>Created By</th><th>Activated</th><th></th></tr></thead><tbody></tbody></table>
+              </div>
+              <div id="evolution-versions-empty" class="ba-muted" style="display:none;">No assistant improvement history yet.</div>
             </div>
           </div>
         </section>
@@ -768,7 +1037,9 @@
 
             <div class="ba-card">
               <h3 style="margin-top:0;">Weekly Scorecard</h3>
-              <table class="ba-table" id="bi-scorecard-table"><thead><tr><th>Metric</th><th>This week</th><th>Prior week</th></tr></thead><tbody></tbody></table>
+              <div class="ba-table-responsive">
+                <table class="ba-table" id="bi-scorecard-table"><thead><tr><th>Metric</th><th>This week</th><th>Prior week</th></tr></thead><tbody></tbody></table>
+              </div>
               <div style="margin-top:10px;">
                 <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="startFollowUpTask(null, 'Review this weeks scorecard')">Create follow-up task from this</button>
               </div>
@@ -799,7 +1070,9 @@
 
             <div class="ba-card">
               <h3 style="margin-top:0;">Menu Engineering <span class="ba-muted" style="font-weight:normal; font-size:.85em;">— last 30 days</span></h3>
-              <table class="ba-table" id="ri-menu-table"><thead><tr><th>Dish</th><th>Sold</th><th>Food cost</th><th>Profit</th><th>Classification</th></tr></thead><tbody></tbody></table>
+              <div class="ba-table-responsive">
+                <table class="ba-table" id="ri-menu-table"><thead><tr><th>Dish</th><th>Sold</th><th>Food cost</th><th>Profit</th><th>Classification</th></tr></thead><tbody></tbody></table>
+              </div>
               <div id="ri-menu-empty" class="ba-muted" style="display:none;">No active menu items yet — add one from the Restaurant setup screen (API/dashboard-driven, see docs).</div>
             </div>
 
@@ -843,7 +1116,9 @@
 
             <div class="ba-card">
               <h3 style="margin-top:0;">Supplier Spend</h3>
-              <table class="ba-table" id="ri-supplier-table"><thead><tr><th>Supplier</th><th>Spend</th><th>Purchases</th><th>Ingredients</th></tr></thead><tbody></tbody></table>
+              <div class="ba-table-responsive">
+                <table class="ba-table" id="ri-supplier-table"><thead><tr><th>Supplier</th><th>Spend</th><th>Purchases</th><th>Ingredients</th></tr></thead><tbody></tbody></table>
+              </div>
               <div id="ri-supplier-unattributed" class="ba-muted" style="margin-top:8px;"></div>
             </div>
 
@@ -950,18 +1225,78 @@
         <section class="dash-section" id="whatsapp">
           <div class="dash-section-head">
             <h2>WhatsApp Assistant</h2>
-            <p class="ba-muted" style="margin:0;">Let customers message your assistant directly on WhatsApp — same knowledge base, same lead capture, same complaint alerts as the website chat.</p>
+            <p class="ba-muted" style="margin:0;">Let customers message your assistant directly on WhatsApp — same business info, same lead capture, same complaint alerts as the website chat.</p>
           </div>
-          <div class="ba-card">
-            <p class="ba-muted" style="margin-top:0;">Connect your own WhatsApp Business number from
-              <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers</a> —
-              add the WhatsApp product, copy your <strong>Phone Number ID</strong> and generate a
-              <strong>permanent access token</strong>, then paste both here.</p>
-            <div class="ba-field"><label class="ba-label">WhatsApp Phone Number ID</label><input class="ba-input" id="cfg-wa-phone-id" placeholder="e.g. 109876543210987"></div>
-            <div class="ba-field"><label class="ba-label">WhatsApp Access Token</label><input class="ba-input" type="password" id="cfg-wa-token" placeholder="Permanent access token from Meta"></div>
-            <button class="ba-btn" onclick="saveWhatsappSettings(event)">Save WhatsApp Connection</button>
-            <p id="wa-status" class="ba-muted" style="margin-bottom:0;"></p>
+
+          <!-- Concierge setup help request -->
+          <div class="ba-card" style="border-left: 3px solid var(--ba-primary);">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap;">
+              <div>
+                <h3 style="margin-top:0; margin-bottom:4px;">Want help connecting WhatsApp?</h3>
+                <p class="ba-muted" style="margin:0; font-size:0.875rem;">Leave your number — we'll set up your Meta Cloud API and number with you, no technical steps required.</p>
+              </div>
+              <span class="ba-badge ba-badge-primary">Free Setup Concierge</span>
+            </div>
+            <div style="margin-top:14px; display:flex; flex-direction:column; gap:10px; max-width:480px;">
+              <div class="ba-field" style="margin:0;">
+                <label class="ba-label" for="dash-wa-help-phone">Your phone number</label>
+                <input class="ba-input" id="dash-wa-help-phone" placeholder="e.g. 9876543210 or +91 98765 43210">
+              </div>
+              <div class="ba-field" style="margin:0;">
+                <label class="ba-label">Preferred contact method</label>
+                <div style="display:flex; gap:16px; margin-top:4px;">
+                  <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.875rem; cursor:pointer;">
+                    <input type="radio" name="dash_wa_contact_method" value="whatsapp" checked> WhatsApp message
+                  </label>
+                  <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.875rem; cursor:pointer;">
+                    <input type="radio" name="dash_wa_contact_method" value="call"> Phone call
+                  </label>
+                </div>
+              </div>
+              <div class="ba-field" style="margin:0;">
+                <label class="ba-label" for="dash-wa-help-note">Optional note</label>
+                <textarea class="ba-input" id="dash-wa-help-note" rows="2" placeholder="e.g. Preferred call time, existing WhatsApp Business app details"></textarea>
+              </div>
+              <div>
+                <button class="ba-btn ba-btn-sm" id="dash-wa-help-btn" onclick="requestDashWhatsappHelp()">Request WhatsApp Setup</button>
+              </div>
+              <div id="dash-wa-help-status" style="font-size:0.84rem; margin-top:4px;"></div>
+            </div>
           </div>
+
+          <!-- Collapsed manual checklist -->
+          <details style="margin-top:14px;" id="dash-wa-manual-details">
+            <summary style="cursor:pointer; font-weight:600; font-size:0.875rem; color:var(--ba-ink-soft); padding:4px 0;">I'll do it myself (advanced)</summary>
+            <div id="dash-wa-manual-box" style="margin-top:12px;">
+              <div class="ba-card" style="margin-top:0;">
+                <div style="margin-bottom:18px; padding:14px 16px; background:var(--ba-surface-sunken); border:1px solid var(--ba-border); border-radius:var(--ba-radius-sm);">
+                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:10px; color:var(--ba-ink);">Manual Cloud API Setup Checklist (~10 minutes):</div>
+                  <ol style="margin:0; padding-left:20px; font-size:0.8125rem; color:var(--ba-ink-soft); line-height:1.6;">
+                    <li style="margin-bottom:8px;">
+                      <strong>Meta App &amp; WhatsApp Product:</strong> In <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers &rarr; My Apps</a>, create a Meta App (type: <strong>Business</strong>) and add the <strong>WhatsApp</strong> product to it.
+                    </li>
+                    <li style="margin-bottom:8px;">
+                      <strong>Phone Number ID:</strong> Under <strong>WhatsApp &gt; API Setup</strong> in your Meta App, add or select your phone number. Copy the numeric <strong>Phone Number ID</strong> (not the phone number itself).
+                    </li>
+                    <li style="margin-bottom:8px;">
+                      <strong>Permanent Access Token:</strong> In <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Meta Business Settings &rarr; System Users</a>, create a System User, assign your WhatsApp account asset with the <code>whatsapp_business_messaging</code> permission, and generate a <strong>permanent access token</strong> (or temporary test token).
+                    </li>
+                    <li style="margin-bottom:8px;">
+                      <strong>Save Connection:</strong> Paste your <strong>Phone Number ID</strong> and <strong>access token</strong> into the fields below and click <strong>Save WhatsApp Connection</strong>.
+                    </li>
+                    <li>
+                      <strong>Message your number:</strong> Message that WhatsApp number from any phone — your assistant will answer from your ingested business info within seconds!
+                    </li>
+                  </ol>
+                </div>
+                <div class="ba-field"><label class="ba-label">WhatsApp Phone Number ID</label><input class="ba-input" id="cfg-wa-phone-id" placeholder="e.g. 109876543210987"></div>
+                <div class="ba-field"><label class="ba-label">WhatsApp Access Token</label><input class="ba-input" type="password" id="cfg-wa-token" placeholder="Permanent access token from Meta"></div>
+                <button class="ba-btn" onclick="saveWhatsappSettings(event)">Save WhatsApp Connection</button>
+                <p id="wa-status" class="ba-muted" style="margin-bottom:0;"></p>
+              </div>
+            </div>
+          </details>
+
           <div class="ba-card">
             <h3 style="margin-top:0;">Your own WhatsApp number</h3>
             <p class="ba-muted">Get instant complaint alerts and the daily summary pushed to your own WhatsApp, and text your business's number anytime to ask "what needs my attention today?"</p>
@@ -1010,16 +1345,18 @@
     // member for the life of the business.
     const staffSessionId = 'staff_' + Math.random().toString(36).slice(2, 10);
 
-    // Team/Business Health read from endpoints gated owner/manager-only
-    // (VIEW_FEEDBACK, MANAGE_EMPLOYEES, ASSIGN_TASK) — a staff dashboard
-    // login would just get a wall of 403s, so hide the nav entirely
-    // rather than show a broken section.
+    // Role-based navigation and section visibility
     if (role !== 'owner') {
-      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#command-center"], a[href="#automation"], a[href="#business-map"], a[href="#evolution"], a[href="#business-intel"], a[href="#restaurant-intel"]').forEach(el => el.remove());
-      ['team', 'health', 'command-center', 'automation', 'business-map', 'evolution', 'business-intel', 'restaurant-intel'].forEach(id => {
+      document.querySelectorAll('a[href="#team"], a[href="#health"], a[href="#automation"], a[href="#business-map"], a[href="#evolution"], a[href="#business-intel"], a[href="#restaurant-intel"], a[href="#growth"], a[href="#settings"]').forEach(el => el.remove());
+      ['team', 'health', 'automation', 'business-map', 'evolution', 'business-intel', 'restaurant-intel', 'growth', 'settings'].forEach(id => {
         const section = document.getElementById(id);
         if (section) section.remove();
       });
+      const advToggle = document.getElementById('dash-advanced-toggle');
+      if (advToggle) advToggle.remove();
+      const advGroup = document.getElementById('dash-advanced-group');
+      if (advGroup) advGroup.remove();
+      document.querySelectorAll('.brief-actions-bar button[onclick*="runTenantAutomation"], .brief-actions-bar button[onclick*="syncTenantReviews"]').forEach(el => el.remove());
     }
 
     function escapeHtml(str) {
@@ -1079,6 +1416,11 @@
     let currentAnalytics = { total_questions: 0, answered_count: 0, buying_intent_count: 0, dissatisfaction_count: 0 };
     let currentLeads = [];
     let currentCommandCenter = null;
+    let currentApprovals = [];
+    let currentGaps = [];
+    let currentTasks = [];
+    let currentSources = [];
+    let currentRules = [];
 
     function renderAssistantStatus(t) {
       currentTenant = t;
@@ -1103,27 +1445,80 @@
         if (label) label.innerText = 'Setup in Progress';
         if (desc) desc.innerText = 'Ready to activate once your first knowledge source is indexed.';
       }
+
+      // Update WhatsApp status in status strip
+      const waDot = document.getElementById('strip-wa-dot');
+      const waLabel = document.getElementById('strip-wa-label');
+      if (waDot && waLabel) {
+        if (t.whatsapp_phone_number_id) {
+          waDot.className = 'brief-status-dot active';
+          waLabel.innerText = `WhatsApp Connected (${t.whatsapp_number || t.whatsapp_phone_number_id})`;
+        } else {
+          waDot.className = 'brief-status-dot provisioning';
+          waLabel.innerText = 'WhatsApp not connected — assistant only reachable via web chat';
+        }
+      }
+      updateSetupChecklist({ tenant: t, sources: currentSources, rules: currentRules });
     }
 
     function updateAiBriefNarrative() {
       const el = document.getElementById('ai-brief-narrative');
-      if (!el) return;
       const total = currentAnalytics?.total_questions || 0;
       const answered = currentAnalytics?.answered_count || 0;
-      const leadCount = (currentLeads || []).length;
+      const leads = currentLeads || [];
+      const leadCount = leads.length;
+      const waLeads = leads.filter(l => l.source === 'whatsapp').length;
       const intent = currentAnalytics?.buying_intent_count || 0;
       const complaints = currentAnalytics?.dissatisfaction_count || 0;
       const rev = currentCommandCenter?.revenue_opportunities?.confirmed_revenue_inr || 0;
       const conv = currentCommandCenter?.revenue_opportunities?.conversion_rate_pct || 0;
+      const automations = (currentCommandCenter?.automated_actions_taken || []).length;
 
-      let narrative = `Over the past 7 days, I handled <strong>${total}</strong> customer questions (${answered} answered directly from your verified knowledge base), captured <strong>${leadCount}</strong> qualified leads, and flagged <strong>${intent}</strong> high-buying-intent conversations.`;
-      if (rev > 0) {
-        narrative += ` We have confirmed <strong>₹${rev.toLocaleString('en-IN')}</strong> in booking revenue at a <strong>${conv}%</strong> conversion rate.`;
+      // Update truthful count tiles
+      const hAns = document.getElementById('handled-answered');
+      if (hAns) hAns.innerText = answered;
+      const hLeads = document.getElementById('handled-leads');
+      if (hLeads) hLeads.innerText = leadCount;
+      const hWa = document.getElementById('handled-whatsapp');
+      if (hWa) hWa.innerText = waLeads;
+      const hAuto = document.getElementById('handled-automations');
+      if (hAuto) hAuto.innerText = automations;
+      const hComp = document.getElementById('handled-complaints');
+      if (hComp) hComp.innerText = complaints;
+
+      // Numbers extra tiles: only show revenue/conversion if growth/scale AND rev > 0
+      const tileRev = document.getElementById('tile-revenue');
+      const tileConv = document.getElementById('tile-conversion');
+      const showRev = (currentPlan === 'growth' || currentPlan === 'scale') && rev > 0;
+      if (tileRev) tileRev.style.display = showRev ? '' : 'none';
+      if (tileConv) tileConv.style.display = showRev ? '' : 'none';
+
+      // Recommendations block: only show if cc has recommended_actions or missed_opportunities/tasks_overdue > 0 and not starter
+      const recBlock = document.getElementById('cc-recommendations-block');
+      if (recBlock) {
+        const hasRecs = currentCommandCenter && (
+          (currentCommandCenter.recommended_actions || []).length > 0 ||
+          (currentCommandCenter.revenue_opportunities?.missed_opportunities || 0) > 0 ||
+          (currentCommandCenter.operational_problems?.tasks_overdue || 0) > 0
+        );
+        recBlock.style.display = (hasRecs && currentPlan !== 'starter') ? 'block' : 'none';
+      }
+
+      if (!el) return;
+
+      if (total === 0 && leadCount === 0 && complaints === 0) {
+        el.innerHTML = '<span class="ba-muted">No activity recorded yet in the last 7 days. Share your chat link or connect WhatsApp to get started.</span>';
+        return;
+      }
+
+      let narrative = `Over the past 7 days, Bizistic handled <strong>${total}</strong> customer questions (${answered} answered directly from your verified business info), captured <strong>${leadCount}</strong> qualified leads, and flagged <strong>${intent}</strong> high-buying-intent conversations.`;
+      if (rev > 0 && (currentPlan === 'growth' || currentPlan === 'scale')) {
+        narrative += ` Confirmed <strong>₹${rev.toLocaleString('en-IN')}</strong> in booking revenue at a <strong>${conv}%</strong> conversion rate.`;
       }
       if (complaints > 0) {
-        narrative += ` <span style="color:var(--ba-error-text); font-weight:600;">⚠️ I caught and alerted you to ${complaints} customer complaint${complaints > 1 ? 's' : ''} to prevent negative reviews.</span>`;
+        narrative += ` <span style="color:var(--ba-error-text); font-weight:600;">⚠️ ${complaints} customer complaint${complaints > 1 ? 's' : ''} flagged to protect reviews.</span>`;
       } else {
-        narrative += ` Customer interactions are positive with zero customer complaints flagged.`;
+        narrative += ` Customer interactions are positive with zero complaints flagged.`;
       }
       el.innerHTML = narrative;
     }
@@ -1269,6 +1664,211 @@
       }
     }
 
+    function copyWebChatLink() {
+      const url = `${window.location.origin}/chat?tenant_id=${encodeURIComponent(tenantId)}`;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          showToast('Chat link copied to clipboard!');
+        }).catch(() => {
+          prompt('Copy your chat link:', url);
+        });
+      } else {
+        prompt('Copy your chat link:', url);
+      }
+    }
+
+    function updateSetupChecklist({ tenant, sources, rules } = {}) {
+      const card = document.getElementById('setup-checklist-card');
+      if (!card) return;
+
+      if (role !== 'owner') {
+        card.style.display = 'none';
+        return;
+      }
+
+      const t = tenant || currentTenant;
+      const isActivated = t && t.status === 'active';
+      const hasKnowledge = (sources || currentSources || []).length > 0;
+      const hasWhatsApp = !!(t && t.whatsapp_phone_number_id);
+      const hasAutomation = (rules || currentRules || []).length >= 1;
+
+      let doneCount = 0;
+      if (isActivated) doneCount++;
+      if (hasKnowledge) doneCount++;
+      if (hasWhatsApp) doneCount++;
+      if (hasAutomation) doneCount++;
+
+      // Auto-hide when all 4 complete and active
+      if (doneCount === 4 && isActivated) {
+        card.style.display = 'none';
+        return;
+      }
+
+      card.style.display = 'block';
+
+      const progEl = document.getElementById('setup-checklist-progress');
+      if (progEl) {
+        progEl.textContent = `${doneCount} of 4 complete`;
+        progEl.className = `ba-badge ${doneCount === 4 ? 'ba-badge-primary' : 'ba-badge-neutral'}`;
+      }
+
+      // Item 1: Pay & activate
+      const itemAct = document.getElementById('chk-item-activate');
+      const iconAct = document.getElementById('chk-icon-activate');
+      const actAction = document.getElementById('chk-action-activate');
+      if (itemAct) itemAct.classList.toggle('done', isActivated);
+      if (iconAct) iconAct.textContent = isActivated ? '✓' : '○';
+      if (actAction) {
+        if (isActivated) {
+          actAction.innerHTML = '<span class="ba-muted" style="font-size:0.75rem; color:var(--ba-primary); font-weight:600;">Active ✓</span>';
+        } else {
+          actAction.innerHTML = '<button class="ba-btn ba-btn-sm" style="font-size:0.75rem; padding:3px 8px; min-height:26px;" onclick="selfActivate()">Activate Now</button>';
+        }
+      }
+
+      // Item 2: Add business info
+      const itemKnow = document.getElementById('chk-item-knowledge');
+      const iconKnow = document.getElementById('chk-icon-knowledge');
+      const knowAction = document.getElementById('chk-action-knowledge');
+      if (itemKnow) itemKnow.classList.toggle('done', hasKnowledge);
+      if (iconKnow) iconKnow.textContent = hasKnowledge ? '✓' : '○';
+      if (knowAction && hasKnowledge) {
+        knowAction.innerHTML = '<span class="ba-muted" style="font-size:0.75rem; color:var(--ba-primary); font-weight:600;">Added ✓</span>';
+      }
+
+      // Item 3: Connect WhatsApp
+      const itemWa = document.getElementById('chk-item-whatsapp');
+      const iconWa = document.getElementById('chk-icon-whatsapp');
+      const waAction = document.getElementById('chk-action-whatsapp');
+      if (itemWa) itemWa.classList.toggle('done', hasWhatsApp);
+      if (iconWa) iconWa.textContent = hasWhatsApp ? '✓' : '○';
+      if (waAction && hasWhatsApp) {
+        waAction.innerHTML = '<span class="ba-muted" style="font-size:0.75rem; color:var(--ba-primary); font-weight:600;">Connected ✓</span>';
+      }
+
+      // Item 4: Automation
+      const itemAuto = document.getElementById('chk-item-automation');
+      const iconAuto = document.getElementById('chk-icon-automation');
+      const autoAction = document.getElementById('chk-action-automation');
+      if (itemAuto) itemAuto.classList.toggle('done', hasAutomation);
+      if (iconAuto) iconAuto.textContent = hasAutomation ? '✓' : '○';
+      if (autoAction && hasAutomation) {
+        autoAction.innerHTML = '<span class="ba-muted" style="font-size:0.75rem; color:var(--ba-primary); font-weight:600;">Active ✓</span>';
+      }
+
+      const chatLink = document.getElementById('chk-open-chat');
+      if (chatLink) {
+        chatLink.href = `/chat?tenant_id=${encodeURIComponent(tenantId)}`;
+      }
+    }
+
+    function renderNeedsYou({ approvals = [], gaps = [], cc = null, tasks = [], role = 'owner' } = {}) {
+      const container = document.getElementById('cc-merged-needs-you');
+      if (!container) return;
+
+      if (role !== 'owner') {
+        const openTasks = (tasks || []).filter(t => !['done', 'cancelled'].includes(t.status));
+        if (!openTasks.length) {
+          container.innerHTML = `
+            <div class="ba-card" style="text-align:center; padding:16px; color:var(--ba-primary); font-weight:600; background:rgba(31,92,78,0.06); border-color:rgba(31,92,78,0.2);">
+              ✓ All clear — no pending tasks assigned to you right now.
+            </div>`;
+        } else {
+          container.innerHTML = `
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              ${openTasks.map(t => `
+                <div class="ba-card" style="margin:0; padding:12px 14px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                  <div>
+                    <div style="font-weight:600; font-size:0.875rem; color:var(--ba-ink);">${escapeHtml(t.title)}</div>
+                    <div class="ba-muted" style="font-size:0.8125rem; margin-top:2px;">
+                      ${t.due_at ? `Due: ${escapeHtml(t.due_at.slice(0, 10))} · ` : ''}Status: <span class="stage-pill">${escapeHtml(t.status)}</span>
+                    </div>
+                  </div>
+                </div>`).join('')}
+            </div>`;
+        }
+        const quietLine = document.getElementById('cc-quiet-upgrade-line');
+        if (quietLine) quietLine.style.display = 'none';
+        return;
+      }
+
+      const items = [];
+
+      // 1. Approvals
+      (approvals || []).forEach(appr => {
+        items.push({
+          title: `${appr.type === 'task' ? 'Task Approval' : 'Assistant Tone Change'}: ${appr.title}`,
+          detail: appr.detail || '',
+          actionHtml: `
+            <button class="ba-btn ba-btn-sm" data-type="${escapeHtml(appr.type)}" data-id="${escapeHtml(appr.id)}" onclick="approveInboxItem(this)">Approve</button>
+            <button class="ba-btn ba-btn-secondary ba-btn-sm" data-type="${escapeHtml(appr.type)}" data-id="${escapeHtml(appr.id)}" onclick="rejectInboxItem(this)">Reject</button>
+          `
+        });
+      });
+
+      // 2. Knowledge Gaps
+      (gaps || []).forEach((gap) => {
+        items.push({
+          title: `Unanswered Question: "${gap.query}"`,
+          detail: 'Customer asked this and your assistant had no business info to answer.',
+          actionHtml: `<a href="#knowledge" class="ba-btn ba-btn-secondary ba-btn-sm">Answer in Business Info &rarr;</a>`
+        });
+      });
+
+      // 3. CC Attention items
+      if (cc && cc.needs_attention) {
+        (cc.needs_attention.overdue_task_lines || []).forEach(line => {
+          items.push({
+            title: `⚠️ ${line}`,
+            detail: 'Task has passed its due date.',
+            actionHtml: `<a href="#team" class="ba-btn ba-btn-secondary ba-btn-sm">View Team &rarr;</a>`
+          });
+        });
+        if (cc.needs_attention.unresolved_complaints > 0) {
+          items.push({
+            title: `⚠️ ${cc.needs_attention.unresolved_complaints} unresolved customer complaint${cc.needs_attention.unresolved_complaints > 1 ? 's' : ''}`,
+            detail: 'Flagged from customer conversations to prevent negative reviews.',
+            actionHtml: `<a href="#leads" class="ba-btn ba-btn-secondary ba-btn-sm">Check Leads &rarr;</a>`
+          });
+        }
+        if (cc.needs_attention.recurring_issues_without_sop > 0) {
+          items.push({
+            title: `⚠️ ${cc.needs_attention.recurring_issues_without_sop} recurring issue(s) without approved guidance`,
+            detail: 'Recurring customer complaints or operational friction without SOP guidance.',
+            actionHtml: `<a href="#health" class="ba-btn ba-btn-secondary ba-btn-sm">Add Guidance &rarr;</a>`
+          });
+        }
+      }
+
+      const quietLine = document.getElementById('cc-quiet-upgrade-line');
+      if (quietLine) {
+        quietLine.style.display = currentPlan === 'starter' ? 'block' : 'none';
+      }
+
+      if (items.length === 0) {
+        container.innerHTML = `
+          <div class="ba-card" style="text-align:center; padding:18px; color:var(--ba-primary); font-weight:600; background:rgba(31,92,78,0.06); border-color:rgba(31,92,78,0.2);">
+            ✓ All clear — nothing needs your attention right now.
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${items.map(item => `
+            <div class="ba-card" style="margin:0; padding:12px 14px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+              <div style="flex:1; min-width:240px;">
+                <div style="font-weight:600; font-size:0.875rem; color:var(--ba-ink);">${escapeHtml(item.title)}</div>
+                ${item.detail ? `<div class="ba-muted" style="font-size:0.8125rem; margin-top:2px;">${escapeHtml(item.detail)}</div>` : ''}
+              </div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                ${item.actionHtml}
+              </div>
+            </div>
+          `).join('')}
+        </div>`;
+    }
+
     function showToast(msg) {
       let toast = document.getElementById('brief-toast');
       if (!toast) {
@@ -1356,22 +1956,28 @@
       if (tRes.ok) {
         const t = await tRes.json();
         renderAssistantStatus(t);
-        document.getElementById('status-line').innerText = `Status: ${t.status}`;
+        const stLine = document.getElementById('status-line');
+        if (stLine) stLine.innerText = `Status: ${t.status}`;
         renderActivateBox(t);
-        document.getElementById('cfg-assistant-name').value = t.assistant_name || '';
-        document.getElementById('cfg-welcome').value = t.welcome_message || '';
-        document.getElementById('cfg-whatsapp').value = t.whatsapp_number || '';
-        document.getElementById('cfg-review-link').value = t.review_link || '';
-        document.getElementById('cfg-google-place-id').value = t.google_place_id || '';
-        document.getElementById('cfg-voice-notes-enabled').checked = !!t.voice_notes_enabled;
-        document.getElementById('cfg-wa-phone-id').value = t.whatsapp_phone_number_id || '';
-        document.getElementById('wa-status').innerText = t.whatsapp_phone_number_id
-          ? 'Connected — customers can message this number and your assistant replies automatically.'
-          : 'Not connected yet — customers can only reach you through the website chat until you add this.';
-        document.getElementById('cfg-deposit-amount').value = t.deposit_amount_inr || '';
-        document.getElementById('cfg-rzp-key-id').value = t.razorpay_key_id || '';
-        document.getElementById('cfg-winback-days').value = t.winback_after_days || '';
-        document.getElementById('cfg-owner-whatsapp').value = t.owner_whatsapp_number || '';
+        if (role === 'owner') {
+          const cfgName = document.getElementById('cfg-assistant-name'); if (cfgName) cfgName.value = t.assistant_name || '';
+          const cfgWel = document.getElementById('cfg-welcome'); if (cfgWel) cfgWel.value = t.welcome_message || '';
+          const cfgWa = document.getElementById('cfg-whatsapp'); if (cfgWa) cfgWa.value = t.whatsapp_number || '';
+          const cfgRev = document.getElementById('cfg-review-link'); if (cfgRev) cfgRev.value = t.review_link || '';
+          const cfgPlc = document.getElementById('cfg-google-place-id'); if (cfgPlc) cfgPlc.value = t.google_place_id || '';
+          const cfgVn = document.getElementById('cfg-voice-notes-enabled'); if (cfgVn) cfgVn.checked = !!t.voice_notes_enabled;
+          const cfgWaId = document.getElementById('cfg-wa-phone-id'); if (cfgWaId) cfgWaId.value = t.whatsapp_phone_number_id || '';
+          const waStatus = document.getElementById('wa-status');
+          if (waStatus) {
+            waStatus.innerText = t.whatsapp_phone_number_id
+              ? 'Connected — customers can message this number and your assistant replies automatically.'
+              : 'Not connected yet — customers can only reach you through the website chat until you add this.';
+          }
+          const cfgDep = document.getElementById('cfg-deposit-amount'); if (cfgDep) cfgDep.value = t.deposit_amount_inr || '';
+          const cfgRzp = document.getElementById('cfg-rzp-key-id'); if (cfgRzp) cfgRzp.value = t.razorpay_key_id || '';
+          const cfgWin = document.getElementById('cfg-winback-days'); if (cfgWin) cfgWin.value = t.winback_after_days || '';
+          const cfgOwnWa = document.getElementById('cfg-owner-whatsapp'); if (cfgOwnWa) cfgOwnWa.value = t.owner_whatsapp_number || '';
+        }
       }
 
       let analytics = { total_questions: 0, answered_count: 0, buying_intent_count: 0, dissatisfaction_count: 0 };
@@ -1379,12 +1985,16 @@
       if (aRes.ok) {
         analytics = await aRes.json();
         currentAnalytics = analytics;
-        document.getElementById('m-total').innerText = analytics.total_questions;
-        document.getElementById('m-answered').innerText = analytics.answered_count;
-        document.getElementById('m-intent').innerText = analytics.buying_intent_count;
+        const mTot = document.getElementById('m-total'); if (mTot) mTot.innerText = analytics.total_questions;
+        const mAns = document.getElementById('m-answered'); if (mAns) mAns.innerText = analytics.answered_count;
+        const mInt = document.getElementById('m-intent'); if (mInt) mInt.innerText = analytics.buying_intent_count;
       }
 
-      const gaps = await loadGaps();
+      let gaps = [];
+      if (role === 'owner') {
+        gaps = await loadGaps();
+        currentGaps = gaps;
+      }
 
       let leads = [];
       const lRes = await fetch(`/api/leads?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
@@ -1392,50 +2002,77 @@
         const l = await lRes.json();
         leads = l.leads;
         currentLeads = leads;
-        document.getElementById('m-leads').innerText = leads.length;
+        const mLeads = document.getElementById('m-leads'); if (mLeads) mLeads.innerText = leads.length;
         const canFollowUp = lead => lead.email || (lead.source === 'whatsapp' && lead.phone);
         const stageLabels = { new: 'New', engaged: 'Engaged', awaiting_payment: 'Awaiting payment', converted: 'Converted', lost: 'Lost', reengaged: 'Re-engaged' };
-        document.querySelector('#leads-table tbody').innerHTML = leads.length ? leads.map(lead => `
-          <tr id="lead-${escapeHtml(lead.lead_id)}"><td>${lead.source === 'whatsapp' ? '📱 WhatsApp' : (lead.source === 'chat' ? '💬 Web' : escapeHtml(lead.source || '—'))}</td>
-          <td>${escapeHtml(lead.name || '—')}<div class="ba-muted" style="font-size:.78rem;">${escapeHtml(lead.created_at)}</div></td>
-          <td><span class="stage-pill ${escapeHtml(lead.stage || 'new')}">${escapeHtml(stageLabels[lead.stage] || lead.stage || 'New')}</span>
-            ${lead.deposit_paid_amount_inr ? `<div class="ba-muted" style="font-size:.78rem;">₹${lead.deposit_paid_amount_inr} confirmed</div>` : ''}
-          </td>
-          <td>${escapeHtml(lead.phone || '—')}</td>
-          <td>${escapeHtml(lead.email || '—')}</td><td>${escapeHtml((lead.message || '').slice(0, 60))}</td>
-          <td>${lead.appointment_at
-            ? `<div>${escapeHtml(formatAppointment(lead.appointment_at))}${lead.party_size ? ` · party of ${lead.party_size}` : ''}</div><button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="showApptInput('${escapeHtml(lead.lead_id)}')">Reschedule</button>`
-            : ''
-          }<div id="appt-form-${escapeHtml(lead.lead_id)}" style="${lead.appointment_at ? 'display:none;' : ''} margin-top:4px;">
-              <input class="ba-input" type="datetime-local" id="appt-input-${escapeHtml(lead.lead_id)}" style="margin-bottom:4px; max-width:180px; font-size:.82rem;">
-              <input class="ba-input" type="number" min="1" id="appt-party-${escapeHtml(lead.lead_id)}" placeholder="Party size" style="margin-bottom:4px; max-width:100px; font-size:.82rem;">
-              <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="setAppointment('${escapeHtml(lead.lead_id)}')">Save</button>
-            </div></td>
-          <td>
-            ${canFollowUp(lead) ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="requestReview('${escapeHtml(lead.lead_id)}', this)">Request Review</button>` : ''}
-            ${canFollowUp(lead) ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="sendDepositLink('${escapeHtml(lead.lead_id)}', this)">Send Deposit Link</button>` : ''}
-            ${lead.stage !== 'converted' && lead.stage !== 'lost' ? `
-              <div style="display:flex; gap:4px; margin-top:6px; align-items:center;">
-                <input class="ba-input" type="number" min="1" id="paid-amt-${escapeHtml(lead.lead_id)}" placeholder="₹" style="max-width:70px; font-size:.82rem;">
-                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markLeadPaid('${escapeHtml(lead.lead_id)}', this)">Mark Paid</button>
-              </div>` : ''}
-            ${lead.appointment_at && lead.stage !== 'converted' && lead.stage !== 'lost' ? `
-              <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
-                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'completed', this)">Completed</button>
-                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'no_show', this)">No-show</button>
-                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'cancelled', this)">Cancelled</button>
-              </div>` : ''}
-          </td></tr>`).join('')
-          : `<tr><td colspan="8" class="ba-muted" style="text-align:center; padding:28px;">No leads yet — they'll show up here the moment a customer leaves their contact info, or messages you on WhatsApp.</td></tr>`;
+        const tbody = document.querySelector('#leads-table tbody');
+        if (tbody) {
+          tbody.innerHTML = leads.length ? leads.map(lead => `
+            <tr id="lead-${escapeHtml(lead.lead_id)}">
+              <td data-label="Channel">${lead.source === 'whatsapp' ? '📱 WhatsApp' : (lead.source === 'chat' ? '💬 Web' : escapeHtml(lead.source || '—'))}</td>
+              <td data-label="Name">${escapeHtml(lead.name || '—')}<div class="ba-muted" style="font-size:.78rem;">${escapeHtml(lead.created_at)}</div></td>
+              <td data-label="Stage"><span class="stage-pill ${escapeHtml(lead.stage || 'new')}">${escapeHtml(stageLabels[lead.stage] || lead.stage || 'New')}</span>
+                ${lead.deposit_paid_amount_inr ? `<div class="ba-muted" style="font-size:.78rem;">₹${lead.deposit_paid_amount_inr} confirmed</div>` : ''}
+              </td>
+              <td data-label="Phone">${escapeHtml(lead.phone || '—')}</td>
+              <td data-label="Email">${escapeHtml(lead.email || '—')}</td>
+              <td data-label="Message">${escapeHtml((lead.message || '').slice(0, 60))}</td>
+              <td data-label="Appointment">${lead.appointment_at
+                ? `<div>${escapeHtml(formatAppointment(lead.appointment_at))}${lead.party_size ? ` · party of ${lead.party_size}` : ''}</div><button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="showApptInput('${escapeHtml(lead.lead_id)}')">Reschedule</button>`
+                : ''
+              }<div id="appt-form-${escapeHtml(lead.lead_id)}" style="${lead.appointment_at ? 'display:none;' : ''} margin-top:4px;">
+                  <input class="ba-input" type="datetime-local" id="appt-input-${escapeHtml(lead.lead_id)}" style="margin-bottom:4px; max-width:180px; font-size:.82rem;">
+                  <input class="ba-input" type="number" min="1" id="appt-party-${escapeHtml(lead.lead_id)}" placeholder="Party size" style="margin-bottom:4px; max-width:100px; font-size:.82rem;">
+                  <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="setAppointment('${escapeHtml(lead.lead_id)}')">Save</button>
+                </div></td>
+              <td data-label="Actions">
+                ${canFollowUp(lead) ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="requestReview('${escapeHtml(lead.lead_id)}', this)">Request Review</button>` : ''}
+                ${canFollowUp(lead) ? `<button class="ba-btn ba-btn-secondary ba-btn-sm" style="margin-top:4px;" onclick="sendDepositLink('${escapeHtml(lead.lead_id)}', this)">Send Deposit Link</button>` : ''}
+                ${lead.stage !== 'converted' && lead.stage !== 'lost' ? `
+                  <div style="display:flex; gap:4px; margin-top:6px; align-items:center;">
+                    <input class="ba-input" type="number" min="1" id="paid-amt-${escapeHtml(lead.lead_id)}" placeholder="₹" style="max-width:70px; font-size:.82rem;">
+                    <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markLeadPaid('${escapeHtml(lead.lead_id)}', this)">Mark Paid</button>
+                  </div>` : ''}
+                ${lead.appointment_at && lead.stage !== 'converted' && lead.stage !== 'lost' ? `
+                  <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
+                    <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'completed', this)">Completed</button>
+                    <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'no_show', this)">No-show</button>
+                    <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="markAppointmentOutcome('${escapeHtml(lead.lead_id)}', 'cancelled', this)">Cancelled</button>
+                  </div>` : ''}
+              </td>
+            </tr>`).join('')
+            : `<tr><td colspan="8" class="ba-muted" style="text-align:center; padding:28px;">No leads yet — they'll show up here the moment a customer leaves their contact info, or messages you on WhatsApp.</td></tr>`;
+        }
       }
 
       renderAttention({ gaps, leads, analytics });
       updateAiBriefNarrative();
 
+      const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (sRes.ok) {
+        const s = await sRes.json();
+        currentSources = s.sources || [];
+        const tbody = document.querySelector('#sources-table tbody');
+        if (tbody) {
+          tbody.innerHTML = currentSources.map(src => `
+            <tr><td>${escapeHtml(src.label)}</td><td>${escapeHtml(src.source_type)}</td><td>${src.chunks_indexed} chunks</td></tr>`).join('');
+        }
+      }
+
+      // Fetch tasks for role-appropriate Needs you rendering
+      const taskRes = await fetch(`/api/tasks?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
+      if (taskRes.ok) {
+        const td = await taskRes.json();
+        currentTasks = td.tasks || [];
+      }
+
+      updateSetupChecklist({ tenant: currentTenant, sources: currentSources, rules: currentRules });
+
       if (role === 'owner') {
         loadTeam();
         loadHealth();
         loadUsage();
+        loadApprovals();
         loadCommandCenter();
         loadBusinessMap();
         loadAutomationKillSwitch();
@@ -1444,13 +2081,16 @@
         loadBusinessIntel();
         loadRestaurantIntel();
         applyRestaurantNavVisibility();
-      }
-
-      const sRes = await fetch(`/api/knowledge/sources?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
-      if (sRes.ok) {
-        const s = await sRes.json();
-        document.querySelector('#sources-table tbody').innerHTML = s.sources.map(src => `
-          <tr><td>${escapeHtml(src.label)}</td><td>${escapeHtml(src.source_type)}</td><td>${src.chunks_indexed} chunks</td></tr>`).join('');
+      } else {
+        const chkCard = document.getElementById('setup-checklist-card');
+        if (chkCard) chkCard.style.display = 'none';
+        const quietLine = document.getElementById('cc-quiet-upgrade-line');
+        if (quietLine) quietLine.style.display = 'none';
+        const approvalsList = document.getElementById('cc-approvals-list');
+        if (approvalsList) approvalsList.innerHTML = '';
+        const autoEl = document.getElementById('cc-automated-list');
+        if (autoEl) autoEl.innerHTML = '<li class="ba-muted">Automated workflows running in background.</li>';
+        renderNeedsYou({ approvals: [], gaps: [], cc: null, tasks: currentTasks, role });
       }
     }
     loadDashboard();
@@ -1523,28 +2163,58 @@
       } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
     }
 
+    async function ingestPastedText() {
+      const title = document.getElementById('paste-text-title')?.value.trim() || 'Pasted Information';
+      const text = document.getElementById('paste-text-content')?.value.trim();
+      const statusEl = document.getElementById('knowledge-status');
+      if (!text) {
+        if (statusEl) statusEl.innerText = 'Please paste some text first.';
+        return;
+      }
+      if (statusEl) statusEl.innerText = 'Saving and indexing...';
+      try {
+        const res = await fetch(`/api/knowledge/text?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST',
+          headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ title, text })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to save text.');
+        if (statusEl) statusEl.innerText = `Added! ${data.chunks_indexed} chunks indexed.`;
+        document.getElementById('paste-text-title').value = '';
+        document.getElementById('paste-text-content').value = '';
+        loadDashboard();
+      } catch (e) {
+        if (statusEl) statusEl.innerText = 'Error: ' + e.message;
+      }
+    }
+
     async function loadGaps() {
       const res = await fetch(`/api/analytics/gaps?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (!res.ok) return [];
       const data = await res.json();
+      currentGaps = data.gaps || [];
       const container = document.getElementById('gaps-list');
-      if (!data.gaps.length) {
-        container.innerHTML = '<div class="ba-card" style="text-align:center; color:var(--ba-muted);">No open gaps — nice.</div>';
-        return [];
+      if (container) {
+        if (!data.gaps.length) {
+          container.innerHTML = '<div class="ba-card" style="text-align:center; color:var(--ba-muted);">No open questions to answer — nice.</div>';
+        } else {
+          container.innerHTML = data.gaps.map((g, i) => `
+            <div class="gap-card" id="gap-${escapeHtml(g.turn_id)}">
+              <div class="gap-step-badge">Question ${i + 1} of ${data.gaps.length}</div>
+              <p style="margin:6px 0 12px; font-weight:600;">${escapeHtml(g.query)}</p>
+              <div class="gap-actions">
+                <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="draftGap('${escapeHtml(g.turn_id)}')">✦ Draft Answer with AI</button>
+              </div>
+              <div class="gap-draft-area" style="display:none; margin-top:12px;">
+                <label class="ba-label">Review and edit before publishing</label>
+                <textarea class="ba-input" rows="3" data-answer-for="${escapeHtml(g.turn_id)}"></textarea>
+                <button class="ba-btn ba-btn-sm" style="margin-top:10px;" onclick="publishGap('${escapeHtml(g.turn_id)}')">Save to Business Info</button>
+              </div>
+            </div>`).join('');
+        }
       }
-      container.innerHTML = data.gaps.map((g, i) => `
-        <div class="gap-card" id="gap-${escapeHtml(g.turn_id)}">
-          <div class="gap-step-badge">Gap ${i + 1} of ${data.gaps.length}</div>
-          <p style="margin:6px 0 12px; font-weight:600;">${escapeHtml(g.query)}</p>
-          <div class="gap-actions">
-            <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="draftGap('${escapeHtml(g.turn_id)}')">✦ Draft Answer with AI</button>
-          </div>
-          <div class="gap-draft-area" style="display:none; margin-top:12px;">
-            <label class="ba-label">Review and edit before publishing</label>
-            <textarea class="ba-input" rows="3" data-answer-for="${escapeHtml(g.turn_id)}"></textarea>
-            <button class="ba-btn ba-btn-sm" style="margin-top:10px;" onclick="publishGap('${escapeHtml(g.turn_id)}')">Publish to Knowledge Base</button>
-          </div>
-        </div>`).join('');
+      renderNeedsYou({ approvals: currentApprovals, gaps: currentGaps, cc: currentCommandCenter, tasks: currentTasks, role });
       return data.gaps;
     }
 
@@ -1708,6 +2378,59 @@
       } catch (err) {
         statusEl.textContent = err.message;
         statusEl.style.color = 'var(--ba-error-text)';
+      }
+    }
+
+    async function requestDashWhatsappHelp() {
+      const phoneInput = document.getElementById('dash-wa-help-phone');
+      const phone = phoneInput ? phoneInput.value.trim() : '';
+      const statusEl = document.getElementById('dash-wa-help-status');
+      const btn = document.getElementById('dash-wa-help-btn');
+      const methodRadio = document.querySelector('input[name="dash_wa_contact_method"]:checked');
+      const method = methodRadio ? methodRadio.value : 'whatsapp';
+      const noteInput = document.getElementById('dash-wa-help-note');
+      const note = noteInput ? noteInput.value.trim() : '';
+
+      if (!phone) {
+        if (statusEl) {
+          statusEl.style.color = 'var(--ba-error-text)';
+          statusEl.textContent = 'Please enter your phone number.';
+        }
+        return;
+      }
+      if (btn) { btn.disabled = true; btn.textContent = 'Requesting…'; }
+      if (statusEl) { statusEl.textContent = ''; }
+
+      try {
+        const res = await fetch(`/api/tenant/whatsapp/help-request?tenant_id=${encodeURIComponent(tenantId)}`, {
+          method: 'POST',
+          headers: BizAuth.getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ phone, preferred_contact_method: method, note })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const err = BizAuth.formatError(data, 'Could not submit request. Please try again.');
+          if (statusEl) {
+            statusEl.style.color = 'var(--ba-error-text)';
+            statusEl.textContent = err;
+          }
+          return;
+        }
+        if (statusEl) {
+          statusEl.style.color = 'var(--ba-primary)';
+          statusEl.textContent = data.message || 'Help request received. Our team will reach out within 24 hours.';
+        }
+        if (btn) btn.textContent = 'Requested ✓';
+      } catch (err) {
+        if (statusEl) {
+          statusEl.style.color = 'var(--ba-error-text)';
+          statusEl.textContent = 'Network error. Please try again.';
+        }
+      } finally {
+        if (btn && btn.textContent !== 'Requested ✓') {
+          btn.disabled = false;
+          btn.textContent = 'Request WhatsApp Setup';
+        }
       }
     }
 
@@ -1898,8 +2621,8 @@
         const rosterById = Object.fromEntries(rosterCache.map(e => [e.employee_id, e.name]));
         const openTasks = data.tasks.filter(t => !['done', 'cancelled'].includes(t.status));
         document.querySelector('#tasks-table tbody').innerHTML = openTasks.length ? openTasks.map(t => `
-          <tr><td>${escapeHtml(t.title)}</td><td>${escapeHtml(rosterById[t.assigned_to_employee_id] || '—')}</td>
-          <td>${t.due_at ? escapeHtml(t.due_at.slice(0, 10)) : '—'}</td><td>${escapeHtml(t.status)}</td></tr>`).join('')
+          <tr><td data-label="Task">${escapeHtml(t.title)}</td><td data-label="Assigned to">${escapeHtml(rosterById[t.assigned_to_employee_id] || '—')}</td>
+          <td data-label="Due">${t.due_at ? escapeHtml(t.due_at.slice(0, 10)) : '—'}</td><td data-label="Status">${escapeHtml(t.status)}</td></tr>`).join('')
           : `<tr><td colspan="4" class="ba-muted" style="text-align:center; padding:20px;">No open tasks — assign one from here or over WhatsApp.</td></tr>`;
       }
 
@@ -2220,33 +2943,29 @@
       const approvalsCard = document.getElementById('cc-approvals-card');
       if (approvalsCard) approvalsCard.style.display = 'none';
       const attentionCard = document.getElementById('cc-attention-card');
-      if (attentionCard) {
-        attentionCard.style.display = 'none';
-      }
-      const block = document.getElementById('command-center');
-      if (block && !document.getElementById('cc-upgrade-slot')) {
-        const slot = document.createElement('div');
-        slot.id = 'cc-upgrade-slot';
-        slot.innerHTML = upgradeCard;
-        block.appendChild(slot);
-      }
+      if (attentionCard) attentionCard.style.display = 'none';
+      const quietLine = document.getElementById('cc-quiet-upgrade-line');
+      if (quietLine) quietLine.style.display = 'block';
     }
 
     async function loadCommandCenter() {
       if (currentPlan === 'starter') {
         renderCommandCenterUpgradeState();
         updateAiBriefNarrative();
+        renderNeedsYou({ approvals: currentApprovals, gaps: currentGaps, cc: null, tasks: currentTasks, role });
         return;
       }
       const res = await fetch(`/api/command-center?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       if (!res.ok) {
         if (res.status === 403) renderCommandCenterUpgradeState();
         updateAiBriefNarrative();
+        renderNeedsYou({ approvals: currentApprovals, gaps: currentGaps, cc: null, tasks: currentTasks, role });
         return;
       }
       const cc = await res.json();
       currentCommandCenter = cc;
       updateAiBriefNarrative();
+      renderNeedsYou({ approvals: currentApprovals, gaps: currentGaps, cc, tasks: currentTasks, role });
 
       const attn = [];
       (cc.needs_attention.overdue_task_lines || []).forEach(l => attn.push(`⚠️ ${l}`));
@@ -2256,22 +2975,31 @@
       if (cc.needs_attention.recurring_issues_without_sop > 0) {
         attn.push(`⚠️ ${cc.needs_attention.recurring_issues_without_sop} recurring issue${cc.needs_attention.recurring_issues_without_sop > 1 ? 's' : ''} with no approved fix yet`);
       }
-      document.getElementById('cc-attention-list').innerHTML = attn.length
-        ? attn.map(l => `<li>${escapeHtml(l)}</li>`).join('')
-        : '<li class="ba-muted">You\'re all caught up — nothing needs attention right now.</li>';
+      const attnEl = document.getElementById('cc-attention-list');
+      if (attnEl) {
+        attnEl.innerHTML = attn.length
+          ? attn.map(l => `<li>${escapeHtml(l)}</li>`).join('')
+          : '<li class="ba-muted">You\'re all caught up — nothing needs attention right now.</li>';
+      }
 
-      document.getElementById('cc-opportunities').textContent = cc.revenue_opportunities.missed_opportunities;
-      document.getElementById('cc-revenue').textContent = `₹${cc.revenue_opportunities.confirmed_revenue_inr}`;
-      document.getElementById('cc-conversion').textContent = `${cc.revenue_opportunities.conversion_rate_pct}%`;
-      document.getElementById('cc-overdue').textContent = cc.operational_problems.tasks_overdue;
+      const oppEl = document.getElementById('cc-opportunities'); if (oppEl) oppEl.textContent = cc.revenue_opportunities.missed_opportunities;
+      const revEl = document.getElementById('cc-revenue'); if (revEl) revEl.textContent = `₹${cc.revenue_opportunities.confirmed_revenue_inr}`;
+      const convEl = document.getElementById('cc-conversion'); if (convEl) convEl.textContent = `${cc.revenue_opportunities.conversion_rate_pct}%`;
+      const overEl = document.getElementById('cc-overdue'); if (overEl) overEl.textContent = cc.operational_problems.tasks_overdue;
 
-      document.getElementById('cc-recommended-list').innerHTML = (cc.recommended_actions || []).length
-        ? cc.recommended_actions.map(l => `<li>${escapeHtml(l)}</li>`).join('')
-        : '<li class="ba-muted">Nothing to recommend right now.</li>';
+      const recEl = document.getElementById('cc-recommended-list');
+      if (recEl) {
+        recEl.innerHTML = (cc.recommended_actions || []).length
+          ? cc.recommended_actions.map(l => `<li>${escapeHtml(l)}</li>`).join('')
+          : '<li class="ba-muted">Nothing to recommend right now.</li>';
+      }
 
-      document.getElementById('cc-automated-list').innerHTML = (cc.automated_actions_taken || []).length
-        ? cc.automated_actions_taken.map(l => `<li>${escapeHtml(l)}</li>`).join('')
-        : '<li class="ba-muted">Nothing yet — create a rule under Automation to have Bizistic act on your behalf.</li>';
+      const autoEl = document.getElementById('cc-automated-list');
+      if (autoEl) {
+        autoEl.innerHTML = (cc.automated_actions_taken || []).length
+          ? cc.automated_actions_taken.map(l => `<li>${escapeHtml(l)}</li>`).join('')
+          : '<li class="ba-muted">Nothing yet — configure recipes under Automation to have Bizistic act on your behalf.</li>';
+      }
 
       loadApprovals();
     }
@@ -2281,18 +3009,22 @@
     async function loadApprovals() {
       const res = await fetch(`/api/approvals?tenant_id=${encodeURIComponent(tenantId)}`, { headers: BizAuth.getAuthHeaders() });
       const listEl = document.getElementById('cc-approvals-list');
-      if (!res.ok) { listEl.innerHTML = ''; return; }
+      if (!res.ok) { if (listEl) listEl.innerHTML = ''; return; }
       const data = await res.json();
-      listEl.innerHTML = data.items.length ? data.items.map(item => `
-        <div class="ba-card" style="margin-bottom:8px;">
-          <div class="ba-muted" style="font-size:.8em; text-transform:uppercase; letter-spacing:.03em;">${escapeHtml(APPROVAL_TYPE_LABEL[item.type] || item.type)}</div>
-          <div><b>${escapeHtml(item.title)}</b></div>
-          ${item.detail ? `<div class="ba-muted" style="margin:4px 0;">${escapeHtml(item.detail)}</div>` : ''}
-          <div style="display:flex; gap:8px; margin-top:8px;">
-            <button class="ba-btn ba-btn-sm" data-type="${escapeHtml(item.type)}" data-id="${escapeHtml(item.id)}" onclick="approveInboxItem(this)">Approve</button>
-            <button class="ba-btn ba-btn-secondary ba-btn-sm" data-type="${escapeHtml(item.type)}" data-id="${escapeHtml(item.id)}" onclick="rejectInboxItem(this)">Reject</button>
-          </div>
-        </div>`).join('') : '<span class="ba-muted">Nothing waiting on your approval right now.</span>';
+      currentApprovals = data.items || [];
+      if (listEl) {
+        listEl.innerHTML = currentApprovals.length ? currentApprovals.map(item => `
+          <div class="ba-card" style="margin-bottom:8px;">
+            <div class="ba-muted" style="font-size:.8em; text-transform:uppercase; letter-spacing:.03em;">${escapeHtml(APPROVAL_TYPE_LABEL[item.type] || item.type)}</div>
+            <div><b>${escapeHtml(item.title)}</b></div>
+            ${item.detail ? `<div class="ba-muted" style="margin:4px 0;">${escapeHtml(item.detail)}</div>` : ''}
+            <div style="display:flex; gap:8px; margin-top:8px;">
+              <button class="ba-btn ba-btn-sm" data-type="${escapeHtml(item.type)}" data-id="${escapeHtml(item.id)}" onclick="approveInboxItem(this)">Approve</button>
+              <button class="ba-btn ba-btn-secondary ba-btn-sm" data-type="${escapeHtml(item.type)}" data-id="${escapeHtml(item.id)}" onclick="rejectInboxItem(this)">Reject</button>
+            </div>
+          </div>`).join('') : '<span class="ba-muted">Nothing waiting on your approval right now.</span>';
+      }
+      renderNeedsYou({ approvals: currentApprovals, gaps: currentGaps, cc: currentCommandCenter, tasks: currentTasks, role });
     }
 
     async function approveInboxItem(buttonEl) {
@@ -2334,7 +3066,7 @@
       if (currentPlan === 'starter') {
         if (container) {
           container.innerHTML = renderPlanGatedEmptyState({
-            featureTitle: 'Autonomous Business Dependency Mapping',
+            featureTitle: 'Business Dependency Map',
             featureDescription: 'Automatically map operational single points of failure, workload concentration, and process bus factors across your team without manual surveys.',
             requiredPlan: 'growth',
             bulletPoints: [
@@ -2356,7 +3088,7 @@
       if (mapRes.status === 403) {
         if (container) {
           container.innerHTML = renderPlanGatedEmptyState({
-            featureTitle: 'Autonomous Business Dependency Mapping',
+            featureTitle: 'Business Dependency Map',
             featureDescription: 'Automatically map operational single points of failure, workload concentration, and process bus factors across your team without manual surveys.',
             requiredPlan: 'growth',
             bulletPoints: [
@@ -2612,15 +3344,17 @@
       const tbody = document.querySelector('#automation-rules-table tbody');
       tbody.innerHTML = data.rules.length ? data.rules.map(r => `
         <tr>
-          <td>${escapeHtml(r.name)}</td>
-          <td>${escapeHtml(AUTOMATION_TRIGGER_LABELS[r.trigger_type] || r.trigger_type)}</td>
-          <td>${escapeHtml(AUTOMATION_ACTION_LABELS[r.action_type] || r.action_type)}</td>
-          <td><span class="stage-pill ${r.enabled ? 'converted' : ''}">${r.enabled ? 'Enabled' : 'Disabled'}</span></td>
-          <td style="white-space:nowrap;">
+          <td data-label="Name">${escapeHtml(r.name)}</td>
+          <td data-label="Trigger">${escapeHtml(AUTOMATION_TRIGGER_LABELS[r.trigger_type] || r.trigger_type)}</td>
+          <td data-label="Action">${escapeHtml(AUTOMATION_ACTION_LABELS[r.action_type] || r.action_type)}</td>
+          <td data-label="Status"><span class="stage-pill ${r.enabled ? 'converted' : ''}">${r.enabled ? 'Enabled' : 'Disabled'}</span></td>
+          <td data-label="Actions" style="white-space:nowrap;">
             <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="toggleAutomationRule('${r.rule_id}', ${!r.enabled})">${r.enabled ? 'Disable' : 'Enable'}</button>
             <button class="ba-btn ba-btn-secondary ba-btn-sm" onclick="deleteAutomationRule('${r.rule_id}')">Delete</button>
           </td>
         </tr>`).join('') : '<tr><td colspan="5" class="ba-muted">Nothing running yet — turn on a ready-made recipe above to get started.</td></tr>';
+      currentRules = data.rules;
+      updateSetupChecklist({ tenant: currentTenant, sources: currentSources, rules: currentRules });
       renderAutomationRecipes();
     }
 
@@ -2716,7 +3450,7 @@
       if (currentPlan !== 'scale') {
         if (container) {
           container.innerHTML = renderPlanGatedEmptyState({
-            featureTitle: 'Self-Evolution Engine',
+            featureTitle: 'Assistant Improvements Engine',
             featureDescription: 'Bizistic analyzes real customer interactions, detects dissatisfaction trends, and proposes safe, reviewable prompt adjustments with automatic rollbacks to keep your assistant sharp.',
             requiredPlan: 'scale',
             bulletPoints: [
@@ -2734,7 +3468,7 @@
       if (tenantRes.status === 403) {
         if (container) {
           container.innerHTML = renderPlanGatedEmptyState({
-            featureTitle: 'Self-Evolution Engine',
+            featureTitle: 'Assistant Improvements Engine',
             featureDescription: 'Bizistic analyzes real customer interactions, detects dissatisfaction trends, and proposes safe, reviewable prompt adjustments with automatic rollbacks to keep your assistant sharp.',
             requiredPlan: 'scale',
             bulletPoints: [
@@ -2768,7 +3502,7 @@
       if (proposalsRes.status === 403) {
         if (container) {
           container.innerHTML = renderPlanGatedEmptyState({
-            featureTitle: 'Self-Evolution Engine',
+            featureTitle: 'Assistant Improvements Engine',
             featureDescription: 'Bizistic analyzes real customer interactions, detects dissatisfaction trends, and proposes safe, reviewable prompt adjustments with automatic rollbacks to keep your assistant sharp.',
             requiredPlan: 'scale',
             bulletPoints: [
