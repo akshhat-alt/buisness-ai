@@ -336,6 +336,11 @@ def render_new_lead_alert(
     """For the OWNER: a brand-new customer lead was captured via the website
     widget or first WhatsApp contact. Sent immediately to tenant.owner_email."""
     ident = (lead_name or lead_phone or lead_email or "website visitor").strip().splitlines()[0]
+    # The lead's name comes from a public, unauthenticated form, so it is
+    # attacker-controllable text landing in a subject line signed by us:
+    # drop angle brackets and cap the length so it can't carry markup or a
+    # long phishing sentence.
+    ident = ident.replace("<", "").replace(">", "").strip()[:60] or "website visitor"
     subject = f"New customer lead — {ident}"
 
     leads_url = f"{dashboard_url}#leads" if dashboard_url else None

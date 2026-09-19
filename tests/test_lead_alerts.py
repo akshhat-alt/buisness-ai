@@ -501,3 +501,15 @@ def test_tenant_isolation(client_lead_alert, services_lead_alert):
     assert sent[0]["to"] == "owner_a@example.com"
     assert "Salon A" in sent[0]["html_body"]
     assert "owner_b@example.com" not in [e["to"] for e in sent]
+
+
+def test_subject_is_sanitised_and_capped_for_hostile_names():
+    from business_ai.alerts import render_new_lead_alert
+
+    subject, _ = render_new_lead_alert(
+        business_name="Salon", lead_name="<script>alert(1)</script>" + "A" * 200, lead_phone="9876500001",
+    )
+    assert "<" not in subject and ">" not in subject
+    assert len(subject) <= len("New customer lead — ") + 60
+    subject2, _ = render_new_lead_alert(business_name="Salon", lead_name="<>", lead_phone=None)
+    assert subject2.endswith("website visitor")
