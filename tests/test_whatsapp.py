@@ -295,8 +295,12 @@ def test_dissatisfaction_alert_fires_from_whatsapp_channel(client_wa, services_w
     r = _signed_post(client_wa, payload)
     assert r.status_code == 200, r.text
 
-    assert len(fake_sender.sent) == 1
-    assert fake_sender.sent[0]["to"] == "owner@example.com"
+    # Both dissatisfaction alert AND new-lead alert are sent to the owner on first contact
+    assert len(fake_sender.sent) == 2
+    assert all(msg["to"] == "owner@example.com" for msg in fake_sender.sent)
+    subjects = {msg["subject"] for msg in fake_sender.sent}
+    assert "A customer sounds unhappy — Priya Salon" in subjects
+    assert "New customer lead — Asha" in subjects
 
 
 # ------------------------------------------------------------------ follow-ups reused: WhatsApp review request

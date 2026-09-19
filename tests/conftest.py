@@ -31,9 +31,11 @@ class FakeGenerator:
         tone_adjustment_draft: ToneAdjustmentDraft | Exception | None = None,
         voice_transcript: str | Exception | None = None,
         receipt_extraction: ReceiptExtraction | Exception | None = None,
+        shows_buying_intent: bool = False,
     ) -> None:
         self.status = status
         self.answer_text = answer_text
+        self.shows_buying_intent = shows_buying_intent
         # Queries (exact match) that classify_dissatisfaction() should
         # report as True — lets tests exercise that path deterministically
         # without a real API call.
@@ -68,6 +70,7 @@ class FakeGenerator:
             status=self.status,
             answer_text=self.answer_text,
             cited_segment_ids=[seg_id] if self.status == "answered" else [],
+            shows_buying_intent=self.shows_buying_intent,
         )
 
     def draft_faq_answer(self, *, business_name: str, assistant_name: str, question: str) -> str:

@@ -1171,6 +1171,10 @@
               <input type="checkbox" id="cfg-voice-notes-enabled" style="width:auto;">
               <label class="ba-label" style="margin:0;" for="cfg-voice-notes-enabled">Enable voice-note transcription for the admin WhatsApp bot</label>
             </div>
+            <div class="ba-field" style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="cfg-notify-new-leads" style="width:auto;">
+              <label class="ba-label" style="margin:0;" for="cfg-notify-new-leads">Email me when a new customer lead comes in</label>
+            </div>
             <button class="ba-btn" onclick="saveSettings(event)">Save</button>
           </div>
         </section>
@@ -1975,6 +1979,7 @@
           const cfgRev = document.getElementById('cfg-review-link'); if (cfgRev) cfgRev.value = t.review_link || '';
           const cfgPlc = document.getElementById('cfg-google-place-id'); if (cfgPlc) cfgPlc.value = t.google_place_id || '';
           const cfgVn = document.getElementById('cfg-voice-notes-enabled'); if (cfgVn) cfgVn.checked = !!t.voice_notes_enabled;
+          const cfgLd = document.getElementById('cfg-notify-new-leads'); if (cfgLd) cfgLd.checked = t.notify_new_leads !== false;
           const cfgWaId = document.getElementById('cfg-wa-phone-id'); if (cfgWaId) cfgWaId.value = t.whatsapp_phone_number_id || '';
           const waStatus = document.getElementById('wa-status');
           if (waStatus) {
@@ -2316,6 +2321,7 @@
           review_link: document.getElementById('cfg-review-link').value.trim(),
           google_place_id: document.getElementById('cfg-google-place-id').value.trim(),
           voice_notes_enabled: document.getElementById('cfg-voice-notes-enabled').checked,
+          notify_new_leads: document.getElementById('cfg-notify-new-leads').checked,
         }),
       });
       btn.innerText = 'Saved ✓';

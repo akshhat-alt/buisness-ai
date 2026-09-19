@@ -200,6 +200,7 @@ class TenantConfigUpdate(BaseModel):
     evolution_regression_delta: float | None = Field(default=None, gt=0, le=1)
     google_place_id: str | None = None
     voice_notes_enabled: bool | None = None
+    notify_new_leads: bool | None = None
 
 
 class TenantDeleteRequest(BaseModel):

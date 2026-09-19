@@ -320,3 +320,89 @@ def render_whatsapp_help_request_alert(
     """
     return subject, html
 
+
+def render_new_lead_alert(
+    *,
+    business_name: str,
+    lead_name: str | None = None,
+    lead_phone: str | None = None,
+    lead_email: str | None = None,
+    source: str = "Website chat",
+    message: str | None = None,
+    time_ist: str | None = None,
+    shows_buying_intent: bool = False,
+    dashboard_url: str | None = None,
+) -> tuple[str, str]:
+    """For the OWNER: a brand-new customer lead was captured via the website
+    widget or first WhatsApp contact. Sent immediately to tenant.owner_email."""
+    ident = (lead_name or lead_phone or lead_email or "website visitor").strip().splitlines()[0]
+    subject = f"New customer lead — {ident}"
+
+    leads_url = f"{dashboard_url}#leads" if dashboard_url else None
+    leads_btn = (
+        f'<p style="margin-top:20px;">'
+        f'<a href="{escape(leads_url)}" '
+        f'style="display:inline-block; padding:10px 16px; background:#1F5C4E; color:#fff; '
+        f'text-decoration:none; border-radius:6px; font-weight:600;">View leads in dashboard &rarr;</a></p>'
+        if leads_url else ""
+    )
+
+    name_row = f"<p><strong>Name:</strong> {escape(lead_name)}</p>" if lead_name else ""
+    phone_row = f"<p><strong>Phone:</strong> {escape(lead_phone)}</p>" if lead_phone else ""
+    email_row = f"<p><strong>Email:</strong> {escape(lead_email)}</p>" if lead_email else ""
+    source_row = f"<p><strong>Source:</strong> {escape(source)}</p>" if source else ""
+    time_row = f"<p><strong>Time:</strong> {escape(time_ist)}</p>" if time_ist else ""
+
+    msg_block = ""
+    if message:
+        truncated = message[:300] + ("…" if len(message) > 300 else "")
+        msg_block = f"<p><strong>First message:</strong><br>{escape(truncated)}</p>"
+
+    intent_badge = (
+        '<p style="margin:12px 0;"><span style="display:inline-block; padding:4px 8px; background:#e6f4ea; color:#137333; border-radius:4px; font-weight:600; font-size:0.875rem;">Showing buying interest</span></p>'
+        if shows_buying_intent else ""
+    )
+
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px; color:#1F5C4E;">New customer lead</h2>
+      <p style="color:#666; margin-top:0;">A new potential customer just contacted {escape(business_name)}.</p>
+      {intent_badge}
+      {name_row}
+      {phone_row}
+      {email_row}
+      {source_row}
+      {time_row}
+      {msg_block}
+      {leads_btn}
+    </div>
+    """
+    return subject, html
+
+
+def render_lead_alert_summary(
+    *,
+    business_name: str,
+    dashboard_url: str | None = None,
+) -> tuple[str, str]:
+    """For the OWNER: rate limit cap (10 leads/hr) hit for the first time in a rolling window.
+    Sent once per window to prevent inbox flooding while reassuring the owner that leads are saved."""
+    subject = "10+ new customer leads this hour — open your dashboard"
+    leads_url = f"{dashboard_url}#leads" if dashboard_url else None
+    leads_btn = (
+        f'<p style="margin-top:20px;">'
+        f'<a href="{escape(leads_url)}" '
+        f'style="display:inline-block; padding:10px 16px; background:#1F5C4E; color:#fff; '
+        f'text-decoration:none; border-radius:6px; font-weight:600;">Open your dashboard &rarr;</a></p>'
+        if leads_url else ""
+    )
+    html = f"""
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
+      <h2 style="margin-bottom:4px; color:#1F5C4E;">10+ new customer leads this hour</h2>
+      <p style="color:#666; margin-top:0;">Your Bizistic assistant has received more than 10 new customer leads in the past hour for {escape(business_name)}.</p>
+      <p>To keep your inbox calm, individual email alerts are paused for the remainder of this hour. All new leads continue to be saved in your dashboard.</p>
+      {leads_btn}
+    </div>
+    """
+    return subject, html
+

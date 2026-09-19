@@ -154,6 +154,10 @@ class Services:
             limit=settings.ai_questions_per_minute,
             window_seconds=60.0,
         )
+        self.lead_alert_limiter = FixedWindowRateLimiter(
+            limit=10,
+            window_seconds=3600.0,
+        )
 
     def embeddings(self):
         return OpenAIEmbeddingProvider(model_name=self.settings.embedding_model, api_key=_openai_key())

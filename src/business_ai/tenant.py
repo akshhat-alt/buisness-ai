@@ -159,6 +159,7 @@ class TenantConfig(BaseModel):
     # old row fails closed via PLAN_ACTIONS.get(..., frozenset()) in
     # authorize() below, rather than raising at load time.
     plan: str = "starter"
+    notify_new_leads: bool = True
     created_at: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
 

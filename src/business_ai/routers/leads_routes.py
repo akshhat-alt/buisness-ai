@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 
 from business_ai.customer_intelligence import build_repeat_customer_report
 from business_ai.email_sender import EmailSendError
@@ -28,15 +28,20 @@ def register_leads(app: FastAPI, svc, ctx) -> None:
 
     # -------------------------------------------------------------- leads
     @app.post("/api/leads")
-    def create_lead(request: LeadRequest, tenant_id: str) -> dict:
+    def create_lead(request: LeadRequest, tenant_id: str, background_tasks: BackgroundTasks) -> dict:
         # Deliberately unauthenticated on the *write* side: a website
         # visitor submitting their own contact info isn't logged in. The
         # tenant must simply exist and be active — this is what lets a
         # real customer leave their number without creating an account.
         try:
-            svc.tenant_registry.get_active_tenant(tenant_id)
+            tenant = svc.tenant_registry.get_active_tenant(tenant_id)
         except (TenantNotFoundError, TenantNotActiveError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        # Check whether a lead already exists for this session before creating.
+        # Note: exists_for_session followed by create is not atomic across concurrent
+        # requests with the identical session_id (documented edge case).
+        already_existed = svc.lead_store.exists_for_session(tenant_id, request.session_id)
 
         try:
             lead = svc.lead_store.create(
@@ -45,6 +50,19 @@ def register_leads(app: FastAPI, svc, ctx) -> None:
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if not already_existed and hasattr(ctx, "_send_lead_alert"):
+            background_tasks.add_task(
+                ctx._send_lead_alert,
+                tenant=tenant,
+                name=request.name,
+                phone=request.phone,
+                email=request.email,
+                source="Website chat",
+                message=request.message,
+                shows_buying_intent=False,
+            )
+
         return {"lead_id": lead.lead_id}
 
     @app.get("/api/leads")

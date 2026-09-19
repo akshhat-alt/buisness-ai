@@ -29,6 +29,8 @@ from pydantic import BaseModel
 from business_ai.alerts import (
     render_billing_link_email,
     render_dissatisfaction_alert,
+    render_lead_alert_summary,
+    render_new_lead_alert,
     render_new_tenant_signup_alert,
     render_plan_upgrade_request_alert,
     render_review_request,
@@ -58,6 +60,7 @@ from business_ai.email_sender import EmailSendError, EmailSender
 from business_ai.auth import Principal, UserStore, create_access_token, resolve_principal, AuthenticationError
 from business_ai.config import Settings, load_settings, validate_environment
 from business_ai.formatting import (
+    IST,
     _format_appointment_ist,
     _parse_appointment_to_utc,
     _short_task_id,
@@ -432,6 +435,61 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
             svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
         except EmailSendError as exc:
             logger.warning("Failed to send dissatisfaction alert for tenant %s: %s", tenant.tenant_id, exc)
+
+    def _send_lead_alert(
+        *,
+        tenant: TenantConfig,
+        name: str | None = None,
+        phone: str | None = None,
+        email: str | None = None,
+        source: str = "Website chat",
+        message: str | None = None,
+        shows_buying_intent: bool = False,
+    ) -> bool:
+        """Best-effort owner lead alert email.
+        - Respects tenant.notify_new_leads (owner opt-out).
+        - Requires resend_api_key and digest_from_email.
+        - Enforces 10/hr rate limit per tenant via svc.lead_alert_limiter.
+        - On 11th lead, sends single summary email.
+        - Swallows and logs any failure; never raises.
+        """
+        if not tenant.notify_new_leads:
+            return False
+
+        if not svc.settings.resend_api_key or not svc.settings.digest_from_email:
+            return False
+
+        action = svc.lead_alert_limiter.check_lead_alert_action(tenant.tenant_id)
+        if action == "suppress":
+            return False
+
+        dashboard_url = f"{svc.settings.public_base_url}/dashboard" if svc.settings.public_base_url else None
+
+        if action == "summary":
+            subject, html = render_lead_alert_summary(
+                business_name=tenant.business_name,
+                dashboard_url=dashboard_url,
+            )
+        else:
+            now_ist_str = datetime.now(IST).strftime("%d %b %Y, %I:%M %p IST")
+            subject, html = render_new_lead_alert(
+                business_name=tenant.business_name,
+                lead_name=name,
+                lead_phone=phone,
+                lead_email=email,
+                source=source,
+                message=message,
+                time_ist=now_ist_str,
+                shows_buying_intent=shows_buying_intent,
+                dashboard_url=dashboard_url,
+            )
+
+        try:
+            svc.email_sender().send(to=tenant.owner_email, subject=subject, html_body=html)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to send lead alert email for tenant %s: %s", tenant.tenant_id, exc)
+            return False
 
     def _send_urgent_feedback_alert(tenant: TenantConfig, employee: Employee, feedback_text: str, classification) -> None:
         """Instant alert for high-urgency employee feedback — same
@@ -2215,6 +2273,7 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                     continue
 
                 session_id = f"wa_{msg.wa_id}"
+                lead_newly_created = False
                 if not svc.lead_store.exists_for_session(tenant.tenant_id, session_id):
                     # A real, Meta-verified phone number on first contact —
                     # richer than the web widget's optional, self-typed
@@ -2225,6 +2284,7 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
                             tenant_id=tenant.tenant_id, session_id=session_id, name=msg.contact_name,
                             phone=msg.wa_id, message=msg.text, source="whatsapp",
                         )
+                        lead_newly_created = True
                     except ValueError as exc:
                         logger.warning("WhatsApp lead capture failed for tenant %s: %s", tenant.tenant_id, exc)
 
@@ -2244,18 +2304,34 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
 
                 if not (tenant.whatsapp_phone_number_id and tenant.whatsapp_access_token):
                     logger.warning("Tenant %s has no WhatsApp credentials configured to reply with.", tenant.tenant_id)
-                    continue
-                try:
-                    svc.whatsapp_client().send_text(
-                        phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
-                        to=msg.wa_id, body=reply_text,
-                    )
+                else:
                     try:
-                        svc.usage_meter_store.increment(tenant_id=tenant.tenant_id, metric="whatsapp_messages")
-                    except Exception as exc:  # noqa: BLE001 - accounting must never break a send that already succeeded
-                        logger.warning("Usage metering failed for tenant %s (whatsapp_messages): %s", tenant.tenant_id, exc)
-                except WhatsAppSendError as exc:
-                    logger.error("Failed to send WhatsApp reply for tenant %s: %s", tenant.tenant_id, exc)
+                        svc.whatsapp_client().send_text(
+                            phone_number_id=tenant.whatsapp_phone_number_id, access_token=tenant.whatsapp_access_token,
+                            to=msg.wa_id, body=reply_text,
+                        )
+                        try:
+                            svc.usage_meter_store.increment(tenant_id=tenant.tenant_id, metric="whatsapp_messages")
+                        except Exception as exc:  # noqa: BLE001 - accounting must never break a send that already succeeded
+                            logger.warning("Usage metering failed for tenant %s (whatsapp_messages): %s", tenant.tenant_id, exc)
+                    except WhatsAppSendError as exc:
+                        logger.error("Failed to send WhatsApp reply for tenant %s: %s", tenant.tenant_id, exc)
+
+                # Send lead alert to owner AFTER customer reply attempt (non-blocking for customer/Meta ack)
+                if lead_newly_created:
+                    shows_intent = bool(getattr(answer, "shows_buying_intent", False)) if answer is not None else False
+                    try:
+                        _send_lead_alert(
+                            tenant=tenant,
+                            name=msg.contact_name,
+                            phone=msg.wa_id,
+                            email=None,
+                            source="WhatsApp",
+                            message=msg.text,
+                            shows_buying_intent=shows_intent,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("Failed to send WhatsApp lead alert for tenant %s: %s", tenant.tenant_id, exc)
             except Exception as exc:  # noqa: BLE001 - one bad message must never break the rest of the batch or the webhook's 200
                 logger.error("Unhandled error processing a WhatsApp message: %s", exc)
 
@@ -2279,3 +2355,4 @@ def register_admin_bot(app: FastAPI, svc, ctx) -> None:
     ctx._resolve_theme_key = _resolve_theme_key
     ctx._send_admin_bot_message = _send_admin_bot_message
     ctx._maybe_verify_outcome_with_customer = _maybe_verify_outcome_with_customer
+    ctx._send_lead_alert = _send_lead_alert

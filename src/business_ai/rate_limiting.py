@@ -35,6 +35,7 @@ from starlette.responses import JSONResponse
 class _Window:
     window_start: float
     count: int
+    summary_sent: bool = False
 
 
 class FixedWindowRateLimiter:
@@ -64,12 +65,38 @@ class FixedWindowRateLimiter:
         with self._lock:
             window = self._windows.get(key)
             if window is None or now - window.window_start >= self.window_seconds:
-                self._windows[key] = _Window(window_start=now, count=1)
+                self._windows[key] = _Window(window_start=now, count=1, summary_sent=False)
                 return True
             if window.count >= self.limit:
                 return False
             window.count += 1
             return True
+
+    def check_lead_alert_action(self, key: str, *, now: float | None = None) -> str:
+        """Determines lead alert email action for key:
+        - 'individual': under limit (count <= limit). Send individual lead email.
+        - 'summary': cap hit for the first time in this window (11th lead). Send exactly 1 summary email.
+        - 'suppress': cap already hit and summary already sent in this window (12th+ lead). Send no email.
+
+        Window rollover after window_seconds resets count AND summary_sent.
+        """
+        if self.limit <= 0:
+            return "individual"
+        now = now if now is not None else time.time()
+        with self._lock:
+            window = self._windows.get(key)
+            if window is None or now - window.window_start >= self.window_seconds:
+                self._windows[key] = _Window(window_start=now, count=1, summary_sent=False)
+                return "individual"
+            if window.count < self.limit:
+                window.count += 1
+                return "individual"
+            if not window.summary_sent:
+                window.summary_sent = True
+                window.count += 1
+                return "summary"
+            window.count += 1
+            return "suppress"
 
     def sweep_stale(self, *, older_than_seconds: float | None = None, now: float | None = None) -> int:
         """Drops windows untouched for a while, so a long-running process

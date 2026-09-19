@@ -126,6 +126,7 @@ def test_request_review_sends_to_lead_email(client_with_email, services_with_ema
     )
     assert r.status_code == 200, r.text
     lead_id = r.json()["lead_id"]
+    services_with_email.fake_email_sender.sent.clear()  # discard the new-lead alert — not what this test checks
 
     r = client_with_email.post(f"/api/leads/{lead_id}/request-review?tenant_id={tenant_id}", headers=headers)
     assert r.status_code == 200, r.text
